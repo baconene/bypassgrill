@@ -226,25 +226,27 @@ const tabs = [
         <template v-if="subTab === 'distribution'">
             <!-- Filters -->
             <div class="rounded-xl border bg-card shadow-sm p-4">
-                <div class="flex flex-wrap items-end gap-3">
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Basis</label>
-                        <div class="flex rounded-lg border overflow-hidden">
-                            <button @click="basis = 'sales'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'sales' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Sales</button>
-                            <button @click="basis = 'profit'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'profit' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Profit</button>
-                            <button @click="basis = 'hybrid'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'hybrid' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Hybrid</button>
+                <div class="space-y-3">
+                    <div class="flex flex-wrap items-end gap-3">
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Basis</label>
+                            <div class="flex rounded-lg border overflow-hidden">
+                                <button @click="basis = 'sales'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'sales' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Sales</button>
+                                <button @click="basis = 'profit'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'profit' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Profit</button>
+                                <button @click="basis = 'hybrid'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'hybrid' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Hybrid</button>
+                            </div>
                         </div>
+                        <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label><input v-model="startDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm" /></div>
+                        <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label><input v-model="endDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm" /></div>
+                        <div class="w-full sm:w-auto"><label class="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+                            <select v-model="categoryId" class="w-full sm:w-auto rounded-lg border bg-background px-3 py-2 text-sm"><option value="">All</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option></select></div>
+                        <div class="w-full sm:w-auto"><label class="text-xs font-medium text-muted-foreground block mb-1">Product</label>
+                            <select v-model="productId" class="w-full sm:w-auto rounded-lg border bg-background px-3 py-2 text-sm"><option value="">All</option><option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option></select></div>
+                        <button @click="loadPreview" :disabled="loading" class="w-full sm:w-auto rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-1.5">
+                            <RefreshCw v-if="loading" class="h-3.5 w-3.5 animate-spin" /><PieChart v-else class="h-3.5 w-3.5" /> Compute
+                        </button>
                     </div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label><input v-model="startDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label><input v-model="endDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Category</label>
-                        <select v-model="categoryId" class="rounded-lg border bg-background px-3 py-2 text-sm"><option value="">All</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option></select></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Product</label>
-                        <select v-model="productId" class="rounded-lg border bg-background px-3 py-2 text-sm"><option value="">All</option><option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option></select></div>
-                    <button @click="loadPreview" :disabled="loading" class="rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5">
-                        <RefreshCw v-if="loading" class="h-3.5 w-3.5 animate-spin" /><PieChart v-else class="h-3.5 w-3.5" /> Compute
-                    </button>
-                    <div class="flex items-center gap-1 ml-auto">
+                    <div class="flex flex-wrap items-center gap-2">
                         <button @click="setMonth" class="rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">Month</button>
                         <button @click="setQuarter" class="rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">Quarter</button>
                         <button @click="setYear" class="rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted">Year</button>
@@ -318,7 +320,37 @@ const tabs = [
                             <h3 class="font-bold text-sm">Member Shares</h3>
                             <span v-if="result.basis === 'hybrid'" class="rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 px-2 py-0.5 text-xs font-semibold">Profit Share + Royalties</span>
                         </div>
-                        <table class="w-full text-sm">
+                        <!-- Mobile cards -->
+                        <div class="sm:hidden divide-y">
+                            <div v-for="m in result.members" :key="m.shareholder_id" class="p-3 space-y-1.5">
+                                <div class="flex justify-between items-center">
+                                    <span class="font-semibold text-sm">{{ m.name }}</span>
+                                    <span class="text-xs text-muted-foreground">{{ m.percentage }}%</span>
+                                </div>
+                                <div v-if="result.basis === 'hybrid'" class="flex justify-between text-xs">
+                                    <span class="text-muted-foreground">Profit Share</span>
+                                    <span>{{ fmt(m.profit_share) }}</span>
+                                </div>
+                                <div v-if="result.basis === 'hybrid'" class="flex justify-between text-xs">
+                                    <span class="text-muted-foreground">Royalties</span>
+                                    <span class="text-amber-600">{{ m.royalty_amount > 0 ? fmt(m.royalty_amount) : '—' }}</span>
+                                </div>
+                                <div class="flex justify-between text-sm font-bold">
+                                    <span>Total</span>
+                                    <span>{{ fmt(m.amount) }}</span>
+                                </div>
+                            </div>
+                            <div class="p-3 bg-muted/30 flex justify-between font-bold text-sm">
+                                <span>Members total ({{ result.members_percentage }}%)</span>
+                                <span>{{ fmt(result.members_total) }}</span>
+                            </div>
+                            <div class="p-3 bg-emerald-50 dark:bg-emerald-950/20 flex justify-between font-bold text-sm text-emerald-700 dark:text-emerald-400">
+                                <span>Company ({{ result.company_percentage }}%)</span>
+                                <span>{{ fmt(result.company_amount) }}</span>
+                            </div>
+                        </div>
+                        <!-- Desktop table -->
+                        <table class="hidden sm:table w-full text-sm">
                             <thead class="bg-muted/50 text-muted-foreground text-xs uppercase">
                                 <tr>
                                     <th class="px-4 py-2 text-left">Member</th>
@@ -386,7 +418,26 @@ const tabs = [
                 </div>
             </div>
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <table class="w-full text-sm">
+                <!-- Mobile cards -->
+                <div class="sm:hidden divide-y">
+                    <div v-for="s in shareholders" :key="s.id" class="p-3 space-y-1.5">
+                        <div class="flex justify-between items-start">
+                            <span class="font-semibold text-sm">{{ s.name }}</span>
+                            <span :class="['rounded-full px-2 py-0.5 text-xs', s.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500']">{{ s.status }}</span>
+                        </div>
+                        <div class="text-xs text-muted-foreground">{{ s.email ?? '—' }}</div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm font-bold">{{ s.ownership_percentage }}% ownership</span>
+                            <div class="flex gap-1">
+                                <button @click="editSh(s)" class="p-1.5 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button>
+                                <button @click="deleteSh(s)" class="p-1.5 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="!shareholders.length" class="px-4 py-8 text-center text-muted-foreground text-sm">No shareholders yet.</div>
+                </div>
+                <!-- Desktop table -->
+                <table class="hidden sm:table w-full text-sm">
                     <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr><th class="px-4 py-2 text-left">Name</th><th class="px-4 py-2 text-left">Email</th><th class="px-4 py-2 text-right">Ownership</th><th class="px-4 py-2 text-center">Status</th><th class="px-4 py-2"></th></tr></thead>
                     <tbody class="divide-y">
                         <tr v-for="s in shareholders" :key="s.id" class="hover:bg-muted/20">
@@ -421,7 +472,29 @@ const tabs = [
                 </div>
             </div>
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <table class="w-full text-sm">
+                <!-- Mobile cards -->
+                <div class="sm:hidden divide-y">
+                    <div v-for="r in rules" :key="r.id" :class="['p-3 space-y-1.5', !r.is_active && 'opacity-50']">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <span class="font-semibold text-sm">{{ r.recipient_name }}</span>
+                                <span v-if="r.shareholder" class="text-xs text-muted-foreground"> ({{ r.shareholder.name }})</span>
+                            </div>
+                            <span class="text-sm font-bold text-amber-600">{{ r.royalty_percentage }}%</span>
+                        </div>
+                        <div class="text-xs text-muted-foreground capitalize">{{ r.scope }}: {{ r.product?.name ?? r.category?.name ?? '—' }}</div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs text-muted-foreground">{{ r.effective_date?.slice(0,10) }} → {{ r.expiration_date?.slice(0,10) ?? '∞' }}</span>
+                            <div class="flex gap-1">
+                                <button @click="editRule(r)" class="p-1.5 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button>
+                                <button @click="deleteRule(r)" class="p-1.5 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="!rules.length" class="px-4 py-8 text-center text-muted-foreground text-sm">No royalty rules yet.</div>
+                </div>
+                <!-- Desktop table -->
+                <table class="hidden sm:table w-full text-sm">
                     <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr><th class="px-4 py-2 text-left">Scope</th><th class="px-4 py-2 text-left">Target</th><th class="px-4 py-2 text-left">Recipient</th><th class="px-4 py-2 text-right">%</th><th class="px-4 py-2 text-left">Window</th><th class="px-4 py-2"></th></tr></thead>
                     <tbody class="divide-y">
                         <tr v-for="r in rules" :key="r.id" :class="['hover:bg-muted/20', !r.is_active && 'opacity-50']">
@@ -447,7 +520,22 @@ const tabs = [
             </div>
             <div v-if="royaltyAnalytics" class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="p-4 border-b flex items-center justify-between"><h3 class="font-bold text-sm">Top Royalty Products</h3><span class="text-sm font-bold text-amber-600">Total: {{ fmt(royaltyAnalytics.total) }}</span></div>
-                <table class="w-full text-sm">
+                <!-- Mobile cards -->
+                <div class="sm:hidden divide-y">
+                    <div v-for="p in royaltyAnalytics.by_product" :key="p.name" class="p-3 space-y-1">
+                        <div class="font-semibold text-sm">{{ p.name }}</div>
+                        <div class="flex justify-between text-xs text-muted-foreground">
+                            <span>Net Sales</span><span>{{ fmt(p.net_sales) }}</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-muted-foreground">Rate</span>
+                            <span class="font-bold text-amber-600">{{ p.rate }}% → {{ fmt(p.royalty) }}</span>
+                        </div>
+                    </div>
+                    <div v-if="!royaltyAnalytics.by_product.length" class="px-4 py-8 text-center text-muted-foreground text-sm">No royalties in range.</div>
+                </div>
+                <!-- Desktop table -->
+                <table class="hidden sm:table w-full text-sm">
                     <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr><th class="px-4 py-2 text-left">Product</th><th class="px-4 py-2 text-right">Net Sales</th><th class="px-4 py-2 text-right">Rate</th><th class="px-4 py-2 text-right">Royalty</th></tr></thead>
                     <tbody class="divide-y">
                         <tr v-for="p in royaltyAnalytics.by_product" :key="p.name" class="hover:bg-muted/20"><td class="px-4 py-2 font-medium">{{ p.name }}</td><td class="px-4 py-2 text-right">{{ fmt(p.net_sales) }}</td><td class="px-4 py-2 text-right">{{ p.rate }}%</td><td class="px-4 py-2 text-right font-bold text-amber-600">{{ fmt(p.royalty) }}</td></tr>
@@ -461,7 +549,31 @@ const tabs = [
         <template v-if="subTab === 'history'">
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="p-4 border-b"><h3 class="font-bold text-sm">Distribution Snapshots</h3></div>
-                <table class="w-full text-sm">
+                <!-- Mobile cards -->
+                <div class="sm:hidden divide-y">
+                    <div v-for="s in snapshots" :key="s.id" class="p-3 space-y-1.5">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs text-muted-foreground">{{ s.period_start?.slice(0,10) }} → {{ s.period_end?.slice(0,10) }}</span>
+                            <span class="text-xs capitalize bg-muted px-2 py-0.5 rounded-full">{{ s.distribution_basis }}</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-muted-foreground">Distributable</span>
+                            <span class="font-bold">{{ fmt(s.distributable_amount) }}</span>
+                        </div>
+                        <div class="flex justify-between text-xs">
+                            <span class="text-muted-foreground">Members</span>
+                            <span>{{ fmt(s.members_amount) }}</span>
+                        </div>
+                        <div class="flex justify-between text-xs">
+                            <span class="text-muted-foreground">Company</span>
+                            <span class="text-emerald-600 font-medium">{{ fmt(s.company_amount) }}</span>
+                        </div>
+                        <div class="text-xs text-muted-foreground">By: {{ s.creator?.name ?? '—' }}</div>
+                    </div>
+                    <div v-if="!snapshots.length" class="px-4 py-8 text-center text-muted-foreground text-sm">No snapshots saved yet.</div>
+                </div>
+                <!-- Desktop table -->
+                <table class="hidden sm:table w-full text-sm">
                     <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr><th class="px-4 py-2 text-left">Period</th><th class="px-4 py-2 text-left">Basis</th><th class="px-4 py-2 text-right">Distributable</th><th class="px-4 py-2 text-right">Members</th><th class="px-4 py-2 text-right">Company</th><th class="px-4 py-2 text-left">By</th></tr></thead>
                     <tbody class="divide-y">
                         <tr v-for="s in snapshots" :key="s.id" class="hover:bg-muted/20">
