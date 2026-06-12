@@ -145,6 +145,11 @@ Route::prefix('v1')->group(function () {
         Route::put('/royalty-rules/{royaltyRule}', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'update']);
         Route::delete('/royalty-rules/{royaltyRule}', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'destroy']);
 
+        Route::get('/incentive-rules', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'index']);
+        Route::post('/incentive-rules', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'store']);
+        Route::put('/incentive-rules/{incentiveRule}', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'update']);
+        Route::delete('/incentive-rules/{incentiveRule}', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'destroy']);
+
         Route::get('/distribution/preview', [\App\Http\Controllers\Api\V1\DistributionController::class, 'preview']);
         Route::get('/distribution/trend', [\App\Http\Controllers\Api\V1\DistributionController::class, 'trend']);
         Route::get('/distribution/royalty-analytics', [\App\Http\Controllers\Api\V1\DistributionController::class, 'royaltyAnalytics']);

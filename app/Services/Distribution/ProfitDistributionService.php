@@ -17,9 +17,10 @@ class ProfitDistributionService
 {
     public function __construct(
         private SalesAggregateService $sales,
-        private RoyaltyEngine $royalty,
+        private RoyaltyEngine         $royalty,
         private ShareDistributionService $shares,
-        private ReportService $reports,
+        private ReportService         $reports,
+        private IncentivePoolService  $incentive,
     ) {}
 
     /**
@@ -87,21 +88,25 @@ class ProfitDistributionService
                 $chartRoyalties = round($royalty['total'] - $linkedTotal, 2);
             }
 
+            // Incentive pool — computed independently, does not affect dividend/company split
+            $incentive = $this->incentive->compute($start, $end, $metrics, $profitBase);
+
             return [
-                'basis'        => $basis,
-                'base_label'   => $baseLabel,
-                'range'        => ['start' => $start, 'end' => $end],
-                'metrics'      => $metrics,
-                'base_amount'  => $base,
-                'royalty'      => $royalty,
-                'distributable'=> $distributable,
-                'members'      => $alloc['members'],
-                'members_total'=> $alloc['members_total'],
+                'basis'              => $basis,
+                'base_label'         => $baseLabel,
+                'range'              => ['start' => $start, 'end' => $end],
+                'metrics'            => $metrics,
+                'base_amount'        => $base,
+                'royalty'            => $royalty,
+                'distributable'      => $distributable,
+                'members'            => $alloc['members'],
+                'members_total'      => $alloc['members_total'],
                 'members_percentage' => $alloc['members_percentage'],
                 'company_amount'     => $alloc['company_amount'],
                 'company_percentage' => $alloc['company_percentage'],
-                'chart' => $this->chartData($alloc, $chartRoyalties),
-                'financial_summary' => [
+                'incentive'          => $incentive,
+                'chart'              => $this->chartData($alloc, $chartRoyalties),
+                'financial_summary'  => [
                     'gross_sales' => $metrics['gross_sales'],
                     'net_sales'   => $metrics['net_sales'],
                     'refunds'     => $metrics['refunds'],
@@ -205,11 +210,12 @@ class ProfitDistributionService
             $mEnd   = $cursor->copy()->endOfMonth()->toDateString();
             $r = $this->compute($basis, $mStart, $mEnd);
             $out[] = [
-                'month'    => $cursor->format('M Y'),
-                'members'  => $r['members_total'],
-                'company'  => $r['company_amount'],
-                'royalty'  => $r['royalty']['total'],
-                'by_member'=> collect($r['members'])->mapWithKeys(fn ($m) => [$m['name'] => $m['amount']])->all(),
+                'month'     => $cursor->format('M Y'),
+                'members'   => $r['members_total'],
+                'company'   => $r['company_amount'],
+                'royalty'   => $r['royalty']['total'],
+                'incentive' => $r['incentive']['total'],
+                'by_member' => collect($r['members'])->mapWithKeys(fn ($m) => [$m['name'] => $m['amount']])->all(),
             ];
             $cursor->addMonth();
         }
