@@ -40,7 +40,7 @@ interface FtSummary {
 }
 interface FtTransaction {
     id: number; type: string; amount: number; description: string; transacted_at: string
-    running_balance: number; notes: string | null
+    financial_balance: number | null; notes: string | null
     user?: { name: string }; tender?: { name: string }
 }
 interface OrderRow {
@@ -1255,8 +1255,8 @@ onMounted(async () => {
                                 <td class="px-4 py-2 text-right font-bold" :class="isCredit(tx.type) ? 'text-green-600' : 'text-red-600'">
                                     {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
                                 </td>
-                                <td class="px-4 py-2 text-right font-semibold" :class="tx.running_balance >= 0 ? 'text-foreground' : 'text-red-600'">
-                                    {{ fmt(tx.running_balance) }}
+                                <td class="px-4 py-2 text-right font-semibold" :class="(tx.financial_balance ?? 0) >= 0 ? 'text-foreground' : 'text-red-600'">
+                                    {{ fmt(tx.financial_balance ?? 0) }}
                                 </td>
                                 <td class="px-4 py-2 text-muted-foreground text-xs">{{ tx.user?.name ?? '—' }}</td>
                                 <td class="px-4 py-2 text-center">
