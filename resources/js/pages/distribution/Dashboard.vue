@@ -4,7 +4,7 @@ import { Head } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
-    PieChart, Users, Percent, History, TrendingUp, RefreshCw, Plus, Trash2, Pencil,
+    PieChart, Users, History, TrendingUp, RefreshCw, Plus, Trash2, Pencil,
     Download, Save, X, HelpCircle, Gift, ChevronDown,
 } from 'lucide-vue-next'
 
@@ -19,13 +19,13 @@ const props = defineProps<{
 // ── Shared filters ──────────────────────────────────────────────────────────
 const today = new Date().toISOString().split('T')[0]
 const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
-const basis = ref<'sales' | 'profit' | 'hybrid'>('sales')
+const basis = ref<'sales' | 'profit'>('sales')
 const startDate = ref(monthStart)
 const endDate = ref(today)
 const categoryId = ref<number | ''>('')
 const productId = ref<number | ''>('')
 
-const subTab = ref<'distribution' | 'shareholders' | 'incentives' | 'royalties' | 'trends' | 'history' | 'help'>('distribution')
+const subTab = ref<'distribution' | 'shareholders' | 'incentives' | 'trends' | 'history' | 'help'>('distribution')
 
 const fmt = (v: number | null | undefined) => '₱' + (v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const pct = (v: number | null | undefined) => ((v ?? 0).toFixed(1)) + '%'
@@ -134,30 +134,6 @@ const deleteSh = async (s: any) => {
     await api.delete(`/api/v1/shareholders/${s.id}`); toast.success('Removed'); await loadShareholders()
 }
 
-// ── Royalty rules ─────────────────────────────────────────────────────────────
-const rules = ref<any[]>([])
-const rForm = ref<any>({ id: null, scope: 'product', product_id: '', category_id: '', recipient_name: '', shareholder_id: '', royalty_percentage: '', effective_date: today, expiration_date: '', is_active: true })
-const rSaving = ref(false)
-
-const loadRules   = async () => { rules.value = (await api.get('/api/v1/royalty-rules')).data }
-const editRule    = (r: any) => { rForm.value = { ...r, product_id: r.product_id ?? '', category_id: r.category_id ?? '', shareholder_id: r.shareholder_id ?? '', expiration_date: r.expiration_date ?? '' } }
-const resetRForm  = () => { rForm.value = { id: null, scope: 'product', product_id: '', category_id: '', recipient_name: '', shareholder_id: '', royalty_percentage: '', effective_date: today, expiration_date: '', is_active: true } }
-const saveRule = async () => {
-    rSaving.value = true
-    try {
-        const payload = { ...rForm.value, royalty_percentage: parseFloat(rForm.value.royalty_percentage) || 0, product_id: rForm.value.product_id || null, category_id: rForm.value.category_id || null, shareholder_id: rForm.value.shareholder_id || null, expiration_date: rForm.value.expiration_date || null }
-        if (rForm.value.id) await api.put(`/api/v1/royalty-rules/${rForm.value.id}`, payload)
-        else await api.post('/api/v1/royalty-rules', payload)
-        toast.success('Royalty rule saved'); resetRForm(); await loadRules()
-    } catch (err: any) {
-        toast.error(Object.values(err.response?.data?.errors ?? {}).flat().join(' ') || err.response?.data?.message || 'Failed to save')
-    } finally { rSaving.value = false }
-}
-const deleteRule = async (r: any) => {
-    if (!confirm(`Delete royalty rule for ${r.recipient_name}?`)) return
-    await api.delete(`/api/v1/royalty-rules/${r.id}`); toast.success('Deleted'); await loadRules()
-}
-
 // ── Incentive rules ───────────────────────────────────────────────────────────
 const incentiveRules = ref<any[]>([])
 const iForm = ref<any>({ id: null, name: '', pool_type: 'gross_sales_pct', rate: '', distribution_method: 'by_sales', is_active: true, effective_date: today, expiration_date: '', notes: '' })
@@ -191,27 +167,22 @@ const poolTypeUnit = (t: string) => t === 'fixed_amount' ? '₱' : '%'
 
 // ── Trends ────────────────────────────────────────────────────────────────────
 const trend = ref<any[]>([])
-const royaltyAnalytics = ref<any>(null)
 
 const loadTrends = async () => {
     const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]
-    const [t, r] = await Promise.all([
-        api.get('/api/v1/distribution/trend', { params: { basis: basis.value, start_date: yearStart, end_date: today } }),
-        api.get('/api/v1/distribution/royalty-analytics', { params: params() }),
-    ])
-    trend.value = t.data; royaltyAnalytics.value = r.data
+    const res = await api.get('/api/v1/distribution/trend', { params: { basis: basis.value, start_date: yearStart, end_date: today } })
+    trend.value = res.data
 }
 const trendSeries = computed(() => ([
     { name: 'Dividend', data: trend.value.map((t: any) => t.members) },
     { name: 'Incentive', data: trend.value.map((t: any) => t.incentive ?? 0) },
     { name: 'Company', data: trend.value.map((t: any) => t.company) },
-    { name: 'Royalties', data: trend.value.map((t: any) => t.royalty) },
 ]))
 const trendOptions = computed(() => ({
     chart: { type: 'line', toolbar: { show: false } },
     stroke: { width: 2, curve: 'smooth' },
     xaxis: { categories: trend.value.map((t: any) => t.month) },
-    colors: ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6'],
+    colors: ['#3b82f6', '#f59e0b', '#10b981'],
     yaxis: { labels: { formatter: (v: number) => '₱' + (v / 1000).toFixed(0) + 'K' } },
     legend: { position: 'top' },
 }))
@@ -223,7 +194,6 @@ const loadSnapshots = async () => { snapshots.value = (await api.get('/api/v1/di
 // ── Tab activation ────────────────────────────────────────────────────────────
 watch(subTab, (t) => {
     if (t === 'shareholders') loadShareholders()
-    else if (t === 'royalties') { loadRules(); loadShareholders() }
     else if (t === 'incentives') { loadIncentiveRules(); loadShareholders() }
     else if (t === 'trends') loadTrends()
     else if (t === 'history') loadSnapshots()
@@ -235,7 +205,6 @@ const tabs = [
     { key: 'distribution', label: 'Distribution', icon: PieChart },
     { key: 'shareholders', label: 'Shareholders', icon: Users },
     { key: 'incentives',   label: 'Incentives',   icon: Gift },
-    { key: 'royalties',    label: 'Royalties',     icon: Percent },
     { key: 'trends',       label: 'Trends',        icon: TrendingUp },
     { key: 'history',      label: 'History',       icon: History },
     { key: 'help',         label: 'Help',          icon: HelpCircle },
@@ -276,7 +245,6 @@ const tabs = [
                             <div class="flex rounded-lg border overflow-hidden">
                                 <button @click="basis = 'sales'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'sales' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Sales</button>
                                 <button @click="basis = 'profit'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'profit' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Profit</button>
-                                <button @click="basis = 'hybrid'; loadPreview()" :class="['px-3 py-2 text-sm font-semibold', basis === 'hybrid' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted']">Hybrid</button>
                             </div>
                         </div>
                         <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label><input v-model="startDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm" /></div>
@@ -305,7 +273,6 @@ const tabs = [
                 <div v-if="result.financial_summary" class="rounded-xl border bg-card shadow-sm p-4">
                     <div class="flex items-center justify-between mb-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Financial Summary — {{ result.financial_summary.period_end }}</p>
-                        <span v-if="result.basis === 'hybrid'" class="rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 px-2.5 py-0.5 text-xs font-semibold">Hybrid</span>
                     </div>
                     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         <div class="space-y-0.5"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Gross Sales</p><p class="text-base font-bold">{{ fmt(result.financial_summary.gross_sales) }}</p></div>
@@ -318,9 +285,8 @@ const tabs = [
                 </div>
 
                 <!-- Flow KPIs -->
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
                     <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">{{ result.base_label }}</p><p class="text-xl font-black mt-1">{{ fmt(result.base_amount) }}</p></div>
-                    <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Royalties</p><p class="text-xl font-black mt-1 text-amber-600">−{{ fmt(result.royalty.total) }}</p></div>
                     <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Distributable</p><p class="text-xl font-black mt-1 text-primary">{{ fmt(result.distributable) }}</p></div>
                     <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Company ({{ result.company_percentage }}%)</p><p class="text-xl font-black mt-1 text-emerald-600">{{ fmt(result.company_amount) }}</p></div>
                 </div>
@@ -345,8 +311,6 @@ const tabs = [
                         <div class="sm:hidden divide-y">
                             <div v-for="m in result.members" :key="m.shareholder_id" class="p-3 space-y-1.5">
                                 <div class="flex justify-between"><span class="font-semibold text-sm">{{ m.name }}</span><span class="text-xs text-muted-foreground">{{ m.percentage }}%</span></div>
-                                <div v-if="result.basis === 'hybrid'" class="flex justify-between text-xs text-muted-foreground"><span>Profit share</span><span>{{ fmt(m.profit_share) }}</span></div>
-                                <div v-if="result.basis === 'hybrid'" class="flex justify-between text-xs"><span class="text-muted-foreground">Royalties</span><span class="text-amber-600">{{ m.royalty_amount > 0 ? fmt(m.royalty_amount) : '—' }}</span></div>
                                 <div class="flex justify-between font-bold text-sm"><span>Dividend</span><span class="text-blue-600">{{ fmt(m.amount) }}</span></div>
                             </div>
                             <div class="p-3 bg-muted/30 flex justify-between font-bold text-sm"><span>Members total</span><span>{{ fmt(result.members_total) }}</span></div>
@@ -356,20 +320,16 @@ const tabs = [
                         <table class="hidden sm:table w-full text-sm">
                             <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr>
                                 <th class="px-4 py-2 text-left">Member</th><th class="px-4 py-2 text-right">%</th>
-                                <th v-if="result.basis === 'hybrid'" class="px-4 py-2 text-right">Profit Share</th>
-                                <th v-if="result.basis === 'hybrid'" class="px-4 py-2 text-right text-amber-600">Royalties</th>
                                 <th class="px-4 py-2 text-right">Dividend</th>
                             </tr></thead>
                             <tbody class="divide-y">
                                 <tr v-for="m in result.members" :key="m.shareholder_id" class="hover:bg-muted/20">
                                     <td class="px-4 py-2 font-medium">{{ m.name }}</td>
                                     <td class="px-4 py-2 text-right">{{ m.percentage }}%</td>
-                                    <td v-if="result.basis === 'hybrid'" class="px-4 py-2 text-right text-muted-foreground">{{ fmt(m.profit_share) }}</td>
-                                    <td v-if="result.basis === 'hybrid'" class="px-4 py-2 text-right text-amber-600">{{ m.royalty_amount > 0 ? fmt(m.royalty_amount) : '—' }}</td>
                                     <td class="px-4 py-2 text-right font-bold text-blue-600">{{ fmt(m.amount) }}</td>
                                 </tr>
-                                <tr class="bg-muted/30 font-bold"><td class="px-4 py-2">Members total</td><td class="px-4 py-2 text-right">{{ result.members_percentage }}%</td><td v-if="result.basis === 'hybrid'" colspan="2"></td><td class="px-4 py-2 text-right">{{ fmt(result.members_total) }}</td></tr>
-                                <tr class="bg-emerald-50 dark:bg-emerald-950/20 font-bold text-emerald-700 dark:text-emerald-400"><td class="px-4 py-2">Company retained</td><td class="px-4 py-2 text-right">{{ result.company_percentage }}%</td><td v-if="result.basis === 'hybrid'" colspan="2"></td><td class="px-4 py-2 text-right">{{ fmt(result.company_amount) }}</td></tr>
+                                <tr class="bg-muted/30 font-bold"><td class="px-4 py-2">Members total</td><td class="px-4 py-2 text-right">{{ result.members_percentage }}%</td><td class="px-4 py-2 text-right">{{ fmt(result.members_total) }}</td></tr>
+                                <tr class="bg-emerald-50 dark:bg-emerald-950/20 font-bold text-emerald-700 dark:text-emerald-400"><td class="px-4 py-2">Company retained</td><td class="px-4 py-2 text-right">{{ result.company_percentage }}%</td><td class="px-4 py-2 text-right">{{ fmt(result.company_amount) }}</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -483,13 +443,6 @@ const tabs = [
                     </table>
                 </div>
 
-                <!-- Royalty recipients -->
-                <div v-if="result.royalty?.by_recipient?.length" class="rounded-xl border bg-card shadow-sm p-4">
-                    <h3 class="font-bold text-sm mb-2">Royalty Recipients</h3>
-                    <div class="flex flex-wrap gap-2">
-                        <span v-for="r in result.royalty.by_recipient" :key="r.recipient_name" class="rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-3 py-1 text-sm font-medium">{{ r.recipient_name }}: {{ fmt(r.amount) }}</span>
-                    </div>
-                </div>
             </template>
         </template>
 
@@ -650,89 +603,12 @@ const tabs = [
             </div>
         </template>
 
-        <!-- ── ROYALTIES ────────────────────────────────────────────────── -->
-        <template v-if="subTab === 'royalties'">
-            <div class="rounded-xl border bg-card shadow-sm p-4">
-                <h3 class="font-bold text-sm mb-3">{{ rForm.id ? 'Edit' : 'Add' }} Royalty Rule</h3>
-                <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div><label class="text-xs text-muted-foreground block mb-1">Scope</label><select v-model="rForm.scope" class="w-full rounded-lg border bg-background px-3 py-2 text-sm"><option value="product">Product</option><option value="category">Category</option></select></div>
-                    <div v-if="rForm.scope === 'product'"><label class="text-xs text-muted-foreground block mb-1">Product *</label><select v-model="rForm.product_id" class="w-full rounded-lg border bg-background px-3 py-2 text-sm"><option value="">Select…</option><option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option></select></div>
-                    <div v-else><label class="text-xs text-muted-foreground block mb-1">Category *</label><select v-model="rForm.category_id" class="w-full rounded-lg border bg-background px-3 py-2 text-sm"><option value="">Select…</option><option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option></select></div>
-                    <div><label class="text-xs text-muted-foreground block mb-1">Recipient *</label><input v-model="rForm.recipient_name" placeholder="e.g. Brand Owner" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div><label class="text-xs text-muted-foreground block mb-1">Link to member</label><select v-model="rForm.shareholder_id" class="w-full rounded-lg border bg-background px-3 py-2 text-sm"><option value="">None</option><option v-for="s in shareholders" :key="s.id" :value="s.id">{{ s.name }}</option></select></div>
-                    <div><label class="text-xs text-muted-foreground block mb-1">Royalty %</label><input v-model="rForm.royalty_percentage" type="number" step="0.01" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div><label class="text-xs text-muted-foreground block mb-1">Effective</label><input v-model="rForm.effective_date" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div><label class="text-xs text-muted-foreground block mb-1">Expires (optional)</label><input v-model="rForm.expiration_date" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
-                    <div class="flex items-end gap-2">
-                        <button @click="saveRule" :disabled="rSaving || !rForm.recipient_name" class="flex-1 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{{ rForm.id ? 'Update' : 'Add Rule' }}</button>
-                        <button v-if="rForm.id" @click="resetRForm" class="rounded-lg border px-3 py-2"><X class="h-4 w-4" /></button>
-                    </div>
-                </div>
-            </div>
-            <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <!-- Mobile cards -->
-                <div class="sm:hidden divide-y">
-                    <div v-for="r in rules" :key="r.id" :class="['p-3 space-y-1.5', !r.is_active && 'opacity-50']">
-                        <div class="flex justify-between items-start">
-                            <div><span class="font-semibold text-sm">{{ r.recipient_name }}</span><span v-if="r.shareholder" class="text-xs text-muted-foreground"> ({{ r.shareholder.name }})</span></div>
-                            <span class="text-sm font-bold text-amber-600">{{ r.royalty_percentage }}%</span>
-                        </div>
-                        <div class="text-xs text-muted-foreground capitalize">{{ r.scope }}: {{ r.product?.name ?? r.category?.name ?? '—' }}</div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-xs text-muted-foreground">{{ r.effective_date?.slice(0,10) }} → {{ r.expiration_date?.slice(0,10) ?? '∞' }}</span>
-                            <div class="flex gap-1">
-                                <button @click="editRule(r)" class="p-1.5 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button>
-                                <button @click="deleteRule(r)" class="p-1.5 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button>
-                            </div>
-                        </div>
-                    </div>
-                    <div v-if="!rules.length" class="px-4 py-8 text-center text-muted-foreground text-sm">No royalty rules yet.</div>
-                </div>
-                <!-- Desktop table -->
-                <table class="hidden sm:table w-full text-sm">
-                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr><th class="px-4 py-2 text-left">Scope</th><th class="px-4 py-2 text-left">Target</th><th class="px-4 py-2 text-left">Recipient</th><th class="px-4 py-2 text-right">%</th><th class="px-4 py-2 text-left">Window</th><th class="px-4 py-2"></th></tr></thead>
-                    <tbody class="divide-y">
-                        <tr v-for="r in rules" :key="r.id" :class="['hover:bg-muted/20', !r.is_active && 'opacity-50']">
-                            <td class="px-4 py-2 capitalize">{{ r.scope }}</td>
-                            <td class="px-4 py-2">{{ r.product?.name ?? r.category?.name ?? '—' }}</td>
-                            <td class="px-4 py-2">{{ r.recipient_name }}<span v-if="r.shareholder" class="text-xs text-muted-foreground"> ({{ r.shareholder.name }})</span></td>
-                            <td class="px-4 py-2 text-right font-bold">{{ r.royalty_percentage }}%</td>
-                            <td class="px-4 py-2 text-xs text-muted-foreground">{{ r.effective_date?.slice(0,10) }} → {{ r.expiration_date?.slice(0,10) ?? '∞' }}</td>
-                            <td class="px-4 py-2 text-right">
-                                <button @click="editRule(r)" class="p-1 text-muted-foreground hover:text-blue-600"><Pencil class="h-4 w-4" /></button>
-                                <button @click="deleteRule(r)" class="p-1 text-muted-foreground hover:text-red-600"><Trash2 class="h-4 w-4" /></button>
-                            </td>
-                        </tr>
-                        <tr v-if="!rules.length"><td colspan="6" class="px-4 py-8 text-center text-muted-foreground">No royalty rules yet.</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </template>
-
         <!-- ── TRENDS ───────────────────────────────────────────────────── -->
         <template v-if="subTab === 'trends'">
             <div class="rounded-xl border bg-card shadow-sm p-4">
                 <h3 class="font-bold text-sm mb-2 flex items-center gap-2"><TrendingUp class="h-4 w-4 text-primary" /> Monthly Distribution Trend (this year)</h3>
                 <apexchart v-if="trend.length" type="line" height="320" :options="trendOptions" :series="trendSeries" />
                 <p v-else class="text-sm text-muted-foreground text-center py-10">No data.</p>
-            </div>
-            <div v-if="royaltyAnalytics" class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <div class="p-4 border-b flex items-center justify-between"><h3 class="font-bold text-sm">Top Royalty Products</h3><span class="text-sm font-bold text-amber-600">Total: {{ fmt(royaltyAnalytics.total) }}</span></div>
-                <div class="sm:hidden divide-y">
-                    <div v-for="p in royaltyAnalytics.by_product" :key="p.name" class="p-3 space-y-1">
-                        <div class="font-semibold text-sm">{{ p.name }}</div>
-                        <div class="flex justify-between text-xs text-muted-foreground"><span>Net Sales</span><span>{{ fmt(p.net_sales) }}</span></div>
-                        <div class="flex justify-between text-sm"><span class="text-muted-foreground">Rate</span><span class="font-bold text-amber-600">{{ p.rate }}% → {{ fmt(p.royalty) }}</span></div>
-                    </div>
-                    <div v-if="!royaltyAnalytics.by_product.length" class="px-4 py-8 text-center text-muted-foreground text-sm">No royalties in range.</div>
-                </div>
-                <table class="hidden sm:table w-full text-sm">
-                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr><th class="px-4 py-2 text-left">Product</th><th class="px-4 py-2 text-right">Net Sales</th><th class="px-4 py-2 text-right">Rate</th><th class="px-4 py-2 text-right">Royalty</th></tr></thead>
-                    <tbody class="divide-y">
-                        <tr v-for="p in royaltyAnalytics.by_product" :key="p.name" class="hover:bg-muted/20"><td class="px-4 py-2 font-medium">{{ p.name }}</td><td class="px-4 py-2 text-right">{{ fmt(p.net_sales) }}</td><td class="px-4 py-2 text-right">{{ p.rate }}%</td><td class="px-4 py-2 text-right font-bold text-amber-600">{{ fmt(p.royalty) }}</td></tr>
-                        <tr v-if="!royaltyAnalytics.by_product.length"><td colspan="4" class="px-4 py-8 text-center text-muted-foreground">No royalties in range.</td></tr>
-                    </tbody>
-                </table>
             </div>
         </template>
 
@@ -779,7 +655,7 @@ const tabs = [
                     <div class="grid sm:grid-cols-3 gap-3 mt-2">
                         <div class="rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-3">
                             <p class="font-bold text-sm text-blue-700 dark:text-blue-400 mb-1">Ownership Dividend</p>
-                            <p class="text-xs text-blue-800/80 dark:text-blue-300/80">Shareholders receive their ownership % of the distributable pool (base amount minus royalties). Company gets the remaining %.</p>
+                            <p class="text-xs text-blue-800/80 dark:text-blue-300/80">Shareholders receive their ownership % of the distributable pool. Company gets the remaining %.</p>
                         </div>
                         <div class="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3">
                             <p class="font-bold text-sm text-amber-700 dark:text-amber-400 mb-1">Sales Incentive Pool</p>

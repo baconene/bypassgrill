@@ -140,11 +140,6 @@ Route::prefix('v1')->group(function () {
         Route::put('/shareholders/{shareholder}', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'update']);
         Route::delete('/shareholders/{shareholder}', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'destroy']);
 
-        Route::get('/royalty-rules', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'index']);
-        Route::post('/royalty-rules', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'store']);
-        Route::put('/royalty-rules/{royaltyRule}', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'update']);
-        Route::delete('/royalty-rules/{royaltyRule}', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'destroy']);
-
         Route::get('/incentive-rules', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'index']);
         Route::post('/incentive-rules', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'store']);
         Route::put('/incentive-rules/{incentiveRule}', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'update']);
@@ -152,7 +147,6 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/distribution/preview', [\App\Http\Controllers\Api\V1\DistributionController::class, 'preview']);
         Route::get('/distribution/trend', [\App\Http\Controllers\Api\V1\DistributionController::class, 'trend']);
-        Route::get('/distribution/royalty-analytics', [\App\Http\Controllers\Api\V1\DistributionController::class, 'royaltyAnalytics']);
         Route::get('/distribution/export', [\App\Http\Controllers\Api\V1\DistributionController::class, 'export']);
         Route::get('/distribution/snapshots', [\App\Http\Controllers\Api\V1\DistributionController::class, 'snapshots']);
         Route::get('/distribution/snapshots/{snapshot}', [\App\Http\Controllers\Api\V1\DistributionController::class, 'showSnapshot']);
