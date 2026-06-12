@@ -379,7 +379,7 @@ const loadOrders = async (page = 1) => {
     const res = await api.get('/api/v1/orders', {
         params: {
             page,
-            per_page: 50,
+            per_page: 20,
             search: ordSearch.value || undefined,
             date_from: ordDateFrom.value || undefined,
             date_to: ordDateTo.value || undefined,
