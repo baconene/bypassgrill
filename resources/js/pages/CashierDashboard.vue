@@ -1085,7 +1085,7 @@ onMounted(loadTenders)
                             >
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2 flex-wrap">
-                                        <span class="text-sm font-bold">#{{ order.queue_number ?? order.id }}</span>
+                                        <span class="text-sm font-bold">#{{ order.id }}</span>
                                         <span class="text-xs bg-muted rounded-full px-2 py-0.5 capitalize">
                                             {{ order.order_type.replace('_', ' ') }}
                                         </span>
