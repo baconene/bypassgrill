@@ -152,5 +152,11 @@ Route::prefix('v1')->group(function () {
         Route::get('/distribution/snapshots', [\App\Http\Controllers\Api\V1\DistributionController::class, 'snapshots']);
         Route::get('/distribution/snapshots/{snapshot}', [\App\Http\Controllers\Api\V1\DistributionController::class, 'showSnapshot']);
         Route::post('/distribution/snapshots', [\App\Http\Controllers\Api\V1\DistributionController::class, 'storeSnapshot']);
+
+        // Tools — read-only SQL console (admin only — enforced in controller)
+        Route::get('/tools/tables', [\App\Http\Controllers\Api\V1\ToolsController::class, 'tables']);
+        Route::get('/tools/tables/{table}/columns', [\App\Http\Controllers\Api\V1\ToolsController::class, 'columns'])
+            ->where('table', '[A-Za-z0-9_]+');
+        Route::post('/tools/query', [\App\Http\Controllers\Api\V1\ToolsController::class, 'query']);
     });
 });

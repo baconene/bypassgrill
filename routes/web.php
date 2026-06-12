@@ -85,6 +85,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('distribution.index')
         ->middleware('role:admin');
 
+    // Tools — read-only SQL console (admin only)
+    Route::get('tools', [\App\Http\Controllers\ToolsPageController::class, 'index'])
+        ->name('tools.index')
+        ->middleware('role:admin');
+
     // Parcel Tracking
     Route::get('parcels', [ParcelPageController::class, 'index'])
         ->name('parcels.index');

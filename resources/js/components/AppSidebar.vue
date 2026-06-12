@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { Link, usePage } from '@inertiajs/vue3'
 import {
     LayoutGrid, ShoppingCart, ChefHat, Package, BarChart3, Settings, UtensilsCrossed, Users,
-    DollarSign, CalendarDays, Archive, PieChart,
+    DollarSign, CalendarDays, Archive, PieChart, Database,
 } from 'lucide-vue-next'
 import AppLogo from '@/components/AppLogo.vue'
 import NavFooter from '@/components/NavFooter.vue'
@@ -49,6 +49,7 @@ const mainNavItems = computed<NavItem[]>(() => {
         items.push({ title: 'Products', href: '/products', icon: UtensilsCrossed })
         items.push({ title: 'HRIS', href: '/hris', icon: Users })
         items.push({ title: 'Profit Sharing', href: '/distribution', icon: PieChart })
+        items.push({ title: 'Tools', href: '/tools', icon: Database })
         items.push({ title: 'Settings', href: '/settings/profile', icon: Settings })
     }
 
