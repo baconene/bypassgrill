@@ -4,6 +4,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\ProductOwnership;
 
 class Shareholder extends Model
 {
@@ -13,9 +14,9 @@ class Shareholder extends Model
         'ownership_percentage' => 'decimal:2',
     ];
 
-    public function royaltyRules(): HasMany
+    public function productOwnerships(): HasMany
     {
-        return $this->hasMany(RoyaltyRule::class);
+        return $this->hasMany(ProductOwnership::class);
     }
 
     public function user(): BelongsTo

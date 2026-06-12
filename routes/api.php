@@ -140,6 +140,10 @@ Route::prefix('v1')->group(function () {
         Route::put('/shareholders/{shareholder}', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'update']);
         Route::delete('/shareholders/{shareholder}', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'destroy']);
 
+        Route::get('/product-ownerships', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'index']);
+        Route::put('/product-ownerships/{productId}', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'update']);
+        Route::delete('/product-ownerships/{productId}', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'destroy']);
+
         Route::get('/incentive-rules', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'index']);
         Route::post('/incentive-rules', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'store']);
         Route::put('/incentive-rules/{incentiveRule}', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'update']);
