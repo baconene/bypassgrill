@@ -575,6 +575,15 @@ onMounted(loadTenders)
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                 </div>
+                <div v-if="cartStore.orderType === 'dine_in'">
+                    <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name</label>
+                    <input
+                        v-model="cartStore.customerName"
+                        type="text"
+                        placeholder="e.g. Juan"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                </div>
                 <!-- Takeout: customer name -->
                 <div v-if="cartStore.orderType === 'takeout'">
                     <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name / Alias</label>
@@ -745,6 +754,15 @@ onMounted(loadTenders)
                             :value="cartStore.tableNumber"
                             @input="(e) => cartStore.tableNumber = (e.target as HTMLInputElement).value"
                             type="text" placeholder="e.g. Table 5"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                    </div>
+                    <div v-if="cartStore.orderType === 'dine_in'">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name</label>
+                        <input
+                            v-model="cartStore.customerName"
+                            type="text"
+                            placeholder="e.g. Juan"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                     </div>
