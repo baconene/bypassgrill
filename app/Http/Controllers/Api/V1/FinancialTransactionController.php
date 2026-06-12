@@ -153,7 +153,7 @@ class FinancialTransactionController extends Controller {
             'amount'             => 'required|numeric|min:0.01',
             'description'        => 'required|string|max:255',
             'notes'              => 'nullable|string',
-            'transacted_at'      => 'nullable|date',
+            'transacted_at'      => 'nullable|date_format:Y-m-d\TH:i',
             'payment_tender_id'  => 'nullable|exists:payment_tenders,id',
         ]);
 
@@ -181,7 +181,7 @@ class FinancialTransactionController extends Controller {
             'amount'            => 'sometimes|numeric|min:0.01',
             'description'       => 'sometimes|string|max:255',
             'notes'             => 'nullable|string',
-            'transacted_at'     => 'sometimes|date',
+            'transacted_at'     => 'sometimes|date_format:Y-m-d\TH:i',
             'payment_tender_id' => 'nullable|exists:payment_tenders,id',
         ]);
 
