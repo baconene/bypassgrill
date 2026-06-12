@@ -148,6 +148,8 @@ class FinancialTransactionController extends Controller {
 
     public function store(Request $request): JsonResponse {
         if (! auth()->user()?->hasAnyRole('admin', 'auditor')) abort(403);
+        \Log::info('💾 POST /financial-transactions received', ['transacted_at_raw' => $request->input('transacted_at')]);
+
         $data = $request->validate([
             'type'               => 'required|in:expense,income_adjustment',
             'amount'             => 'required|numeric|min:0.01',
@@ -156,6 +158,8 @@ class FinancialTransactionController extends Controller {
             'transacted_at'      => 'nullable|date_format:Y-m-d\TH:i',
             'payment_tender_id'  => 'nullable|exists:payment_tenders,id',
         ]);
+
+        \Log::info('💾 After validation', ['transacted_at' => $data['transacted_at'] ?? 'null', 'now' => now()->toDateTimeString()]);
 
         $tx = FinancialTransaction::create([
             'type'               => $data['type'],
@@ -167,6 +171,7 @@ class FinancialTransactionController extends Controller {
             'payment_tender_id'  => $data['payment_tender_id'] ?? null,
             // running_balance is computed automatically by FinancialTransaction::boot()
         ]);
+        \Log::info('💾 Created transaction', ['id' => $tx->id, 'transacted_at' => $tx->transacted_at->toDateTimeString()]);
         return response()->json($tx, 201);
     }
 

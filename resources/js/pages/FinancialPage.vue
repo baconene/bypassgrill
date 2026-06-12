@@ -75,10 +75,7 @@ const fmt = (v: number | string | null | undefined) =>
 
 const fmtDatetime = (s: string) => {
     if (!s) return '—'
-    // The datetime is stored as Manila local time (no timezone in DB), but Eloquent
-    // treats it as UTC when serializing. Append +08:00 to parse it correctly as Manila time.
-    const manilaStr = s.includes('+') || s.endsWith('Z') ? s : (s + '+08:00')
-    const d = new Date(manilaStr)
+    const d = new Date(s)
     return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: '2-digit' }) + ' ' +
         d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
@@ -235,15 +232,17 @@ const loadFinancial = async (page = 1) => {
 const saveEntry = async () => {
     if (!entryForm.value.description.trim() || !entryForm.value.amount) return
     entrySaving.value = true
+    const payload = {
+        type: entryForm.value.type,
+        amount: parseFloat(entryForm.value.amount),
+        description: entryForm.value.description,
+        notes: entryForm.value.notes || null,
+        transacted_at: entryForm.value.transacted_at || null,
+        payment_tender_id: entryForm.value.payment_tender_id || null,
+    }
+    console.log('📤 Sending transacted_at:', entryForm.value.transacted_at)
     try {
-        await api.post('/api/v1/financial-transactions', {
-            type: entryForm.value.type,
-            amount: parseFloat(entryForm.value.amount),
-            description: entryForm.value.description,
-            notes: entryForm.value.notes || null,
-            transacted_at: entryForm.value.transacted_at || null,
-            payment_tender_id: entryForm.value.payment_tender_id || null,
-        })
+        await api.post('/api/v1/financial-transactions', payload)
         const label = entryForm.value.type === 'income_adjustment' ? 'Income adjustment' : 'Expense'
         toast.success(`${label} recorded.`)
         entryForm.value = { type: 'expense', description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null }
