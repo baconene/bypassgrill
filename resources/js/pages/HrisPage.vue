@@ -275,13 +275,11 @@ const statusColor: Record<string, string> = {
 <template>
     <Head title="HRIS" />
 
-    <div class="space-y-6 p-4 max-w-6xl mx-auto">
+    <div class="space-y-6 max-w-6xl mx-auto">
         <!-- Header -->
-        <div class="flex items-center justify-between">
-            <div>
-                <h1 class="text-2xl font-bold">HRIS — Human Resources</h1>
-                <p class="text-sm text-muted-foreground">Employee directory and payroll management</p>
-            </div>
+        <div>
+            <h1 class="text-xl sm:text-2xl font-bold">HRIS — Human Resources</h1>
+            <p class="text-sm text-muted-foreground">Employee directory and payroll management</p>
         </div>
 
         <!-- Summary cards -->
@@ -344,54 +342,78 @@ const statusColor: Record<string, string> = {
                 <div v-if="filteredEmployees.length === 0" class="p-10 text-center text-muted-foreground">
                     No employees found.
                 </div>
-                <div v-else class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-muted/50">
-                        <tr>
-                            <th class="px-4 py-2 text-left font-medium text-muted-foreground">Name</th>
-                            <th class="px-4 py-2 text-left font-medium text-muted-foreground">Position</th>
-                            <th class="px-4 py-2 text-left font-medium text-muted-foreground">Type</th>
-                            <th class="px-4 py-2 text-right font-medium text-muted-foreground">Base Rate</th>
-                            <th class="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
-                            <th class="px-4 py-2 text-left font-medium text-muted-foreground">Hired</th>
-                            <th class="px-4 py-2"></th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y">
-                        <tr v-for="emp in filteredEmployees" :key="emp.id" class="hover:bg-muted/30">
-                            <td class="px-4 py-2 font-semibold">{{ emp.name }}</td>
-                            <td class="px-4 py-2 text-muted-foreground">{{ emp.position ?? '—' }}</td>
-                            <td class="px-4 py-2">
-                                <span class="rounded-full bg-muted px-2 py-0.5 text-xs">
-                                    {{ empTypeLabel[emp.employment_type] }}
-                                </span>
-                            </td>
-                            <td class="px-4 py-2 text-right font-mono">
-                                ₱{{ formatCurrency(emp.base_rate) }}{{ salaryTypeLabel[emp.salary_type] }}
-                            </td>
-                            <td class="px-4 py-2">
-                                <span
-                                    class="rounded-full px-2 py-0.5 text-xs font-medium"
-                                    :class="emp.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'"
-                                >
-                                    {{ emp.is_active ? 'Active' : 'Inactive' }}
-                                </span>
-                            </td>
-                            <td class="px-4 py-2 text-muted-foreground text-xs">{{ emp.hired_at ?? '—' }}</td>
-                            <td class="px-4 py-2">
-                                <div class="flex gap-1 justify-end">
-                                    <button @click="openEditEmp(emp)" class="p-1 rounded hover:bg-muted" title="Edit">
-                                        <Pencil class="h-3.5 w-3.5 text-muted-foreground" />
-                                    </button>
-                                    <button @click="deleteEmployee(emp)" class="p-1 rounded hover:bg-red-50" title="Delete">
-                                        <Trash2 class="h-3.5 w-3.5 text-red-500" />
-                                    </button>
+                <template v-else>
+                    <!-- Mobile: card list -->
+                    <div class="sm:hidden divide-y">
+                        <div v-for="emp in filteredEmployees" :key="emp.id" class="flex items-start justify-between gap-3 px-4 py-3">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-semibold text-sm">{{ emp.name }}</span>
+                                    <span class="rounded-full px-2 py-0.5 text-xs font-medium"
+                                        :class="emp.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'">
+                                        {{ emp.is_active ? 'Active' : 'Inactive' }}
+                                    </span>
                                 </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-                </div>
+                                <p class="text-xs text-muted-foreground mt-0.5">{{ emp.position ?? '—' }} · {{ empTypeLabel[emp.employment_type] }}</p>
+                                <p class="text-xs font-mono mt-0.5">₱{{ formatCurrency(emp.base_rate) }}{{ salaryTypeLabel[emp.salary_type] }}</p>
+                                <p v-if="emp.hired_at" class="text-xs text-muted-foreground mt-0.5">Hired {{ emp.hired_at }}</p>
+                            </div>
+                            <div class="flex gap-1 shrink-0">
+                                <button @click="openEditEmp(emp)" class="p-1.5 rounded hover:bg-muted" title="Edit">
+                                    <Pencil class="h-4 w-4 text-muted-foreground" />
+                                </button>
+                                <button @click="deleteEmployee(emp)" class="p-1.5 rounded hover:bg-red-50" title="Delete">
+                                    <Trash2 class="h-4 w-4 text-red-500" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Desktop: table -->
+                    <div class="hidden sm:block overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-muted/50">
+                                <tr>
+                                    <th class="px-4 py-2 text-left font-medium text-muted-foreground">Name</th>
+                                    <th class="px-4 py-2 text-left font-medium text-muted-foreground">Position</th>
+                                    <th class="px-4 py-2 text-left font-medium text-muted-foreground">Type</th>
+                                    <th class="px-4 py-2 text-right font-medium text-muted-foreground">Base Rate</th>
+                                    <th class="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
+                                    <th class="px-4 py-2 text-left font-medium text-muted-foreground">Hired</th>
+                                    <th class="px-4 py-2"></th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y">
+                                <tr v-for="emp in filteredEmployees" :key="emp.id" class="hover:bg-muted/30">
+                                    <td class="px-4 py-2 font-semibold">{{ emp.name }}</td>
+                                    <td class="px-4 py-2 text-muted-foreground">{{ emp.position ?? '—' }}</td>
+                                    <td class="px-4 py-2">
+                                        <span class="rounded-full bg-muted px-2 py-0.5 text-xs">{{ empTypeLabel[emp.employment_type] }}</span>
+                                    </td>
+                                    <td class="px-4 py-2 text-right font-mono">
+                                        ₱{{ formatCurrency(emp.base_rate) }}{{ salaryTypeLabel[emp.salary_type] }}
+                                    </td>
+                                    <td class="px-4 py-2">
+                                        <span class="rounded-full px-2 py-0.5 text-xs font-medium"
+                                            :class="emp.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'">
+                                            {{ emp.is_active ? 'Active' : 'Inactive' }}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-2 text-muted-foreground text-xs">{{ emp.hired_at ?? '—' }}</td>
+                                    <td class="px-4 py-2">
+                                        <div class="flex gap-1 justify-end">
+                                            <button @click="openEditEmp(emp)" class="p-1 rounded hover:bg-muted" title="Edit">
+                                                <Pencil class="h-3.5 w-3.5 text-muted-foreground" />
+                                            </button>
+                                            <button @click="deleteEmployee(emp)" class="p-1 rounded hover:bg-red-50" title="Delete">
+                                                <Trash2 class="h-3.5 w-3.5 text-red-500" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </template>
             </div>
         </div>
 
@@ -417,67 +439,98 @@ const statusColor: Record<string, string> = {
                 <div v-if="filteredPayroll.length === 0" class="p-10 text-center text-muted-foreground">
                     No payroll records found.
                 </div>
-                <div v-else class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-muted/50">
-                        <tr>
-                            <th class="px-4 py-2 text-left font-medium text-muted-foreground">Employee</th>
-                            <th class="px-4 py-2 text-left font-medium text-muted-foreground">Period</th>
-                            <th class="px-4 py-2 text-right font-medium text-muted-foreground">Days</th>
-                            <th class="px-4 py-2 text-right font-medium text-muted-foreground">Gross</th>
-                            <th class="px-4 py-2 text-right font-medium text-muted-foreground">Deductions</th>
-                            <th class="px-4 py-2 text-right font-medium text-muted-foreground">Net Pay</th>
-                            <th class="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
-                            <th class="px-4 py-2"></th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y">
-                        <tr v-for="r in filteredPayroll" :key="r.id" class="hover:bg-muted/30">
-                            <td class="px-4 py-2 font-semibold">{{ r.employee_name }}</td>
-                            <td class="px-4 py-2 text-muted-foreground text-xs">
-                                {{ r.period_start }} → {{ r.period_end }}
-                            </td>
-                            <td class="px-4 py-2 text-right">{{ r.days_worked }}</td>
-                            <td class="px-4 py-2 text-right font-mono">₱{{ formatCurrency(r.gross_pay) }}</td>
-                            <td class="px-4 py-2 text-right font-mono text-red-600">
-                                {{ r.deductions > 0 ? '-₱' + formatCurrency(r.deductions) : '—' }}
-                            </td>
-                            <td class="px-4 py-2 text-right font-bold">₱{{ formatCurrency(r.net_pay) }}</td>
-                            <td class="px-4 py-2">
-                                <span
-                                    class="rounded-full px-2 py-0.5 text-xs font-medium"
-                                    :class="statusColor[r.status]"
-                                >
+                <template v-else>
+                    <!-- Mobile: card list -->
+                    <div class="sm:hidden divide-y">
+                        <div v-for="r in filteredPayroll" :key="r.id" class="px-4 py-3 space-y-2">
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <p class="font-semibold text-sm">{{ r.employee_name }}</p>
+                                    <p class="text-xs text-muted-foreground">{{ r.period_start }} → {{ r.period_end }} · {{ r.days_worked }} days</p>
+                                </div>
+                                <span class="rounded-full px-2 py-0.5 text-xs font-medium capitalize shrink-0" :class="statusColor[r.status]">
                                     {{ r.status }}
                                 </span>
-                            </td>
-                            <td class="px-4 py-2">
-                                <div class="flex gap-1 justify-end">
-                                    <button
-                                        v-if="r.status !== 'paid'"
-                                        @click="markPaid(r)"
-                                        class="flex items-center gap-1 px-2 py-0.5 rounded bg-green-50 hover:bg-green-100 text-green-700 text-xs font-medium"
-                                        title="Mark as Paid"
-                                    >
-                                        <CheckCircle class="h-3 w-3" /> Pay
-                                    </button>
-                                    <button
-                                        v-if="r.status !== 'paid'"
-                                        @click="deletePayroll(r)"
-                                        class="p-1 rounded hover:bg-red-50"
-                                        title="Delete"
-                                    >
-                                        <Trash2 class="h-3.5 w-3.5 text-red-500" />
-                                    </button>
-                                    <span v-if="r.status === 'paid'" class="text-xs text-muted-foreground">
-                                        {{ r.paid_at ? new Date(r.paid_at).toLocaleDateString() : '' }}
-                                    </span>
+                            </div>
+                            <div class="flex items-center gap-4 text-sm">
+                                <div>
+                                    <p class="text-xs text-muted-foreground">Gross</p>
+                                    <p class="font-mono">₱{{ formatCurrency(r.gross_pay) }}</p>
                                 </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-                </div>
+                                <div v-if="r.deductions > 0">
+                                    <p class="text-xs text-muted-foreground">Deductions</p>
+                                    <p class="font-mono text-red-600">−₱{{ formatCurrency(r.deductions) }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-muted-foreground">Net Pay</p>
+                                    <p class="font-bold">₱{{ formatCurrency(r.net_pay) }}</p>
+                                </div>
+                            </div>
+                            <div v-if="r.status !== 'paid'" class="flex gap-2">
+                                <button @click="markPaid(r)"
+                                    class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-50 hover:bg-green-100 text-green-700 text-xs font-semibold border border-green-200">
+                                    <CheckCircle class="h-3.5 w-3.5" /> Mark as Paid
+                                </button>
+                                <button @click="deletePayroll(r)" class="p-1.5 rounded-lg hover:bg-red-50 border" title="Delete">
+                                    <Trash2 class="h-4 w-4 text-red-500" />
+                                </button>
+                            </div>
+                            <p v-else class="text-xs text-muted-foreground">
+                                Paid {{ r.paid_at ? new Date(r.paid_at).toLocaleDateString() : '' }}
+                            </p>
+                        </div>
+                    </div>
+                    <!-- Desktop: table -->
+                    <div class="hidden sm:block overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-muted/50">
+                                <tr>
+                                    <th class="px-4 py-2 text-left font-medium text-muted-foreground">Employee</th>
+                                    <th class="px-4 py-2 text-left font-medium text-muted-foreground">Period</th>
+                                    <th class="px-4 py-2 text-right font-medium text-muted-foreground">Days</th>
+                                    <th class="px-4 py-2 text-right font-medium text-muted-foreground">Gross</th>
+                                    <th class="px-4 py-2 text-right font-medium text-muted-foreground">Deductions</th>
+                                    <th class="px-4 py-2 text-right font-medium text-muted-foreground">Net Pay</th>
+                                    <th class="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
+                                    <th class="px-4 py-2"></th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y">
+                                <tr v-for="r in filteredPayroll" :key="r.id" class="hover:bg-muted/30">
+                                    <td class="px-4 py-2 font-semibold">{{ r.employee_name }}</td>
+                                    <td class="px-4 py-2 text-muted-foreground text-xs">{{ r.period_start }} → {{ r.period_end }}</td>
+                                    <td class="px-4 py-2 text-right">{{ r.days_worked }}</td>
+                                    <td class="px-4 py-2 text-right font-mono">₱{{ formatCurrency(r.gross_pay) }}</td>
+                                    <td class="px-4 py-2 text-right font-mono text-red-600">
+                                        {{ r.deductions > 0 ? '-₱' + formatCurrency(r.deductions) : '—' }}
+                                    </td>
+                                    <td class="px-4 py-2 text-right font-bold">₱{{ formatCurrency(r.net_pay) }}</td>
+                                    <td class="px-4 py-2">
+                                        <span class="rounded-full px-2 py-0.5 text-xs font-medium capitalize" :class="statusColor[r.status]">
+                                            {{ r.status }}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-2">
+                                        <div class="flex gap-1 justify-end">
+                                            <button v-if="r.status !== 'paid'" @click="markPaid(r)"
+                                                class="flex items-center gap-1 px-2 py-0.5 rounded bg-green-50 hover:bg-green-100 text-green-700 text-xs font-medium"
+                                                title="Mark as Paid">
+                                                <CheckCircle class="h-3 w-3" /> Pay
+                                            </button>
+                                            <button v-if="r.status !== 'paid'" @click="deletePayroll(r)"
+                                                class="p-1 rounded hover:bg-red-50" title="Delete">
+                                                <Trash2 class="h-3.5 w-3.5 text-red-500" />
+                                            </button>
+                                            <span v-if="r.status === 'paid'" class="text-xs text-muted-foreground">
+                                                {{ r.paid_at ? new Date(r.paid_at).toLocaleDateString() : '' }}
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </template>
             </div>
         </div>
     </div>
