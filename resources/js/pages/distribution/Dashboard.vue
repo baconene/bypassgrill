@@ -91,13 +91,52 @@ const combinedSummary = computed(() => {
     }))
 })
 
-// ── Pie chart ─────────────────────────────────────────────────────────────────
+// ── Pie chart — Ownership Dividend ───────────────────────────────────────────
 const pieSeries = computed(() => (result.value?.chart ?? []).map((c: any) => c.value))
 const pieOptions = computed(() => ({
     chart: { type: 'pie' },
     labels: (result.value?.chart ?? []).map((c: any) => c.label),
     legend: { position: 'bottom' },
     colors: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#14b8a6', '#6b7280'],
+    dataLabels: { formatter: (val: number) => val.toFixed(1) + '%' },
+    tooltip: { y: { formatter: (val: number) => '₱' + val.toLocaleString('en-PH', { minimumFractionDigits: 2 }) } },
+}))
+
+// ── Pie chart — Product Incentive Distribution ────────────────────────────────
+const incentivePieData = computed(() => {
+    const inc = result.value?.incentive
+    if (!inc || (!(inc.by_shareholder?.length) && !(inc.company_retained > 0))) return null
+    const slices = [
+        ...(inc.by_shareholder ?? []).map((s: any) => ({ label: s.name, value: s.incentive_amount })),
+        ...(inc.company_retained > 0 ? [{ label: 'Company (unowned)', value: inc.company_retained }] : []),
+    ]
+    return slices
+})
+const incentivePieSeries  = computed(() => incentivePieData.value?.map(s => s.value) ?? [])
+const incentivePieOptions = computed(() => ({
+    chart: { type: 'pie' },
+    labels: incentivePieData.value?.map(s => s.label) ?? [],
+    legend: { position: 'bottom' },
+    colors: ['#f59e0b', '#f97316', '#eab308', '#84cc16', '#10b981', '#6b7280', '#8b5cf6'],
+    dataLabels: { formatter: (val: number) => val.toFixed(1) + '%' },
+    tooltip: { y: { formatter: (val: number) => '₱' + val.toLocaleString('en-PH', { minimumFractionDigits: 2 }) } },
+}))
+
+// ── Pie chart — Combined (Dividend + Incentive) ───────────────────────────────
+const combinedPieData = computed(() => {
+    if (!result.value || !combinedSummary.value.length) return null
+    const companyTotal = Math.round(((result.value.company_amount ?? 0) + (result.value.incentive?.company_retained ?? 0)) * 100) / 100
+    return [
+        ...combinedSummary.value.map((m: any) => ({ label: m.name, value: m.total_amount })),
+        ...(companyTotal > 0 ? [{ label: 'Company', value: companyTotal }] : []),
+    ]
+})
+const combinedPieSeries  = computed(() => combinedPieData.value?.map(s => s.value) ?? [])
+const combinedPieOptions = computed(() => ({
+    chart: { type: 'pie' },
+    labels: combinedPieData.value?.map(s => s.label) ?? [],
+    legend: { position: 'bottom' },
+    colors: ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#14b8a6', '#10b981', '#6b7280'],
     dataLabels: { formatter: (val: number) => val.toFixed(1) + '%' },
     tooltip: { y: { formatter: (val: number) => '₱' + val.toLocaleString('en-PH', { minimumFractionDigits: 2 }) } },
 }))
@@ -426,6 +465,12 @@ const tabs = [
                                 </div>
                             </div>
 
+                            <!-- Incentive pie chart -->
+                            <div v-if="incentivePieData" class="p-4 border-b">
+                                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Incentive Distribution</p>
+                                <apexchart type="pie" height="220" :options="incentivePieOptions" :series="incentivePieSeries" />
+                            </div>
+
                             <!-- No sales in period -->
                             <div v-if="!result.incentive.by_product?.length" class="p-6 text-center">
                                 <Package class="h-8 w-8 text-muted-foreground mx-auto mb-2" />
@@ -499,6 +544,10 @@ const tabs = [
                     <div class="p-4 border-b">
                         <h3 class="font-bold text-sm">Total Payout per Shareholder</h3>
                         <p class="text-xs text-muted-foreground mt-0.5">Ownership dividend + product ownership incentive combined.</p>
+                    </div>
+                    <!-- Combined pie chart -->
+                    <div v-if="combinedPieData" class="p-4 border-b">
+                        <apexchart type="pie" height="260" :options="combinedPieOptions" :series="combinedPieSeries" />
                     </div>
                     <!-- Mobile cards -->
                     <div class="sm:hidden divide-y">
