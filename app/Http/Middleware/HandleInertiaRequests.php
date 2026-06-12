@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Support\Brand;
+use App\Support\SystemClock;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Middleware;
@@ -33,6 +34,10 @@ class HandleInertiaRequests extends Middleware
             'logoUrl' => Storage::disk('public')->exists('logo/current.png')
                 ? Storage::disk('public')->url('logo/current.png')
                 : null,
+            'systemClock' => [
+                'active' => SystemClock::isActive(),
+                'label'  => SystemClock::isActive() ? SystemClock::status()['label'] : null,
+            ],
         ];
     }
 }
