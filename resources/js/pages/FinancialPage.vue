@@ -75,7 +75,10 @@ const fmt = (v: number | string | null | undefined) =>
 
 const fmtDatetime = (s: string) => {
     if (!s) return '—'
-    const d = new Date(s)
+    // The datetime is stored as Manila local time (no timezone in DB), but Eloquent
+    // treats it as UTC when serializing. Append +08:00 to parse it correctly as Manila time.
+    const manilaStr = s.includes('+') || s.endsWith('Z') ? s : (s + '+08:00')
+    const d = new Date(manilaStr)
     return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: '2-digit' }) + ' ' +
         d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
