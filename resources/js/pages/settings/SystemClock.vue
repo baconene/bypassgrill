@@ -104,6 +104,7 @@ const disable = () => {
                 <div class="flex-1">
                     <label class="text-xs font-medium text-muted-foreground block mb-1">Date &amp; time (Asia/Manila)</label>
                     <input v-model="datetime" type="datetime-local"
+                        min="2000-01-01T00:00" max="2099-12-31T23:59"
                         class="w-full sm:max-w-xs rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <button @click="enable" :disabled="saving"
