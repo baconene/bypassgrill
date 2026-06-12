@@ -106,7 +106,7 @@ class ReportController extends Controller
             $query->where('ingredient_id', request()->input('ingredient_id'));
         }
 
-        return response()->json($query->paginate(50));
+        return response()->json($query->paginate(20));
     }
 
     public function monthlyChart(): JsonResponse

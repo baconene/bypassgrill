@@ -405,8 +405,16 @@ const loadInventory = async (page = 1) => {
             ingredient_id: invIngredientId.value || undefined,
         },
     })
-    invTransactions.value = res.data.data ?? []
-    invMeta.value = res.data.meta ?? null
+    const invRaw = res.data
+    invTransactions.value = invRaw.data ?? []
+    // Backend returns old-style pagination (keys at top level, no nested meta)
+    invMeta.value = invRaw.meta ?? (invRaw.current_page != null ? {
+        current_page: invRaw.current_page,
+        last_page: invRaw.last_page,
+        from: invRaw.from,
+        to: invRaw.to,
+        total: invRaw.total,
+    } : null)
 }
 
 const loadFinancial = async (page = 1) => {

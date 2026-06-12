@@ -56,7 +56,7 @@ class FinancialTransactionController extends Controller {
         if ($request->start_date) $q->whereDate('transacted_at', '>=', $request->start_date);
         if ($request->end_date)   $q->whereDate('transacted_at', '<=', $request->end_date);
 
-        $paginated = $q->paginate(50);
+        $paginated = $q->paginate(20);
         $paginated->getCollection()->transform(function ($tx) use ($balMap) {
             $tx->financial_balance = $balMap[$tx->id] ?? null;
             return $tx;
