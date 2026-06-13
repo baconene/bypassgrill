@@ -80,9 +80,11 @@ const tabs: { key: Tab; label: string }[] = [
 ]
 
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
-const today = new Date().toISOString().split('T')[0]
-const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000).toISOString().split('T')[0]
-const selectedDate = ref(today)
+const toManilaDate = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+const manilaToday = () => toManilaDate(new Date())
+const daysAgo = (n: number) => toManilaDate(new Date(Date.now() - n * 864e5))
+const manilaMonthStart = () => { const d = new Date(); return toManilaDate(new Date(d.getFullYear(), d.getMonth(), 1)) }
+const selectedDate = ref(manilaToday())
 const selectedYear = ref(new Date().getFullYear())
 const selectedMonth = ref(new Date().getMonth() + 1)
 const dailyReport = ref<DailyReport | null>(props.initialDailyReport)
@@ -90,13 +92,13 @@ const monthlyReport = ref<MonthlyReport | null>(null)
 
 // ── Products ───────────────────────────────────────────────────────────────────
 const productSales = ref<ProductSale[]>(props.initialProductSales)
-const prodDateFrom = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
-const prodDateTo = ref(today)
+const prodDateFrom = ref(manilaMonthStart())
+const prodDateTo = ref(manilaToday())
 
 // ── Orders ─────────────────────────────────────────────────────────────────────
 const ordSearch = ref('')
-const ordDateFrom = ref(thirtyDaysAgo)
-const ordDateTo = ref(today)
+const ordDateFrom = ref(daysAgo(30))
+const ordDateTo = ref(manilaToday())
 const ordStatus = ref('')
 const ordPayment = ref('')
 const ordersData = ref<OrderRow[]>([])
@@ -105,8 +107,8 @@ const ordersSummary = ref<{ total_count: number; paid_count: number; unpaid_coun
 const ordPage = ref(1)
 
 // ── Inventory transactions ─────────────────────────────────────────────────────
-const invDateFrom = ref(thirtyDaysAgo)
-const invDateTo = ref(today)
+const invDateFrom = ref(daysAgo(30))
+const invDateTo = ref(manilaToday())
 const invType = ref('')
 const invIngredientId = ref('')
 const invTransactions = ref<InvTransaction[]>([])
@@ -152,8 +154,8 @@ interface BillForecast {
     total_forecast: number; months: number
 }
 
-const plStartDate = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
-const plEndDate = ref(today)
+const plStartDate = ref(manilaMonthStart())
+const plEndDate = ref(manilaToday())
 const plIncludeCogs = ref(true)
 const plReport = ref<PL | null>(null)
 
@@ -171,8 +173,8 @@ const monthChartLoading   = ref(false)
 const monthChartCollapsed = ref(false)
 
 // ── Financial ─────────────────────────────────────────────────────────────────
-const ftStartDate = ref(thirtyDaysAgo)
-const ftEndDate = ref(today)
+const ftStartDate = ref(daysAgo(30))
+const ftEndDate = ref(manilaToday())
 const ftTypeFilter = ref('')
 const ftSummary = ref<FtSummary | null>(null)
 const ftTransactions = ref<FtTransaction[]>([])
