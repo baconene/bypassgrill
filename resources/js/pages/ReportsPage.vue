@@ -7,6 +7,7 @@ import {
     BarChart3, Download, RefreshCw, TrendingUp, TrendingDown,
     DollarSign, Plus, X, Search, ChevronLeft, ChevronRight, ChevronDown,
     ShoppingBag, ClipboardList, Package, Trash2, Pencil, CalendarDays,
+    ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-vue-next'
 import AnalyticsTab from '@/pages/reports/AnalyticsTab.vue'
 
@@ -46,7 +47,8 @@ interface FtTransaction {
 interface OrderRow {
     id: number; queue_number: number | null; order_type: string; status: string
     payment_status: string; table_number: string | null; notes: string | null
-    total_amount: number; items: { data: any[] } | any[]; user?: { data?: any; name?: string }
+    customer_name: string | null; total_amount: number
+    items: { data: any[] } | any[]; user?: { data?: any; name?: string }
     created_at: string
 }
 interface InvTransaction {
@@ -105,6 +107,18 @@ const ordersData = ref<OrderRow[]>([])
 const ordersMeta = ref<any>(null)
 const ordersSummary = ref<{ total_count: number; paid_count: number; unpaid_count: number; paid_revenue: number } | null>(null)
 const ordPage = ref(1)
+const ordSortBy = ref('created_at')
+const ordSortDir = ref<'asc' | 'desc'>('desc')
+
+const sortOrders = (col: string) => {
+    if (ordSortBy.value === col) {
+        ordSortDir.value = ordSortDir.value === 'asc' ? 'desc' : 'asc'
+    } else {
+        ordSortBy.value = col
+        ordSortDir.value = col === 'total_amount' ? 'desc' : 'asc'
+    }
+    loadOrders(1)
+}
 
 // ── Inventory transactions ─────────────────────────────────────────────────────
 const invDateFrom = ref(daysAgo(30))
@@ -388,6 +402,8 @@ const loadOrders = async (page = 1) => {
             date_to: ordDateTo.value || undefined,
             status: ordStatus.value || undefined,
             payment_status: ordPayment.value || undefined,
+            sort_by: ordSortBy.value,
+            sort_dir: ordSortDir.value,
         },
     })
     ordersData.value = (res.data.data ?? []).map((o: any) => ({
@@ -965,13 +981,49 @@ onMounted(async () => {
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
                                 <th class="px-4 py-3 text-left">Order</th>
-                                <th class="px-4 py-3 text-left">Date & Time</th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('created_at')">
+                                    <span class="inline-flex items-center gap-1">Date & Time
+                                        <ArrowUp v-if="ordSortBy === 'created_at' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'created_at' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
                                 <th class="px-4 py-3 text-left">Type</th>
                                 <th class="px-4 py-3 text-left">Table</th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('customer_name')">
+                                    <span class="inline-flex items-center gap-1">Customer
+                                        <ArrowUp v-if="ordSortBy === 'customer_name' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'customer_name' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
                                 <th class="px-4 py-3 text-center">Items</th>
-                                <th class="px-4 py-3 text-left">Status</th>
-                                <th class="px-4 py-3 text-left">Payment</th>
-                                <th class="px-4 py-3 text-right">Total</th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('status')">
+                                    <span class="inline-flex items-center gap-1">Status
+                                        <ArrowUp v-if="ordSortBy === 'status' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'status' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('payment_status')">
+                                    <span class="inline-flex items-center gap-1">Payment
+                                        <ArrowUp v-if="ordSortBy === 'payment_status' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'payment_status' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
+                                <th class="px-4 py-3 text-right cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('total_amount')">
+                                    <span class="inline-flex items-center justify-end gap-1">Total
+                                        <ArrowUp v-if="ordSortBy === 'total_amount' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'total_amount' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
                                 <th class="px-4 py-3 text-left">Notes</th>
                             </tr>
                         </thead>
@@ -986,6 +1038,7 @@ onMounted(async () => {
                                 <td class="px-4 py-3 whitespace-nowrap text-muted-foreground text-xs">{{ fmtDatetime(order.created_at) }}</td>
                                 <td class="px-4 py-3"><span class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{{ orderTypeBadge(order.order_type) }}</span></td>
                                 <td class="px-4 py-3 text-muted-foreground">{{ order.table_number ?? '—' }}</td>
+                                <td class="px-4 py-3 text-muted-foreground">{{ order.customer_name ?? '—' }}</td>
                                 <td class="px-4 py-3 text-center font-medium">{{ itemCount(order.items) }}</td>
                                 <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusBadge(order.status)]">{{ order.status }}</span></td>
                                 <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payBadge(order.payment_status)]">{{ order.payment_status }}</span></td>
@@ -993,7 +1046,7 @@ onMounted(async () => {
                                 <td class="px-4 py-3 text-xs text-muted-foreground max-w-[140px] truncate">{{ order.notes ?? '—' }}</td>
                             </tr>
                             <tr v-if="ordersData.length === 0 && !loading">
-                                <td colspan="9" class="px-4 py-10 text-center text-muted-foreground">No orders found. Adjust filters and click Generate.</td>
+                                <td colspan="10" class="px-4 py-10 text-center text-muted-foreground">No orders found. Adjust filters and click Generate.</td>
                             </tr>
                         </tbody>
                     </table>

@@ -40,13 +40,18 @@ class OrderController extends Controller
                     Carbon::parse($request->date_to, 'Asia/Manila')->endOfDay()))
                 ->when($request->search, fn($q) => $q->where(function ($q) use ($request) {
                     $q->where('id', $request->search)
+                      ->orWhere('customer_name', 'like', "%{$request->search}%")
                       ->orWhere('notes', 'like', "%{$request->search}%")
                       ->orWhere('table_number', 'like', "%{$request->search}%");
                 }));
         };
 
+        $allowed  = ['created_at', 'total_amount', 'customer_name', 'status', 'payment_status'];
+        $sortBy   = in_array($request->sort_by, $allowed) ? $request->sort_by : 'created_at';
+        $sortDir  = $request->sort_dir === 'asc' ? 'asc' : 'desc';
+
         $orders = $applyFilters(Order::with(['items.product', 'user', 'queueNumber']))
-            ->orderByDesc('created_at')
+            ->orderBy($sortBy, $sortDir)
             ->paginate(min((int) $request->input('per_page', 20), 100));
 
         $agg = $applyFilters(Order::query())
