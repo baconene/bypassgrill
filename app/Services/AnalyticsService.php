@@ -47,16 +47,32 @@ class AnalyticsService
         ];
     }
 
-    /** Manila local hour / day-of-week SQL expressions. */
+    /** Manila local hour / day-of-week / date SQL expressions.
+     *  CONVERT_TZ is MySQL-only; SQLite uses datetime(col, '+8 hours'). */
     private function localHour(string $col = 'orders.created_at'): string
     {
+        if (DB::getDriverName() === 'sqlite') {
+            return "CAST(strftime('%H', datetime($col, '+8 hours')) AS INTEGER)";
+        }
         return "HOUR(CONVERT_TZ($col, '+00:00', '" . self::TZ . "'))";
     }
 
     private function localDow(string $col = 'orders.created_at'): string
     {
+        if (DB::getDriverName() === 'sqlite') {
+            // strftime('%w') → 0=Sun..6=Sat; +1 → 1=Sun..7=Sat (matches MySQL DAYOFWEEK)
+            return "CAST(strftime('%w', datetime($col, '+8 hours')) AS INTEGER) + 1";
+        }
         // MySQL DAYOFWEEK: 1=Sunday .. 7=Saturday
         return "DAYOFWEEK(CONVERT_TZ($col, '+00:00', '" . self::TZ . "'))";
+    }
+
+    private function localDate(string $col = 'orders.created_at'): string
+    {
+        if (DB::getDriverName() === 'sqlite') {
+            return "date($col, '+8 hours')";
+        }
+        return "DATE(CONVERT_TZ($col, '+00:00', '" . self::TZ . "'))";
     }
 
     /** Base orders query (non-cancelled), with optional category restriction. */
@@ -444,7 +460,7 @@ class AnalyticsService
             ->where('status', '!=', 'cancelled')
             ->whereBetween('created_at', [$lookback, $nowUtc])
             ->whereRaw($this->localDow() . ' = ?', [$todayDow])
-            ->selectRaw('SUM(total_amount) as rev, COUNT(DISTINCT DATE(CONVERT_TZ(created_at, \'+00:00\', \'' . self::TZ . '\'))) as days')
+            ->selectRaw('SUM(total_amount) as rev, COUNT(DISTINCT ' . $this->localDate('created_at') . ') as days')
             ->first();
 
         $expectedToday = ($dayRev && $dayRev->days > 0) ? round($dayRev->rev / $dayRev->days, 2) : 0;
