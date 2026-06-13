@@ -101,6 +101,7 @@ const ordStatus = ref('')
 const ordPayment = ref('')
 const ordersData = ref<OrderRow[]>([])
 const ordersMeta = ref<any>(null)
+const ordersSummary = ref<{ total_count: number; paid_count: number; unpaid_count: number; paid_revenue: number } | null>(null)
 const ordPage = ref(1)
 
 // ── Inventory transactions ─────────────────────────────────────────────────────
@@ -392,6 +393,7 @@ const loadOrders = async (page = 1) => {
         total_amount: parseFloat(o.total_amount ?? 0),
     }))
     ordersMeta.value = res.data.meta ?? null
+    ordersSummary.value = res.data.summary ?? null
 }
 
 const loadInventory = async (page = 1) => {
@@ -930,22 +932,22 @@ onMounted(async () => {
 
         <!-- ── Orders ─────────────────────────────────────────────────────────── -->
         <template v-if="tab === 'orders'">
-            <div v-if="ordersMeta" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div v-if="ordersSummary" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><ClipboardList class="h-3 w-3" /> Total Orders</p>
-                    <p class="text-3xl font-black">{{ ordersMeta.total }}</p>
+                    <p class="text-3xl font-black">{{ ordersSummary.total_count }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1">Paid (this page)</p>
-                    <p class="text-3xl font-black text-green-600">{{ ordersData.filter(o => o.payment_status === 'paid').length }}</p>
+                    <p class="text-xs text-muted-foreground mb-1">Paid Orders</p>
+                    <p class="text-3xl font-black text-green-600">{{ ordersSummary.paid_count }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1">Unpaid (this page)</p>
-                    <p class="text-3xl font-black text-yellow-600">{{ ordersData.filter(o => o.payment_status === 'pending').length }}</p>
+                    <p class="text-xs text-muted-foreground mb-1">Unpaid Orders</p>
+                    <p class="text-3xl font-black text-yellow-600">{{ ordersSummary.unpaid_count }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue (page)</p>
-                    <p class="text-xl font-black text-green-600">{{ fmt(ordersData.filter(o => o.payment_status === 'paid').reduce((s, o) => s + o.total_amount, 0)) }}</p>
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Total Revenue</p>
+                    <p class="text-xl font-black text-green-600">{{ fmt(ordersSummary.paid_revenue) }}</p>
                 </div>
             </div>
 
