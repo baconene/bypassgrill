@@ -17,7 +17,7 @@ class FinancialTransaction extends Model {
 
             $tx->running_balance = round($prev + match ($tx->type) {
                 'payment', 'income_adjustment'  => (float) $tx->amount,
-                'expense', 'order', 'payroll'   => -(float) $tx->amount,
+                'expense', 'order', 'payroll', 'asset_deduction' => -(float) $tx->amount,
                 default                         => 0.0,
             }, 2);
         });

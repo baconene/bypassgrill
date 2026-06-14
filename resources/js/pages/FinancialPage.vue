@@ -328,7 +328,7 @@ onMounted(async () => {
                     </span>
                     <span v-if="!includeCogs"
                         class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                        COGS excluded
+                        Asset Deductions excluded
                     </span>
                 </h2>
                 <ChevronDown class="h-4 w-4 text-muted-foreground transition-transform duration-200"
@@ -568,9 +568,9 @@ onMounted(async () => {
                             class="pl-8 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-52" />
                     </div>
                 </div>
-                <!-- COGS toggle -->
+                <!-- Asset Deductions toggle -->
                 <div class="flex flex-col gap-1">
-                    <label class="text-xs font-medium text-muted-foreground">Include COGS</label>
+                    <label class="text-xs font-medium text-muted-foreground">Include Asset Deductions</label>
                     <button @click="includeCogs = !includeCogs; loadFinancial()"
                         :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 self-start mt-0.5',
                             includeCogs ? 'bg-primary' : 'bg-muted-foreground/30']"

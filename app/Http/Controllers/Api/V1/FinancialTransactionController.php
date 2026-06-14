@@ -21,7 +21,7 @@ class FinancialTransactionController extends Controller {
         $openingBalance = 0.0;
         if ($request->start_date) {
             $openingBalance = (float) (FinancialTransaction::where('type', '!=', 'order')
-                ->when(! $includeCogs, $noCogs)
+                ->when(! $includeCogs, $noAssetDeductions)
                 ->whereDate('transacted_at', '<', $request->start_date)
                 ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
                 ->value('bal') ?? 0);
@@ -30,7 +30,7 @@ class FinancialTransactionController extends Controller {
         // Compute financial_balance for every visible tx in the period (chronologically, no type filter —
         // the balance reflects the full financial picture regardless of which type the user is filtering).
         $periodTx = FinancialTransaction::where('type', '!=', 'order')
-            ->when(! $includeCogs, $noCogs)
+            ->when(! $includeCogs, $noAssetDeductions)
             ->when($request->start_date, fn ($q) => $q->whereDate('transacted_at', '>=', $request->start_date))
             ->when($request->end_date,   fn ($q) => $q->whereDate('transacted_at', '<=', $request->end_date))
             ->orderBy('transacted_at')->orderBy('id')
@@ -48,7 +48,7 @@ class FinancialTransactionController extends Controller {
         // Paginated display query — type filter applies here but not to the balance map above.
         $q = FinancialTransaction::with(['order', 'tender', 'user'])
             ->where('type', '!=', 'order')
-            ->when(! $includeCogs, $noCogs)
+            ->when(! $includeCogs, $noAssetDeductions)
             ->orderByDesc('transacted_at')
             ->orderByDesc('id');
 
@@ -71,22 +71,13 @@ class FinancialTransactionController extends Controller {
         $end         = $request->end_date   ? Carbon::parse($request->end_date)->endOfDay()     : Carbon::today()->endOfDay();
         $includeCogs = $request->boolean('include_cogs', true);
 
-        // Reusable scope to strip COGS expense rows when the toggle is off
-        $noCogs = fn ($q) => $q->where(fn ($inner) =>
-            $inner->where('type', '!=', 'expense')
-                  ->orWhere(fn ($q2) => $q2->where('type', 'expense')->where('description', 'not like', 'COGS:%'))
-        );
-
-        \Log::info('💾 Summary request', ['include_cogs' => $includeCogs, 'period' => "$start to $end"]);
-
-        // Count COGS transactions
-        $cogsCount = FinancialTransaction::where('type', 'expense')->where('description', 'like', 'COGS:%')->count();
-        \Log::info('💾 Total COGS expenses in DB', ['count' => $cogsCount]);
+        // Reusable scope to strip asset deduction rows when the toggle is off
+        $noAssetDeductions = fn ($q) => $q->where('type', '!=', 'asset_deduction');
 
         $rows = FinancialTransaction::selectRaw('type, SUM(amount) as total, COUNT(*) as count')
             ->whereBetween('transacted_at', [$start, $end])
             ->where('type', '!=', 'order')
-            ->when(! $includeCogs, $noCogs)
+            ->when(! $includeCogs, $noAssetDeductions)
             ->groupBy('type')
             ->get()
             ->keyBy('type');
@@ -114,7 +105,7 @@ class FinancialTransactionController extends Controller {
         $netByTender = FinancialTransaction::whereBetween('transacted_at', [$start, $end])
             ->whereNotNull('payment_tender_id')
             ->where('type', '!=', 'order')
-            ->when(! $includeCogs, $noCogs)
+            ->when(! $includeCogs, $noAssetDeductions)
             ->with('tender')
             ->selectRaw("payment_tender_id,
                 SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as total_in,
@@ -139,7 +130,7 @@ class FinancialTransactionController extends Controller {
         // Balance as of end date: cumulative sum of non-order transactions up to end date,
         // using the same logic as the financial_balance column in the transaction list.
         $balanceAsOfEnd = (float) (FinancialTransaction::where('type', '!=', 'order')
-            ->when(! $includeCogs, $noCogs)
+            ->when(! $includeCogs, $noAssetDeductions)
             ->whereDate('transacted_at', '<=', $end->toDateString())
             ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
             ->value('bal') ?? 0.0);
@@ -163,7 +154,7 @@ class FinancialTransactionController extends Controller {
         \Log::info('💾 POST /financial-transactions received', ['transacted_at_raw' => $request->input('transacted_at')]);
 
         $data = $request->validate([
-            'type'               => 'required|in:expense,income_adjustment',
+            'type'               => 'required|in:expense,income_adjustment,asset_deduction',
             'amount'             => 'required|numeric|min:0.01',
             'description'        => 'required|string|max:255',
             'notes'              => 'nullable|string',
