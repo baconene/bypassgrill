@@ -11,10 +11,8 @@ class FinancialTransactionController extends Controller {
         $this->checkReports();
         $includeCogs = $request->boolean('include_cogs', true);
 
-        $noCogs = fn ($q) => $q->where(fn ($inner) =>
-            $inner->where('type', '!=', 'expense')
-                  ->orWhere(fn ($q2) => $q2->where('type', 'expense')->where('description', 'not like', 'COGS:%'))
-        );
+        // Reusable scope to strip asset deduction rows when the toggle is off
+        $noAssetDeductions = fn ($q) => $q->where('type', '!=', 'asset_deduction');
 
         // Opening financial balance: sum of all visible financial tx BEFORE the filtered period.
         // This anchors the running balance correctly even when a date range is applied.
