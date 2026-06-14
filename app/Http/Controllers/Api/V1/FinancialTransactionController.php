@@ -77,6 +77,12 @@ class FinancialTransactionController extends Controller {
                   ->orWhere(fn ($q2) => $q2->where('type', 'expense')->where('description', 'not like', 'COGS:%'))
         );
 
+        \Log::info('💾 Summary request', ['include_cogs' => $includeCogs, 'period' => "$start to $end"]);
+
+        // Count COGS transactions
+        $cogsCount = FinancialTransaction::where('type', 'expense')->where('description', 'like', 'COGS:%')->count();
+        \Log::info('💾 Total COGS expenses in DB', ['count' => $cogsCount]);
+
         $rows = FinancialTransaction::selectRaw('type, SUM(amount) as total, COUNT(*) as count')
             ->whereBetween('transacted_at', [$start, $end])
             ->where('type', '!=', 'order')
@@ -84,6 +90,12 @@ class FinancialTransactionController extends Controller {
             ->groupBy('type')
             ->get()
             ->keyBy('type');
+
+        $cogsInPeriod = FinancialTransaction::where('type', 'expense')
+            ->where('description', 'like', 'COGS:%')
+            ->whereBetween('transacted_at', [$start, $end])
+            ->sum('amount');
+        \Log::info('💾 COGS in period', ['total' => $cogsInPeriod, 'include_cogs' => $includeCogs]);
 
         // Payments by tender (payment credits only)
         $byTender = FinancialTransaction::where('type', 'payment')
