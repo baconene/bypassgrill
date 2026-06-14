@@ -35,6 +35,9 @@ const props = defineProps<{ order: Order }>()
 
 const printing = ref(false)
 
+const backUrl = new URLSearchParams(window.location.search).get('back')
+const goBack = () => backUrl ? router.visit(backUrl) : window.history.back()
+
 const fmt = (v: number) => '₱' + v.toLocaleString('en-PH', { minimumFractionDigits: 2 })
 
 const fmtDatetime = (s: string | null) => {
@@ -85,7 +88,7 @@ const reprintReceipt = async () => {
 
         <!-- Back + Header -->
         <div class="flex items-start gap-2 sm:gap-3">
-            <button @click="window.history.back()"
+            <button @click="goBack()"
                 class="rounded-lg border p-2 hover:bg-muted text-muted-foreground shrink-0 mt-0.5">
                 <ArrowLeft class="h-4 w-4" />
             </button>

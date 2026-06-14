@@ -1029,7 +1029,7 @@ onMounted(async () => {
                         </thead>
                         <tbody class="divide-y">
                             <tr v-for="order in ordersData" :key="order.id"
-                                @click="router.visit(`/orders/${order.id}`)"
+                                @click="router.visit(`/orders/${order.id}?back=/reports`)"
                                 class="hover:bg-muted/30 cursor-pointer transition-colors">
                                 <td class="px-4 py-3">
                                     <p class="font-bold text-primary">#{{ order.id }}</p>
