@@ -82,12 +82,6 @@ class FinancialTransactionController extends Controller {
             ->get()
             ->keyBy('type');
 
-        $cogsInPeriod = FinancialTransaction::where('type', 'expense')
-            ->where('description', 'like', 'COGS:%')
-            ->whereBetween('transacted_at', [$start, $end])
-            ->sum('amount');
-        \Log::info('💾 COGS in period', ['total' => $cogsInPeriod, 'include_cogs' => $includeCogs]);
-
         // Payments by tender (payment credits only)
         $byTender = FinancialTransaction::where('type', 'payment')
             ->whereBetween('transacted_at', [$start, $end])
