@@ -85,7 +85,7 @@ const reprintReceipt = async () => {
 
         <!-- Back + Header -->
         <div class="flex items-start gap-2 sm:gap-3">
-            <button @click="router.history.back()"
+            <button @click="window.history.back()"
                 class="rounded-lg border p-2 hover:bg-muted text-muted-foreground shrink-0 mt-0.5">
                 <ArrowLeft class="h-4 w-4" />
             </button>
