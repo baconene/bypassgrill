@@ -376,11 +376,10 @@ const tabs = [
                     <div class="flex items-center justify-between mb-3">
                         <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Financial Summary — {{ result.financial_summary.period_end }}</p>
                     </div>
-                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                         <div class="space-y-0.5"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Gross Sales</p><p class="text-base font-bold">{{ fmt(result.financial_summary.gross_sales) }}</p></div>
                         <div class="space-y-0.5"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Refunds</p><p class="text-base font-bold text-red-500">−{{ fmt(result.financial_summary.refunds) }}</p></div>
                         <div class="space-y-0.5"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Net Sales</p><p class="text-base font-bold text-blue-600">{{ fmt(result.financial_summary.net_sales) }}</p></div>
-                        <div class="space-y-0.5"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">COGS</p><p class="text-base font-bold text-orange-500">−{{ fmt(result.financial_summary.cogs) }}</p></div>
                         <div class="space-y-0.5"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Net Profit</p><p class="text-base font-bold" :class="result.financial_summary.net_profit >= 0 ? 'text-emerald-600' : 'text-red-500'">{{ fmt(result.financial_summary.net_profit) }}</p></div>
                         <div class="space-y-0.5 border-l pl-3"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">{{ result.basis === 'profit' ? 'Profit Margin' : 'Sales Base' }}</p><p class="text-base font-bold text-primary">{{ result.basis === 'profit' && result.financial_summary.gross_sales > 0 ? ((result.financial_summary.net_profit / result.financial_summary.gross_sales) * 100).toFixed(1) + '%' : fmt(result.financial_summary.sales_base) }}</p></div>
                     </div>
