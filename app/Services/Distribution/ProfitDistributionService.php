@@ -87,10 +87,10 @@ class ProfitDistributionService
     private function profitBase(string $start, string $end, ?int $categoryId, ?int $productId, array $metrics): float
     {
         if ($categoryId || $productId) {
-            return round($metrics['net_sales'] - $metrics['cogs'], 2);
+            return round($metrics['net_sales'], 2);
         }
 
-        $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), true);
+        $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), false);
         return round((float) ($pl['net_profit'] ?? 0), 2);
     }
 
