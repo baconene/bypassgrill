@@ -232,15 +232,17 @@ const loadFinancial = async (page = 1) => {
 const saveEntry = async () => {
     if (!entryForm.value.description.trim() || !entryForm.value.amount) return
     entrySaving.value = true
+    const payload = {
+        type: entryForm.value.type,
+        amount: parseFloat(entryForm.value.amount),
+        description: entryForm.value.description,
+        notes: entryForm.value.notes || null,
+        transacted_at: entryForm.value.transacted_at || null,
+        payment_tender_id: entryForm.value.payment_tender_id || null,
+    }
+    console.log('📤 Sending transacted_at:', entryForm.value.transacted_at)
     try {
-        await api.post('/api/v1/financial-transactions', {
-            type: entryForm.value.type,
-            amount: parseFloat(entryForm.value.amount),
-            description: entryForm.value.description,
-            notes: entryForm.value.notes || null,
-            transacted_at: entryForm.value.transacted_at || null,
-            payment_tender_id: entryForm.value.payment_tender_id || null,
-        })
+        await api.post('/api/v1/financial-transactions', payload)
         const label = entryForm.value.type === 'income_adjustment' ? 'Income adjustment' : 'Expense'
         toast.success(`${label} recorded.`)
         entryForm.value = { type: 'expense', description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null }
@@ -326,7 +328,7 @@ onMounted(async () => {
                     </span>
                     <span v-if="!includeCogs"
                         class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                        COGS excluded
+                        Asset Deductions excluded
                     </span>
                 </h2>
                 <ChevronDown class="h-4 w-4 text-muted-foreground transition-transform duration-200"
@@ -566,9 +568,9 @@ onMounted(async () => {
                             class="pl-8 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-52" />
                     </div>
                 </div>
-                <!-- COGS toggle -->
+                <!-- Asset Deductions toggle -->
                 <div class="flex flex-col gap-1">
-                    <label class="text-xs font-medium text-muted-foreground">Include COGS</label>
+                    <label class="text-xs font-medium text-muted-foreground">Include Asset Deductions</label>
                     <button @click="includeCogs = !includeCogs; loadFinancial()"
                         :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 self-start mt-0.5',
                             includeCogs ? 'bg-primary' : 'bg-muted-foreground/30']"
@@ -609,6 +611,7 @@ onMounted(async () => {
                 <div>
                     <label class="text-xs font-medium text-muted-foreground block mb-1">Date/Time</label>
                     <input v-model="entryForm.transacted_at" type="datetime-local"
+                        min="2000-01-01T00:00" max="2099-12-31T23:59"
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div>
@@ -671,6 +674,7 @@ onMounted(async () => {
                 <div>
                     <label class="text-xs font-medium text-muted-foreground block mb-1">Date/Time</label>
                     <input v-model="editForm.transacted_at" type="datetime-local"
+                        min="2000-01-01T00:00" max="2099-12-31T23:59"
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div>

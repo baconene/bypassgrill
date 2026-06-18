@@ -32,6 +32,7 @@ const sidebarNavItems = computed<NavItem[]>(() => {
         items.push({ title: 'Print Service', href: '/settings/print-service' });
         items.push({ title: 'Users', href: '/settings/users' });
         items.push({ title: 'Logo', href: '/settings/logo' });
+        items.push({ title: 'Date & Time', href: '/settings/clock' });
         items.push({ title: 'System', href: '/settings/system' });
     }
     return items;

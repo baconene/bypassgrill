@@ -15,8 +15,8 @@ class SalesAggregateService
     private function bounds(string $start, string $end): array
     {
         return [
-            Carbon::parse($start, 'Asia/Manila')->startOfDay()->utc(),
-            Carbon::parse($end, 'Asia/Manila')->endOfDay()->utc(),
+            Carbon::parse($start, 'Asia/Manila')->startOfDay(),
+            Carbon::parse($end, 'Asia/Manila')->endOfDay(),
         ];
     }
 

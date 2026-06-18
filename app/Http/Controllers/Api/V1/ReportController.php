@@ -54,8 +54,12 @@ class ReportController extends Controller
     {
         $this->checkPermission();
 
-        $startDate = request()->input('start_date') ? Carbon::parse(request()->input('start_date')) : null;
-        $endDate = request()->input('end_date') ? Carbon::parse(request()->input('end_date')) : null;
+        $startDate = request()->input('start_date')
+            ? Carbon::parse(request()->input('start_date'), 'Asia/Manila')->startOfDay()
+            : null;
+        $endDate = request()->input('end_date')
+            ? Carbon::parse(request()->input('end_date'), 'Asia/Manila')->endOfDay()
+            : null;
 
         $report = $this->reportService->getProductSalesReport($startDate, $endDate);
 
@@ -76,11 +80,11 @@ class ReportController extends Controller
         $this->checkPermission();
 
         $start = request()->input('start_date')
-            ? Carbon::parse(request()->input('start_date'))
-            : Carbon::now()->startOfMonth();
+            ? Carbon::parse(request()->input('start_date'), 'Asia/Manila')
+            : Carbon::now('Asia/Manila')->startOfMonth();
         $end = request()->input('end_date')
-            ? Carbon::parse(request()->input('end_date'))
-            : Carbon::now()->endOfMonth();
+            ? Carbon::parse(request()->input('end_date'), 'Asia/Manila')
+            : Carbon::now('Asia/Manila')->endOfMonth();
         $includeCogs = request()->boolean('include_cogs', true);
 
         return response()->json($this->reportService->getProfitLossReport($start, $end, $includeCogs));
@@ -106,7 +110,7 @@ class ReportController extends Controller
             $query->where('ingredient_id', request()->input('ingredient_id'));
         }
 
-        return response()->json($query->paginate(50));
+        return response()->json($query->paginate(20));
     }
 
     public function monthlyChart(): JsonResponse

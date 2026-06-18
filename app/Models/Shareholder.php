@@ -1,21 +1,27 @@
 <?php
-
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\ProductOwnership;
 
 class Shareholder extends Model
 {
-    protected $fillable = ['name', 'email', 'ownership_percentage', 'status', 'notes'];
+    protected $fillable = ['name', 'email', 'user_id', 'ownership_percentage', 'status', 'notes'];
 
     protected $casts = [
         'ownership_percentage' => 'decimal:2',
     ];
 
-    public function royaltyRules(): HasMany
+    public function productOwnerships(): HasMany
     {
-        return $this->hasMany(RoyaltyRule::class);
+        return $this->hasMany(ProductOwnership::class);
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function scopeActive($query)
@@ -23,7 +29,6 @@ class Shareholder extends Model
         return $query->where('status', 'active');
     }
 
-    /** Total ownership across all active members (0–100). */
     public static function totalOwnership(?int $excludeId = null): float
     {
         return (float) static::active()

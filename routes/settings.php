@@ -46,6 +46,14 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.logo')
         ->middleware('role:admin');
 
+    // Date & Time override (admin only)
+    Route::get('settings/clock', [\App\Http\Controllers\Settings\SystemClockController::class, 'edit'])
+        ->name('settings.clock')->middleware('role:admin');
+    Route::post('settings/clock', [\App\Http\Controllers\Settings\SystemClockController::class, 'update'])
+        ->name('settings.clock.update')->middleware('role:admin');
+    Route::delete('settings/clock', [\App\Http\Controllers\Settings\SystemClockController::class, 'disable'])
+        ->name('settings.clock.disable')->middleware('role:admin');
+
     // System (admin only)
     Route::get('settings/system', [SystemController::class, 'index'])
         ->name('settings.system')

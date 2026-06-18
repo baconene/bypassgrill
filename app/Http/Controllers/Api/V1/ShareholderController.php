@@ -15,7 +15,7 @@ class ShareholderController extends Controller
     {
         $this->adminOnly();
 
-        $members = Shareholder::orderByDesc('ownership_percentage')->get();
+        $members = Shareholder::with('user:id,name')->orderByDesc('ownership_percentage')->get();
         $totalActive = Shareholder::totalOwnership();
 
         return response()->json([
@@ -68,6 +68,7 @@ class ShareholderController extends Controller
         return $request->validate([
             'name'                 => 'required|string|max:120',
             'email'                => 'nullable|email|max:160',
+            'user_id'              => 'nullable|exists:users,id',
             'ownership_percentage' => 'required|numeric|min:0|max:100',
             'status'               => 'required|in:active,inactive',
             'notes'                => 'nullable|string|max:500',

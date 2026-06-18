@@ -30,10 +30,15 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Session\Middleware\StartSession::class,
         ]);
 
+        // Admin date/time override — runs after the session is available so the
+        // user can be resolved (applies to api record creation: orders, payments…).
+        $middleware->api(append: [\App\Http\Middleware\ApplySystemClock::class]);
+
         $middleware->web(append: [
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            \App\Http\Middleware\ApplySystemClock::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

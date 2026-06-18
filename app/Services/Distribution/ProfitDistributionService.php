@@ -149,14 +149,14 @@ class ProfitDistributionService
             // Scoped profit = scope net sales − scope COGS (operating expenses,
             // adjustments and payroll can't be attributed to a single product/category).
             return [
-                'net_profit'         => round($metrics['net_sales'] - $metrics['cogs'], 2),
+                'net_profit'         => round($metrics['net_sales'], 2),
                 'income_adjustments' => 0.0,
                 'expenses'           => 0.0,
                 'payroll'            => 0.0,
             ];
         }
 
-        $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), true);
+        $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), false);
 
         return [
             'net_profit'         => round((float) ($pl['net_profit'] ?? 0), 2),

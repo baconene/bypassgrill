@@ -7,6 +7,7 @@ import {
     BarChart3, Download, RefreshCw, TrendingUp, TrendingDown,
     DollarSign, Plus, X, Search, ChevronLeft, ChevronRight, ChevronDown,
     ShoppingBag, ClipboardList, Package, Trash2, Pencil, CalendarDays,
+    ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-vue-next'
 import AnalyticsTab from '@/pages/reports/AnalyticsTab.vue'
 
@@ -40,13 +41,14 @@ interface FtSummary {
 }
 interface FtTransaction {
     id: number; type: string; amount: number; description: string; transacted_at: string
-    financial_balance?: number | null; notes: string | null
+    financial_balance: number | null; notes: string | null
     user?: { name: string }; tender?: { name: string }
 }
 interface OrderRow {
     id: number; queue_number: number | null; order_type: string; status: string
     payment_status: string; table_number: string | null; notes: string | null
-    total_amount: number; items: { data: any[] } | any[]; user?: { data?: any; name?: string }
+    customer_name: string | null; total_amount: number
+    items: { data: any[] } | any[]; user?: { data?: any; name?: string }
     created_at: string
 }
 interface InvTransaction {
@@ -63,7 +65,7 @@ const props = defineProps<{
 }>()
 
 // ── Active tab ─────────────────────────────────────────────────────────────────
-type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'heatmap' | 'analytics'
+type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'analytics'
 const tab = ref<Tab>('orders')
 const loading = ref(false)
 
@@ -77,13 +79,14 @@ const tabs: { key: Tab; label: string }[] = [
     { key: 'products',  label: 'Product Sales' },
     { key: 'pl',        label: 'P&L' },
     { key: 'bills',     label: 'Bills' },
-    { key: 'heatmap',   label: '🔥 Peak Hours' },
 ]
 
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
-const today = new Date().toISOString().split('T')[0]
-const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000).toISOString().split('T')[0]
-const selectedDate = ref(today)
+const toManilaDate = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+const manilaToday = () => toManilaDate(new Date())
+const daysAgo = (n: number) => toManilaDate(new Date(Date.now() - n * 864e5))
+const manilaMonthStart = () => { const d = new Date(); return toManilaDate(new Date(d.getFullYear(), d.getMonth(), 1)) }
+const selectedDate = ref(manilaToday())
 const selectedYear = ref(new Date().getFullYear())
 const selectedMonth = ref(new Date().getMonth() + 1)
 const dailyReport = ref<DailyReport | null>(props.initialDailyReport)
@@ -91,22 +94,35 @@ const monthlyReport = ref<MonthlyReport | null>(null)
 
 // ── Products ───────────────────────────────────────────────────────────────────
 const productSales = ref<ProductSale[]>(props.initialProductSales)
-const prodDateFrom = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
-const prodDateTo = ref(today)
+const prodDateFrom = ref(manilaMonthStart())
+const prodDateTo = ref(manilaToday())
 
 // ── Orders ─────────────────────────────────────────────────────────────────────
 const ordSearch = ref('')
-const ordDateFrom = ref(thirtyDaysAgo)
-const ordDateTo = ref(today)
+const ordDateFrom = ref(daysAgo(30))
+const ordDateTo = ref(manilaToday())
 const ordStatus = ref('')
 const ordPayment = ref('')
 const ordersData = ref<OrderRow[]>([])
 const ordersMeta = ref<any>(null)
+const ordersSummary = ref<{ total_count: number; paid_count: number; unpaid_count: number; paid_revenue: number } | null>(null)
 const ordPage = ref(1)
+const ordSortBy = ref('created_at')
+const ordSortDir = ref<'asc' | 'desc'>('desc')
+
+const sortOrders = (col: string) => {
+    if (ordSortBy.value === col) {
+        ordSortDir.value = ordSortDir.value === 'asc' ? 'desc' : 'asc'
+    } else {
+        ordSortBy.value = col
+        ordSortDir.value = col === 'total_amount' ? 'desc' : 'asc'
+    }
+    loadOrders(1)
+}
 
 // ── Inventory transactions ─────────────────────────────────────────────────────
-const invDateFrom = ref(thirtyDaysAgo)
-const invDateTo = ref(today)
+const invDateFrom = ref(daysAgo(30))
+const invDateTo = ref(manilaToday())
 const invType = ref('')
 const invIngredientId = ref('')
 const invTransactions = ref<InvTransaction[]>([])
@@ -123,11 +139,9 @@ interface PL {
     gross_profit: number; gross_margin: number
     income_adjustments: { total: number; count: number; breakdown: PLBreakdownItem[] }
     expenses: { total: number; count: number; breakdown: PLBreakdownItem[] }
-    inventory_purchases: { total: number; count: number; included_in_expenses: boolean; breakdown: PLBreakdownItem[] }
     payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
     net_profit: number; net_margin: number
     include_cogs?: boolean
-    unpaid_completed?: { total: number; count: number }
 }
 interface BillInstallment {
     id: number; installment_number: number; amount: number
@@ -154,38 +168,10 @@ interface BillForecast {
     total_forecast: number; months: number
 }
 
-const plStartDate = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0])
-const plEndDate = ref(today)
+const plStartDate = ref(manilaMonthStart())
+const plEndDate = ref(manilaToday())
 const plIncludeCogs = ref(true)
-const plReport     = ref<PL | null>(null)
-
-// Which P&L sections are collapsed (all open by default)
-const plCollapsed = ref<Record<string, boolean>>({
-    revenue:      false,
-    cogs:         false,
-    inventory:    false,
-    other_income: false,
-    expenses:     false,
-    payroll:      false,
-})
-
-// Sales = COGS + Gross Profit breakdown for the stacked bar
-const salesChart = computed(() => {
-    const r = plReport.value
-    if (!r || !r.include_cogs || r.revenue.net_revenue <= 0) return null
-    const revenue     = r.revenue.net_revenue
-    const cogs        = r.cogs.total
-    const grossProfit = Math.max(0, r.gross_profit)
-    const denominator = Math.max(revenue, cogs + grossProfit, 0.01)
-    return {
-        revenue,
-        cogs,
-        cogsH:        Math.min(100, (cogs        / denominator) * 100),
-        grossProfit,
-        grossH:       Math.min(100, (grossProfit / denominator) * 100),
-        grossMargin:  r.gross_margin,
-    }
-})
+const plReport = ref<PL | null>(null)
 
 // ── Daily chart ────────────────────────────────────────────────────────────────
 interface ChartDay { date: string; income: number; expense: number }
@@ -200,81 +186,9 @@ const monthChartData      = ref<MonthChartEntry[]>([])
 const monthChartLoading   = ref(false)
 const monthChartCollapsed = ref(false)
 
-// ── Heatmap ───────────────────────────────────────────────────────────────────
-interface HeatmapSlot { day: string; hour: number; orders: number }
-interface HeatmapInsights {
-    total_orders: number
-    peak_slot:   HeatmapSlot
-    peak_hour:   { hour: number; total_orders: number }
-    peak_day:    { day: string;  total_orders: number }
-    hour_totals: number[]
-    day_totals:  Record<string, number>
-}
-interface HeatmapData {
-    data:     HeatmapSlot[]
-    matrix:   Record<string, number[]>
-    insights: HeatmapInsights
-}
-
-const hmDateFrom  = ref(new Date(new Date().setDate(new Date().getDate() - 89)).toISOString().slice(0, 10))
-const hmDateTo    = ref(today)
-const hmData      = ref<HeatmapData | null>(null)
-const hmLoading   = ref(false)
-const hmTooltip   = ref<{ slot: HeatmapSlot; x: number; y: number } | null>(null)
-
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-const HOURS = Array.from({ length: 24 }, (_, i) => i)
-
-const hmMax = computed(() => {
-    if (!hmData.value) return 1
-    return Math.max(1, ...hmData.value.data.map(d => d.orders))
-})
-
-// Returns a Tailwind-compatible inline style for the cell background
-function cellStyle(orders: number): string {
-    if (orders === 0) return 'background:#1a1a1a'
-    const ratio = orders / hmMax.value
-    // Interpolate from #431407 (very dark) → #f97316 (orange-500) → #fef08a (yellow-200)
-    if (ratio < 0.25)  return `background:rgba(249,115,22,${0.15 + ratio * 0.6})`
-    if (ratio < 0.50)  return `background:rgba(249,115,22,${0.30 + ratio * 0.7})`
-    if (ratio < 0.75)  return `background:rgba(234,88,12,${0.55 + ratio * 0.4})`
-    return `background:rgba(220,38,38,${0.70 + ratio * 0.3})`
-}
-
-function cellText(orders: number): string {
-    const ratio = orders / hmMax.value
-    return ratio > 0.4 ? 'text-white' : orders > 0 ? 'text-orange-200' : 'text-zinc-700'
-}
-
-function hmFmtHour(h: number): string {
-    if (h === 0)  return '12a'
-    if (h < 12)   return `${h}a`
-    if (h === 12) return '12p'
-    return `${h - 12}p`
-}
-
-function showTooltip(e: MouseEvent, slot: HeatmapSlot) {
-    const rect = (e.target as HTMLElement).getBoundingClientRect()
-    hmTooltip.value = { slot, x: rect.left + rect.width / 2, y: rect.top - 8 }
-}
-
-const loadHeatmap = async () => {
-    hmLoading.value = true
-    try {
-        const res = await api.get('/api/v1/reports/heatmap', {
-            params: { date_from: hmDateFrom.value, date_to: hmDateTo.value },
-        })
-        hmData.value = res.data
-    } catch (err: any) {
-        toast.error(err.response?.data?.message ?? 'Failed to load heatmap')
-    } finally {
-        hmLoading.value = false
-    }
-}
-
 // ── Financial ─────────────────────────────────────────────────────────────────
-const ftStartDate = ref(thirtyDaysAgo)
-const ftEndDate = ref(today)
+const ftStartDate = ref(daysAgo(30))
+const ftEndDate = ref(manilaToday())
 const ftTypeFilter = ref('')
 const ftSummary = ref<FtSummary | null>(null)
 const ftTransactions = ref<FtTransaction[]>([])
@@ -482,12 +396,14 @@ const loadOrders = async (page = 1) => {
     const res = await api.get('/api/v1/orders', {
         params: {
             page,
-            per_page: 50,
+            per_page: 20,
             search: ordSearch.value || undefined,
             date_from: ordDateFrom.value || undefined,
             date_to: ordDateTo.value || undefined,
             status: ordStatus.value || undefined,
             payment_status: ordPayment.value || undefined,
+            sort_by: ordSortBy.value,
+            sort_dir: ordSortDir.value,
         },
     })
     ordersData.value = (res.data.data ?? []).map((o: any) => ({
@@ -495,6 +411,7 @@ const loadOrders = async (page = 1) => {
         total_amount: parseFloat(o.total_amount ?? 0),
     }))
     ordersMeta.value = res.data.meta ?? null
+    ordersSummary.value = res.data.summary ?? null
 }
 
 const loadInventory = async (page = 1) => {
@@ -508,28 +425,51 @@ const loadInventory = async (page = 1) => {
             ingredient_id: invIngredientId.value || undefined,
         },
     })
-    invTransactions.value = res.data.data ?? []
-    invMeta.value = res.data.meta ?? null
+    const invRaw = res.data
+    invTransactions.value = invRaw.data ?? []
+    // Backend returns old-style pagination (keys at top level, no nested meta)
+    invMeta.value = invRaw.meta ?? (invRaw.current_page != null ? {
+        current_page: invRaw.current_page,
+        last_page: invRaw.last_page,
+        from: invRaw.from,
+        to: invRaw.to,
+        total: invRaw.total,
+    } : null)
 }
 
 const loadFinancial = async (page = 1) => {
     ftPage.value = page
-    const [summaryRes, listRes] = await Promise.all([
-        api.get('/api/v1/financial-transactions/summary', {
-            params: { start_date: ftStartDate.value, end_date: ftEndDate.value },
-        }),
-        api.get('/api/v1/financial-transactions', {
-            params: {
-                page,
-                start_date: ftStartDate.value,
-                end_date: ftEndDate.value,
-                type: ftTypeFilter.value || undefined,
-            },
-        }),
-    ])
-    ftSummary.value = summaryRes.data
-    ftTransactions.value = listRes.data.data ?? []
-    ftMeta.value = listRes.data
+    loading.value = true
+    try {
+        const [summaryRes, listRes] = await Promise.all([
+            api.get('/api/v1/financial-transactions/summary', {
+                params: { start_date: ftStartDate.value, end_date: ftEndDate.value },
+            }),
+            api.get('/api/v1/financial-transactions', {
+                params: {
+                    page,
+                    start_date: ftStartDate.value,
+                    end_date: ftEndDate.value,
+                    type: ftTypeFilter.value || undefined,
+                },
+            }),
+        ])
+        ftSummary.value = summaryRes.data
+        const ftRaw = listRes.data
+        ftTransactions.value = ftRaw.data ?? []
+        // Backend returns flat Laravel pagination (no nested meta key)
+        ftMeta.value = ftRaw.meta ?? (ftRaw.current_page != null ? {
+            current_page: ftRaw.current_page,
+            last_page: ftRaw.last_page,
+            from: ftRaw.from,
+            to: ftRaw.to,
+            total: ftRaw.total,
+        } : null)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to load financial records')
+    } finally {
+        loading.value = false
+    }
 }
 
 const loadPL = async () => {
@@ -596,8 +536,6 @@ const generateReport = async () => {
         } else if (tab.value === 'bills') {
             await loadBills()
             await loadForecast()
-        } else if (tab.value === 'heatmap') {
-            await loadHeatmap()
         }
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to load report')
@@ -963,10 +901,7 @@ onMounted(async () => {
                         <input v-model="plEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                     <div class="flex items-center gap-2">
                         <input v-model="plIncludeCogs" type="checkbox" id="pl_cogs_toggle" class="rounded border-gray-300" />
-                        <label for="pl_cogs_toggle" class="text-xs font-medium text-muted-foreground">
-                            Include COGS
-                            <span class="opacity-60 font-normal">— when ON: restocking is an asset (not opex); consumed cost flows via COGS</span>
-                        </label>
+                        <label for="pl_cogs_toggle" class="text-xs font-medium text-muted-foreground">Include COGS in expenses</label>
                     </div>
                 </template>
 
@@ -981,14 +916,6 @@ onMounted(async () => {
                             <option :value="12">12 months</option>
                         </select>
                     </div>
-                </template>
-
-                <!-- Heatmap date range -->
-                <template v-if="tab === 'heatmap'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="hmDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="hmDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                 </template>
 
                 <!-- Financial date range -->
@@ -1023,22 +950,22 @@ onMounted(async () => {
 
         <!-- ── Orders ─────────────────────────────────────────────────────────── -->
         <template v-if="tab === 'orders'">
-            <div v-if="ordersMeta" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div v-if="ordersSummary" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><ClipboardList class="h-3 w-3" /> Total Orders</p>
-                    <p class="text-3xl font-black">{{ ordersMeta.total }}</p>
+                    <p class="text-3xl font-black">{{ ordersSummary.total_count }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1">Paid (this page)</p>
-                    <p class="text-3xl font-black text-green-600">{{ ordersData.filter(o => o.payment_status === 'paid').length }}</p>
+                    <p class="text-xs text-muted-foreground mb-1">Paid Orders</p>
+                    <p class="text-3xl font-black text-green-600">{{ ordersSummary.paid_count }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1">Unpaid (this page)</p>
-                    <p class="text-3xl font-black text-yellow-600">{{ ordersData.filter(o => o.payment_status === 'pending').length }}</p>
+                    <p class="text-xs text-muted-foreground mb-1">Unpaid Orders</p>
+                    <p class="text-3xl font-black text-yellow-600">{{ ordersSummary.unpaid_count }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
-                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue (page)</p>
-                    <p class="text-xl font-black text-green-600">{{ fmt(ordersData.filter(o => o.payment_status === 'paid').reduce((s, o) => s + o.total_amount, 0)) }}</p>
+                    <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Total Revenue</p>
+                    <p class="text-xl font-black text-green-600">{{ fmt(ordersSummary.paid_revenue) }}</p>
                 </div>
             </div>
 
@@ -1054,19 +981,55 @@ onMounted(async () => {
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
                                 <th class="px-4 py-3 text-left">Order</th>
-                                <th class="px-4 py-3 text-left">Date & Time</th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('created_at')">
+                                    <span class="inline-flex items-center gap-1">Date & Time
+                                        <ArrowUp v-if="ordSortBy === 'created_at' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'created_at' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
                                 <th class="px-4 py-3 text-left">Type</th>
                                 <th class="px-4 py-3 text-left">Table</th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('customer_name')">
+                                    <span class="inline-flex items-center gap-1">Customer
+                                        <ArrowUp v-if="ordSortBy === 'customer_name' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'customer_name' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
                                 <th class="px-4 py-3 text-center">Items</th>
-                                <th class="px-4 py-3 text-left">Status</th>
-                                <th class="px-4 py-3 text-left">Payment</th>
-                                <th class="px-4 py-3 text-right">Total</th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('status')">
+                                    <span class="inline-flex items-center gap-1">Status
+                                        <ArrowUp v-if="ordSortBy === 'status' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'status' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
+                                <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('payment_status')">
+                                    <span class="inline-flex items-center gap-1">Payment
+                                        <ArrowUp v-if="ordSortBy === 'payment_status' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'payment_status' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
+                                <th class="px-4 py-3 text-right cursor-pointer select-none hover:text-foreground"
+                                    @click="sortOrders('total_amount')">
+                                    <span class="inline-flex items-center justify-end gap-1">Total
+                                        <ArrowUp v-if="ordSortBy === 'total_amount' && ordSortDir === 'asc'" class="h-3 w-3" />
+                                        <ArrowDown v-else-if="ordSortBy === 'total_amount' && ordSortDir === 'desc'" class="h-3 w-3" />
+                                        <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
+                                    </span>
+                                </th>
                                 <th class="px-4 py-3 text-left">Notes</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y">
                             <tr v-for="order in ordersData" :key="order.id"
-                                @click="router.visit(`/orders/${order.id}`)"
+                                @click="router.visit(`/orders/${order.id}?back=/reports`)"
                                 class="hover:bg-muted/30 cursor-pointer transition-colors">
                                 <td class="px-4 py-3">
                                     <p class="font-bold text-primary">#{{ order.id }}</p>
@@ -1075,6 +1038,7 @@ onMounted(async () => {
                                 <td class="px-4 py-3 whitespace-nowrap text-muted-foreground text-xs">{{ fmtDatetime(order.created_at) }}</td>
                                 <td class="px-4 py-3"><span class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{{ orderTypeBadge(order.order_type) }}</span></td>
                                 <td class="px-4 py-3 text-muted-foreground">{{ order.table_number ?? '—' }}</td>
+                                <td class="px-4 py-3 text-muted-foreground">{{ order.customer_name ?? '—' }}</td>
                                 <td class="px-4 py-3 text-center font-medium">{{ itemCount(order.items) }}</td>
                                 <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusBadge(order.status)]">{{ order.status }}</span></td>
                                 <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payBadge(order.payment_status)]">{{ order.payment_status }}</span></td>
@@ -1082,7 +1046,7 @@ onMounted(async () => {
                                 <td class="px-4 py-3 text-xs text-muted-foreground max-w-[140px] truncate">{{ order.notes ?? '—' }}</td>
                             </tr>
                             <tr v-if="ordersData.length === 0 && !loading">
-                                <td colspan="9" class="px-4 py-10 text-center text-muted-foreground">No orders found. Adjust filters and click Generate.</td>
+                                <td colspan="10" class="px-4 py-10 text-center text-muted-foreground">No orders found. Adjust filters and click Generate.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1098,86 +1062,6 @@ onMounted(async () => {
                         Next <ChevronRight class="h-3.5 w-3.5" />
                     </button>
                 </div>
-            </div>
-        </template>
-
-        <!-- ── Heatmap (Peak Hours) ───────────────────────────────────────── -->
-        <template v-if="tab === 'heatmap'">
-            <div class="rounded-xl border bg-card shadow-sm p-4">
-                <div class="flex items-center justify-between mb-3">
-                    <h2 class="font-bold text-sm flex items-center gap-2">🔥 Peak Hours</h2>
-                    <div class="text-xs text-muted-foreground">Total orders: {{ hmData?.insights?.total_orders ?? 0 }}</div>
-                </div>
-
-                <div v-if="hmLoading" class="py-10 text-center text-muted-foreground">Loading heatmap…</div>
-
-                <div v-else-if="hmData" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div class="col-span-2">
-                        <div class="overflow-x-auto">
-                            <div class="inline-block min-w-full">
-                                <div class="grid" :style="{ gridTemplateColumns: '120px repeat(24, 40px)' }">
-                                    <!-- header: hour labels -->
-                                    <div class="px-2 py-2 text-xs text-muted-foreground">Day / Hour</div>
-                                    <div v-for="h in 24" :key="h" class="px-1 py-1 text-[10px] text-center text-muted-foreground">{{ hmFmtHour(h - 1) }}</div>
-
-                                    <!-- rows: days -->
-                                    <div v-for="day in DAYS" :key="day" class="contents">
-                                        <div class="px-2 py-1 text-sm font-semibold text-muted-foreground">{{ day }}</div>
-                                        <div v-for="h in 24" :key="day + '-' + h" class="p-1">
-                                            <div
-                                                class="h-8 w-10 rounded-sm flex items-center justify-center text-xs font-semibold cursor-default"
-                                                :style="cellStyle(hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0)"
-                                                :class="cellText(hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0)
-                                                    .split(' ')
-                                                    .join(' ')
-                                                "
-                                                @mouseenter="(e) => showTooltip(e, { day, hour: h - 1, orders: hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0 })"
-                                                @mouseleave="() => hmTooltip = null"
-                                            >
-                                                {{ hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0 }}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="col-span-1 space-y-3">
-                        <div class="rounded-xl border p-3 bg-muted/20">
-                            <p class="text-xs text-muted-foreground font-semibold">Peak Slot</p>
-                            <div class="mt-2">
-                                <p class="font-bold text-lg">{{ hmData.insights.peak_slot.day }} · {{ hmFmtHour(hmData.insights.peak_slot.hour) }}</p>
-                                <p class="text-sm text-muted-foreground">Orders: <strong>{{ hmData.insights.peak_slot.orders }}</strong></p>
-                            </div>
-                        </div>
-
-                        <div class="rounded-xl border p-3 bg-card">
-                            <p class="text-xs text-muted-foreground font-semibold">Totals</p>
-                            <div class="mt-2 text-sm">
-                                <p>Total orders: <strong>{{ hmData.insights.total_orders }}</strong></p>
-                                <p class="mt-1">Peak day: <strong>{{ hmData.insights.peak_day.day }}</strong> ({{ hmData.insights.peak_day.total_orders }})</p>
-                                <p class="mt-1">Peak hour: <strong>{{ hmData.insights.peak_hour.hour }}</strong> ({{ hmData.insights.peak_hour.total_orders }})</p>
-                            </div>
-                        </div>
-
-                        <div class="rounded-xl border p-3 bg-card">
-                            <p class="text-xs text-muted-foreground font-semibold">Legend</p>
-                            <div class="mt-2 flex flex-col gap-2">
-                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-orange-500"></div><span class="text-xs text-muted-foreground">High</span></div>
-                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-amber-400"></div><span class="text-xs text-muted-foreground">Medium</span></div>
-                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-zinc-800"></div><span class="text-xs text-muted-foreground">Low / None</span></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div v-else class="py-10 text-center text-muted-foreground">No heatmap data for the selected range.</div>
-            </div>
-
-            <!-- Tooltip -->
-            <div v-if="hmTooltip" :style="{ position: 'fixed', left: hmTooltip.x + 'px', top: (hmTooltip.y - 48) + 'px', transform: 'translateX(-50%)' }" class="pointer-events-none z-50">
-                <div class="rounded-md bg-black text-white text-xs px-3 py-1 shadow-lg">{{ hmTooltip.slot.day }} {{ hmFmtHour(hmTooltip.slot.hour) }} — {{ hmTooltip.slot.orders }} orders</div>
             </div>
         </template>
 
@@ -1472,21 +1356,19 @@ onMounted(async () => {
                         </tbody>
                     </table>
                 </div>
-                <div v-if="ftMeta" class="flex items-center justify-between px-4 py-3 border-t text-xs text-muted-foreground">
-                    <span>Page {{ ftMeta.current_page }} of {{ ftMeta.last_page }} &mdash; {{ ftMeta.total }} transactions</span>
-                    <div class="flex items-center gap-1">
-                        <button
-                            @click="loadFinancial(ftPage - 1)"
-                            :disabled="ftPage <= 1"
-                            class="rounded px-2 py-1 border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
-                        ><ChevronLeft class="h-3 w-3" /></button>
-                        <span class="px-2">{{ ftPage }}</span>
-                        <button
-                            @click="loadFinancial(ftPage + 1)"
-                            :disabled="ftPage >= ftMeta.last_page"
-                            class="rounded px-2 py-1 border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
-                        ><ChevronRight class="h-3 w-3" /></button>
-                    </div>
+                <div v-if="ftMeta && ftMeta.last_page > 1" class="flex items-center justify-between px-4 py-3 border-t">
+                    <button
+                        @click="loadFinancial(ftPage - 1)"
+                        :disabled="ftPage <= 1 || loading"
+                        class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40">
+                        <ChevronLeft class="h-3.5 w-3.5" /> Prev
+                    </button>
+                    <span class="text-xs text-muted-foreground">Showing {{ ftMeta.from }}–{{ ftMeta.to }} of {{ ftMeta.total }}</span>
+                    <button
+                        @click="loadFinancial(ftPage + 1)"
+                        :disabled="ftPage >= ftMeta.last_page || loading"
+                        class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40">
+                        Next <ChevronRight class="h-3.5 w-3.5" /></button>
                 </div>
             </div>
             <div v-else-if="!loading" class="rounded-xl border bg-card p-10 text-center shadow-sm text-muted-foreground text-sm">
@@ -1507,185 +1389,90 @@ onMounted(async () => {
                         <h2 class="font-bold text-base flex items-center gap-2"><TrendingUp class="h-4 w-4" /> Profit & Loss Statement</h2>
                     </div>
                     <div class="divide-y">
-
-                        <!-- ── Revenue ──────────────────────────────────────────── -->
-                        <div class="px-5 py-3">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.revenue = !plCollapsed.revenue">
-                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                                    Revenue
-                                </span>
-                                <ChevronDown v-if="!plCollapsed.revenue" class="h-3.5 w-3.5 text-muted-foreground" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                            <div v-show="!plCollapsed.revenue" class="mt-2 space-y-1.5">
-                                <div class="flex justify-between text-sm">
-                                    <span class="text-muted-foreground">Gross Sales ({{ plReport.revenue.order_count }} orders)</span>
-                                    <span class="font-semibold">{{ fmt(plReport.revenue.gross_sales) }}</span>
-                                </div>
-                                <div v-if="plReport.revenue.discounts > 0" class="flex justify-between text-sm">
-                                    <span class="text-muted-foreground pl-4">— Discounts</span>
-                                    <span class="text-red-500">−{{ fmt(plReport.revenue.discounts) }}</span>
-                                </div>
+                        <!-- Revenue -->
+                        <div class="px-5 py-4 space-y-2">
+                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Revenue</p>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-muted-foreground">Gross Sales ({{ plReport.revenue.order_count }} orders)</span>
+                                <span class="font-semibold">{{ fmt(plReport.revenue.gross_sales) }}</span>
                             </div>
-                            <div class="flex justify-between text-sm font-bold border-t mt-2 pt-2">
+                            <div v-if="plReport.revenue.discounts > 0" class="flex justify-between text-sm">
+                                <span class="text-muted-foreground pl-4">— Discounts</span>
+                                <span class="text-red-500">−{{ fmt(plReport.revenue.discounts) }}</span>
+                            </div>
+                            <div class="flex justify-between text-sm font-bold border-t pt-2">
                                 <span>Net Revenue</span>
                                 <span class="text-green-600">{{ fmt(plReport.revenue.net_revenue) }}</span>
                             </div>
                         </div>
 
-                        <!-- ── COGS ─────────────────────────────────────────────── -->
-                        <div v-if="plIncludeCogs" class="px-5 py-3">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.cogs = !plCollapsed.cogs">
-                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                                    Cost of Goods Sold (COGS)
-                                </span>
-                                <ChevronDown v-if="!plCollapsed.cogs" class="h-3.5 w-3.5 text-muted-foreground" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                            <div v-show="!plCollapsed.cogs" class="mt-2 space-y-1.5">
-                                <div v-if="!plReport.cogs.has_data"
-                                    class="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg px-3 py-2">
-                                    No cost data — set ingredient costs and product recipes to enable COGS tracking.
-                                </div>
-                                <div class="flex justify-between text-sm">
-                                    <span class="text-muted-foreground">Total COGS</span>
-                                    <span class="font-semibold text-red-500">−{{ fmt(plReport.cogs.total) }}</span>
-                                </div>
+                        <!-- COGS -->
+                        <div v-if="plIncludeCogs" class="px-5 py-4 space-y-2">
+                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Cost of Goods Sold (COGS)</p>
+                            <div v-if="!plReport.cogs.has_data" class="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg px-3 py-2">
+                                No cost data — set ingredient costs and product recipes to enable COGS tracking.
                             </div>
-                            <div class="flex justify-between text-sm font-bold border-t mt-2 pt-2">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-muted-foreground">Total COGS</span>
+                                <span class="font-semibold text-red-500">−{{ fmt(plReport.cogs.total) }}</span>
+                            </div>
+                            <div class="flex justify-between text-sm font-bold border-t pt-2">
                                 <span>Gross Profit <span class="text-xs font-normal text-muted-foreground">({{ plReport.gross_margin }}% margin)</span></span>
                                 <span :class="plReport.gross_profit >= 0 ? 'text-green-600' : 'text-red-600'">{{ fmt(plReport.gross_profit) }}</span>
                             </div>
                         </div>
 
-                        <!-- ── Inventory Purchases ───────────────────────────────── -->
-                        <div v-if="(plReport.inventory_purchases?.total ?? 0) > 0"
-                            class="px-5 py-3 bg-amber-50/40 dark:bg-amber-950/10">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.inventory = !plCollapsed.inventory">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 group-hover:text-amber-900 dark:group-hover:text-amber-300 transition-colors">
-                                        Inventory Purchases ({{ plReport.inventory_purchases.count }})
-                                    </span>
-                                    <span :class="[
-                                        'text-[10px] font-semibold px-2 py-0.5 rounded-full',
-                                        plReport.inventory_purchases.included_in_expenses
-                                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-                                    ]">
-                                        {{ plReport.inventory_purchases.included_in_expenses ? 'In opex' : 'Asset — excluded' }}
-                                    </span>
-                                </div>
-                                <ChevronDown v-if="!plCollapsed.inventory" class="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                            </button>
-                            <div v-show="!plCollapsed.inventory" class="mt-2 space-y-1.5">
-                                <p class="text-[11px] text-muted-foreground leading-relaxed">
-                                    <template v-if="plReport.inventory_purchases.included_in_expenses">
-                                        COGS is OFF — restock counted as operating expense (cash-basis view).
-                                    </template>
-                                    <template v-else>
-                                        COGS is ON — restock moves Cash→Inventory (asset). Cost flows via COGS when sold.
-                                        Excluded from opex to prevent double-counting.
-                                    </template>
-                                </p>
-                                <div v-for="inv in plReport.inventory_purchases.breakdown" :key="inv.transacted_at + inv.description"
-                                    class="flex justify-between text-xs text-muted-foreground pl-2">
-                                    <span class="truncate max-w-xs">{{ inv.description }} <span class="opacity-60">— {{ inv.transacted_at?.slice(0, 10) }}</span></span>
-                                    <span class="shrink-0 ml-4 text-amber-600">
-                                        {{ plReport.inventory_purchases.included_in_expenses ? '−' : '' }}{{ fmt(inv.amount) }}
-                                    </span>
-                                </div>
-                            </div>
-                            <div class="flex justify-between text-sm font-semibold border-t border-amber-200 dark:border-amber-800 mt-2 pt-2">
-                                <span class="text-amber-700 dark:text-amber-400">Total Inventory Purchases</span>
-                                <span class="text-amber-700 dark:text-amber-400">{{ fmt(plReport.inventory_purchases.total) }}</span>
-                            </div>
-                        </div>
-
-                        <!-- ── Other Income ──────────────────────────────────────── -->
-                        <div v-if="(plReport.income_adjustments?.total ?? 0) > 0" class="px-5 py-3">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.other_income = !plCollapsed.other_income">
-                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                                    Other Income / Adjustments ({{ plReport.income_adjustments.count }})
-                                </span>
-                                <ChevronDown v-if="!plCollapsed.other_income" class="h-3.5 w-3.5 text-muted-foreground" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                            <div v-show="!plCollapsed.other_income" class="mt-2 space-y-1">
+                        <!-- Other Income (income adjustments) -->
+                        <div v-if="(plReport.income_adjustments?.total ?? 0) > 0" class="px-5 py-4 space-y-2">
+                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Other Income / Credit Adjustments ({{ plReport.income_adjustments.count }})</p>
+                            <div class="space-y-1">
                                 <div v-for="adj in plReport.income_adjustments.breakdown" :key="adj.transacted_at + adj.description"
                                     class="flex justify-between text-xs text-muted-foreground pl-2">
                                     <span class="truncate max-w-xs">{{ adj.description }} <span class="opacity-60">— {{ adj.transacted_at?.slice(0, 10) }}</span></span>
                                     <span class="shrink-0 ml-4 text-teal-600">+{{ fmt(adj.amount) }}</span>
                                 </div>
                             </div>
-                            <div class="flex justify-between text-sm font-semibold border-t mt-2 pt-2">
+                            <div class="flex justify-between text-sm font-semibold border-t pt-2">
                                 <span>Total Other Income</span>
                                 <span class="text-teal-600">+{{ fmt(plReport.income_adjustments.total) }}</span>
                             </div>
                         </div>
 
-                        <!-- ── Operating Expenses ───────────────────────────────── -->
-                        <div class="px-5 py-3">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.expenses = !plCollapsed.expenses">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                                        Operating Expenses ({{ plReport.expenses.count }})
-                                    </span>
-                                    <span v-if="plIncludeCogs" class="text-[10px] text-muted-foreground opacity-60">
-                                        COGS &amp; restock excluded
-                                    </span>
+                        <!-- Operating Expenses -->
+                        <div class="px-5 py-4 space-y-2">
+                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Operating Expenses ({{ plReport.expenses.count }})</p>
+                            <div v-if="plReport.expenses.breakdown.length > 0" class="space-y-1">
+                                <div v-for="exp in plReport.expenses.breakdown" :key="exp.transacted_at + exp.description"
+                                    class="flex justify-between text-xs text-muted-foreground pl-2">
+                                    <span class="truncate max-w-xs">{{ exp.description }} <span class="opacity-60">— {{ exp.transacted_at?.slice(0, 10) }}</span></span>
+                                    <span class="shrink-0 ml-4">−{{ fmt(exp.amount) }}</span>
                                 </div>
-                                <ChevronDown v-if="!plCollapsed.expenses" class="h-3.5 w-3.5 text-muted-foreground" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                            <div v-show="!plCollapsed.expenses" class="mt-2 space-y-1">
-                                <template v-if="plReport.expenses.breakdown.length > 0">
-                                    <div v-for="exp in plReport.expenses.breakdown" :key="exp.transacted_at + exp.description"
-                                        class="flex justify-between text-xs text-muted-foreground pl-2">
-                                        <span class="truncate max-w-xs">{{ exp.description }} <span class="opacity-60">— {{ exp.transacted_at?.slice(0, 10) }}</span></span>
-                                        <span class="shrink-0 ml-4">−{{ fmt(exp.amount) }}</span>
-                                    </div>
-                                </template>
-                                <p v-else class="text-xs text-muted-foreground pl-2">No expenses recorded for this period.</p>
                             </div>
-                            <div class="flex justify-between text-sm font-semibold border-t mt-2 pt-2">
+                            <div v-else class="text-xs text-muted-foreground pl-2">No expenses recorded for this period.</div>
+                            <div class="flex justify-between text-sm font-semibold border-t pt-2">
                                 <span>Total Expenses</span>
                                 <span class="text-red-500">−{{ fmt(plReport.expenses.total) }}</span>
                             </div>
                         </div>
 
-                        <!-- ── Payroll ───────────────────────────────────────────── -->
-                        <div class="px-5 py-3">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.payroll = !plCollapsed.payroll">
-                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                                    Payroll Disbursements ({{ plReport.payroll?.count ?? 0 }})
-                                </span>
-                                <ChevronDown v-if="!plCollapsed.payroll" class="h-3.5 w-3.5 text-muted-foreground" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                            <div v-show="!plCollapsed.payroll" class="mt-2 space-y-1">
-                                <template v-if="(plReport.payroll?.breakdown ?? []).length > 0">
-                                    <div v-for="pr in plReport.payroll.breakdown" :key="pr.transacted_at + pr.description"
-                                        class="flex justify-between text-xs text-muted-foreground pl-2">
-                                        <span class="truncate max-w-xs">{{ pr.description }} <span class="opacity-60">— {{ pr.transacted_at?.slice(0, 10) }}</span></span>
-                                        <span class="shrink-0 ml-4 text-purple-600">−{{ fmt(pr.amount) }}</span>
-                                    </div>
-                                </template>
-                                <p v-else class="text-xs text-muted-foreground pl-2">No payroll disbursements for this period.</p>
+                        <!-- Payroll -->
+                        <div class="px-5 py-4 space-y-2">
+                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Payroll Disbursements ({{ plReport.payroll?.count ?? 0 }})</p>
+                            <div v-if="(plReport.payroll?.breakdown ?? []).length > 0" class="space-y-1">
+                                <div v-for="pr in plReport.payroll.breakdown" :key="pr.transacted_at + pr.description"
+                                    class="flex justify-between text-xs text-muted-foreground pl-2">
+                                    <span class="truncate max-w-xs">{{ pr.description }} <span class="opacity-60">— {{ pr.transacted_at?.slice(0, 10) }}</span></span>
+                                    <span class="shrink-0 ml-4 text-purple-600">−{{ fmt(pr.amount) }}</span>
+                                </div>
                             </div>
-                            <div class="flex justify-between text-sm font-semibold border-t mt-2 pt-2">
+                            <div v-else class="text-xs text-muted-foreground pl-2">No payroll disbursements for this period.</div>
+                            <div class="flex justify-between text-sm font-semibold border-t pt-2">
                                 <span>Total Payroll</span>
                                 <span class="text-purple-600">−{{ fmt(plReport.payroll?.total ?? 0) }}</span>
                             </div>
                         </div>
 
-                        <!-- ── Net Profit ────────────────────────────────────────── -->
+                        <!-- Net Profit -->
                         <div :class="['px-5 py-5', plReport.net_profit >= 0 ? 'bg-green-50 dark:bg-green-950/20' : 'bg-red-50 dark:bg-red-950/20']">
                             <div class="flex justify-between items-center">
                                 <div>
@@ -1697,117 +1484,6 @@ onMounted(async () => {
                                 <p class="text-2xl font-black" :class="plReport.net_profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600'">
                                     {{ fmt(plReport.net_profit) }}
                                 </p>
-                            </div>
-                            <p class="text-[11px] text-muted-foreground mt-2">
-                                Cash basis — only <strong>paid</strong> bills and expenses are deducted. Upcoming or unpaid bills are not reflected here until they're paid.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ── Completed but unpaid (excluded from profit) ─────────────── -->
-                <div v-if="(plReport.unpaid_completed?.count ?? 0) > 0"
-                    class="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/20 p-4 flex items-start gap-3">
-                    <TrendingDown class="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                    <div class="text-sm text-amber-800 dark:text-amber-300">
-                        <p class="font-semibold">
-                            {{ plReport.unpaid_completed!.count }} completed order(s) worth {{ fmt(plReport.unpaid_completed!.total) }} are not in this profit.
-                        </p>
-                        <p class="text-xs mt-0.5 text-amber-700 dark:text-amber-400">
-                            Revenue is recognised only when an order is fully paid (any tender). Record the outstanding payment to include these in profit.
-                        </p>
-                    </div>
-                </div>
-
-                <!-- ── Sales = COGS + Gross Profit stacked bar ─────────────────── -->
-                <div v-if="salesChart" class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                    <div class="p-4 border-b bg-muted/30 flex items-center gap-2">
-                        <TrendingUp class="h-4 w-4 text-orange-500" />
-                        <h2 class="font-bold text-base">Revenue Breakdown: Sales = COGS + Gross Profit</h2>
-                    </div>
-                    <div class="p-6 flex flex-col sm:flex-row items-center sm:items-end gap-8">
-
-                        <!-- Vertical stacked bar -->
-                        <div class="flex flex-col items-center gap-3 shrink-0">
-                            <div class="relative w-28 flex flex-col-reverse rounded-xl overflow-hidden shadow-lg"
-                                style="height: 260px;">
-                                <!-- COGS — bottom segment -->
-                                <div
-                                    class="relative w-full bg-red-500 transition-all duration-700 ease-out flex items-center justify-center"
-                                    :style="{ height: salesChart.cogsH + '%', minHeight: salesChart.cogsH > 0 ? '24px' : '0' }"
-                                >
-                                    <span v-if="salesChart.cogsH > 8"
-                                        class="text-white text-[10px] font-black leading-tight text-center px-1 select-none">
-                                        {{ salesChart.cogsH.toFixed(0) }}%
-                                    </span>
-                                </div>
-                                <!-- Gross Profit — top segment -->
-                                <div
-                                    class="relative w-full bg-emerald-500 transition-all duration-700 ease-out flex items-center justify-center"
-                                    :style="{ height: salesChart.grossH + '%', minHeight: salesChart.grossH > 0 ? '24px' : '0' }"
-                                >
-                                    <span v-if="salesChart.grossH > 8"
-                                        class="text-white text-[10px] font-black leading-tight text-center px-1 select-none">
-                                        {{ salesChart.grossH.toFixed(0) }}%
-                                    </span>
-                                </div>
-                            </div>
-                            <p class="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Net Revenue</p>
-                            <p class="text-sm font-black">{{ fmt(salesChart.revenue) }}</p>
-                        </div>
-
-                        <!-- Legend + breakdown table -->
-                        <div class="flex-1 min-w-0 space-y-4 w-full">
-                            <!-- Gross Profit row -->
-                            <div class="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20 p-4">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="h-3 w-3 rounded-sm bg-emerald-500 shrink-0"></div>
-                                    <span class="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Gross Profit</span>
-                                    <span class="ml-auto text-[11px] font-semibold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 rounded-full">
-                                        {{ salesChart.grossMargin }}% margin
-                                    </span>
-                                </div>
-                                <div class="flex items-baseline gap-2">
-                                    <p class="text-2xl font-black text-emerald-700 dark:text-emerald-400">{{ fmt(salesChart.grossProfit) }}</p>
-                                    <p class="text-xs text-muted-foreground">= Revenue − COGS</p>
-                                </div>
-                                <!-- Gross Profit bar (horizontal reference) -->
-                                <div class="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
-                                    <div class="h-full bg-emerald-500 rounded-full transition-all duration-700"
-                                        :style="{ width: salesChart.grossH + '%' }"></div>
-                                </div>
-                                <p class="text-[11px] text-muted-foreground mt-1">{{ salesChart.grossH.toFixed(1) }}% of net revenue</p>
-                            </div>
-
-                            <!-- COGS row -->
-                            <div class="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20 p-4">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="h-3 w-3 rounded-sm bg-red-500 shrink-0"></div>
-                                    <span class="text-xs font-bold uppercase tracking-wider text-red-700 dark:text-red-400">COGS</span>
-                                    <span class="text-[11px] text-muted-foreground ml-1">Cost of Goods Sold</span>
-                                </div>
-                                <div class="flex items-baseline gap-2">
-                                    <p class="text-2xl font-black text-red-600">{{ fmt(salesChart.cogs) }}</p>
-                                    <p class="text-xs text-muted-foreground">ingredient cost per order</p>
-                                </div>
-                                <!-- COGS bar (horizontal reference) -->
-                                <div class="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
-                                    <div class="h-full bg-red-500 rounded-full transition-all duration-700"
-                                        :style="{ width: salesChart.cogsH + '%' }"></div>
-                                </div>
-                                <p class="text-[11px] text-muted-foreground mt-1">{{ salesChart.cogsH.toFixed(1) }}% of net revenue</p>
-                            </div>
-
-                            <!-- Formula row -->
-                            <div class="rounded-xl border border-border bg-muted/30 p-4 text-center">
-                                <p class="text-xs text-muted-foreground font-mono">
-                                    <span class="text-foreground font-bold">{{ fmt(salesChart.revenue) }}</span>
-                                    <span class="mx-2 opacity-50">=</span>
-                                    <span class="text-red-600 font-bold">{{ fmt(salesChart.cogs) }}</span>
-                                    <span class="mx-2 text-muted-foreground">+</span>
-                                    <span class="text-emerald-600 font-bold">{{ fmt(salesChart.grossProfit) }}</span>
-                                </p>
-                                <p class="text-[11px] text-muted-foreground mt-1">Net Revenue = COGS + Gross Profit</p>
                             </div>
                         </div>
                     </div>

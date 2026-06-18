@@ -7,13 +7,12 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Trend analytics for the Reports module. All hour/day-of-week grouping is
- * done in the display timezone (Manila, +08:00) via CONVERT_TZ on the
- * UTC-stored created_at — an offset is used so it works without MySQL tz tables.
+ * Trend analytics for the Reports module. created_at is stored in Manila local
+ * time (app.timezone = Asia/Manila), so hour/DOW SQL expressions read directly
+ * from the column — no timezone conversion needed.
  */
 class AnalyticsService
 {
-    private const TZ = '+08:00';                 // display timezone offset (Asia/Manila)
     private const CACHE_TTL = 300;               // 5 minutes
     private const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -23,7 +22,7 @@ class AnalyticsService
         $key = 'analytics:' . md5($startDate . '|' . $endDate . '|' . ($categoryId ?? 'all'));
 
         return Cache::remember($key, self::CACHE_TTL, function () use ($startDate, $endDate, $categoryId) {
-            [$start, $end] = $this->utcBounds($startDate, $endDate);
+            [$start, $end] = $this->localBounds($startDate, $endDate);
 
             return [
                 'range'              => ['start' => $startDate, 'end' => $endDate],
@@ -39,24 +38,41 @@ class AnalyticsService
         });
     }
 
-    private function utcBounds(string $start, string $end): array
+    private function localBounds(string $start, string $end): array
     {
         return [
-            Carbon::parse($start, 'Asia/Manila')->startOfDay()->utc(),
-            Carbon::parse($end, 'Asia/Manila')->endOfDay()->utc(),
+            Carbon::parse($start, 'Asia/Manila')->startOfDay(),
+            Carbon::parse($end, 'Asia/Manila')->endOfDay(),
         ];
     }
 
-    /** Manila local hour / day-of-week SQL expressions. */
+    /** Hour / DOW / date SQL expressions.
+     *  created_at is stored in Manila local time, so no TZ conversion is needed.
+     *  MySQL uses HOUR/DAYOFWEEK/DATE; SQLite uses strftime equivalents. */
     private function localHour(string $col = 'orders.created_at'): string
     {
-        return "HOUR(CONVERT_TZ($col, '+00:00', '" . self::TZ . "'))";
+        if (DB::getDriverName() === 'sqlite') {
+            return "CAST(strftime('%H', $col) AS INTEGER)";
+        }
+        return "HOUR($col)";
     }
 
     private function localDow(string $col = 'orders.created_at'): string
     {
+        if (DB::getDriverName() === 'sqlite') {
+            // strftime('%w') → 0=Sun..6=Sat; +1 → 1=Sun..7=Sat (matches MySQL DAYOFWEEK)
+            return "CAST(strftime('%w', $col) AS INTEGER) + 1";
+        }
         // MySQL DAYOFWEEK: 1=Sunday .. 7=Saturday
-        return "DAYOFWEEK(CONVERT_TZ($col, '+00:00', '" . self::TZ . "'))";
+        return "DAYOFWEEK($col)";
+    }
+
+    private function localDate(string $col = 'orders.created_at'): string
+    {
+        if (DB::getDriverName() === 'sqlite') {
+            return "date($col)";
+        }
+        return "DATE($col)";
     }
 
     /** Base orders query (non-cancelled), with optional category restriction. */
@@ -424,17 +440,17 @@ class AnalyticsService
     // ── 8. Simple forecasting (moving average of same weekday/hour) ──────────
     private function forecast(?int $categoryId): array
     {
-        $now       = Carbon::now('Asia/Manila');
-        $weeks     = 4;
-        $lookback  = $now->copy()->subWeeks($weeks)->startOfDay()->utc();
-        $nowUtc    = $now->copy()->utc();
+        $now      = Carbon::now('Asia/Manila');
+        $weeks    = 4;
+        $lookback = $now->copy()->subWeeks($weeks)->startOfDay();
+        $nowLocal = $now->copy();
         $nextHour  = ($now->hour + 1) % 24;
         $todayDow  = $now->dayOfWeek + 1;   // Carbon 0=Sun -> MySQL 1=Sun
 
         // average orders for (this weekday, next hour) over the last N weeks
         $perHour = DB::table('orders')
             ->where('status', '!=', 'cancelled')
-            ->whereBetween('created_at', [$lookback, $nowUtc])
+            ->whereBetween('created_at', [$lookback, $nowLocal])
             ->whereRaw($this->localDow() . ' = ?', [$todayDow])
             ->whereRaw($this->localHour() . ' = ?', [$nextHour])
             ->count();
@@ -442,9 +458,9 @@ class AnalyticsService
         // average total daily revenue for this weekday over the last N weeks
         $dayRev = DB::table('orders')
             ->where('status', '!=', 'cancelled')
-            ->whereBetween('created_at', [$lookback, $nowUtc])
+            ->whereBetween('created_at', [$lookback, $nowLocal])
             ->whereRaw($this->localDow() . ' = ?', [$todayDow])
-            ->selectRaw('SUM(total_amount) as rev, COUNT(DISTINCT DATE(CONVERT_TZ(created_at, \'+00:00\', \'' . self::TZ . '\'))) as days')
+            ->selectRaw('SUM(total_amount) as rev, COUNT(DISTINCT ' . $this->localDate('created_at') . ') as days')
             ->first();
 
         $expectedToday = ($dayRev && $dayRev->days > 0) ? round($dayRev->rev / $dayRev->days, 2) : 0;
@@ -452,7 +468,7 @@ class AnalyticsService
         // busiest upcoming hours for this weekday (avg orders desc)
         $busy = DB::table('orders')
             ->where('status', '!=', 'cancelled')
-            ->whereBetween('created_at', [$lookback, $nowUtc])
+            ->whereBetween('created_at', [$lookback, $nowLocal])
             ->whereRaw($this->localDow() . ' = ?', [$todayDow])
             ->selectRaw($this->localHour() . ' as hr, COUNT(*) as c')
             ->groupByRaw($this->localHour())

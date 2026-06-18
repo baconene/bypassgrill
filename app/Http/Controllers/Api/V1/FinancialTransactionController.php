@@ -11,17 +11,15 @@ class FinancialTransactionController extends Controller {
         $this->checkReports();
         $includeCogs = $request->boolean('include_cogs', true);
 
-        $noCogs = fn ($q) => $q->where(fn ($inner) =>
-            $inner->where('type', '!=', 'expense')
-                  ->orWhere(fn ($q2) => $q2->where('type', 'expense')->where('description', 'not like', 'COGS:%'))
-        );
+        // Reusable scope to strip asset deduction rows when the toggle is off
+        $noAssetDeductions = fn ($q) => $q->where('type', '!=', 'asset_deduction');
 
         // Opening financial balance: sum of all visible financial tx BEFORE the filtered period.
         // This anchors the running balance correctly even when a date range is applied.
         $openingBalance = 0.0;
         if ($request->start_date) {
             $openingBalance = (float) (FinancialTransaction::where('type', '!=', 'order')
-                ->when(! $includeCogs, $noCogs)
+                ->when(! $includeCogs, $noAssetDeductions)
                 ->whereDate('transacted_at', '<', $request->start_date)
                 ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
                 ->value('bal') ?? 0);
@@ -30,7 +28,7 @@ class FinancialTransactionController extends Controller {
         // Compute financial_balance for every visible tx in the period (chronologically, no type filter —
         // the balance reflects the full financial picture regardless of which type the user is filtering).
         $periodTx = FinancialTransaction::where('type', '!=', 'order')
-            ->when(! $includeCogs, $noCogs)
+            ->when(! $includeCogs, $noAssetDeductions)
             ->when($request->start_date, fn ($q) => $q->whereDate('transacted_at', '>=', $request->start_date))
             ->when($request->end_date,   fn ($q) => $q->whereDate('transacted_at', '<=', $request->end_date))
             ->orderBy('transacted_at')->orderBy('id')
@@ -48,7 +46,7 @@ class FinancialTransactionController extends Controller {
         // Paginated display query — type filter applies here but not to the balance map above.
         $q = FinancialTransaction::with(['order', 'tender', 'user'])
             ->where('type', '!=', 'order')
-            ->when(! $includeCogs, $noCogs)
+            ->when(! $includeCogs, $noAssetDeductions)
             ->orderByDesc('transacted_at')
             ->orderByDesc('id');
 
@@ -56,7 +54,7 @@ class FinancialTransactionController extends Controller {
         if ($request->start_date) $q->whereDate('transacted_at', '>=', $request->start_date);
         if ($request->end_date)   $q->whereDate('transacted_at', '<=', $request->end_date);
 
-        $paginated = $q->paginate(50);
+        $paginated = $q->paginate(20);
         $paginated->getCollection()->transform(function ($tx) use ($balMap) {
             $tx->financial_balance = $balMap[$tx->id] ?? null;
             return $tx;
@@ -71,16 +69,13 @@ class FinancialTransactionController extends Controller {
         $end         = $request->end_date   ? Carbon::parse($request->end_date)->endOfDay()     : Carbon::today()->endOfDay();
         $includeCogs = $request->boolean('include_cogs', true);
 
-        // Reusable scope to strip COGS expense rows when the toggle is off
-        $noCogs = fn ($q) => $q->where(fn ($inner) =>
-            $inner->where('type', '!=', 'expense')
-                  ->orWhere(fn ($q2) => $q2->where('type', 'expense')->where('description', 'not like', 'COGS:%'))
-        );
+        // Reusable scope to strip asset deduction rows when the toggle is off
+        $noAssetDeductions = fn ($q) => $q->where('type', '!=', 'asset_deduction');
 
         $rows = FinancialTransaction::selectRaw('type, SUM(amount) as total, COUNT(*) as count')
             ->whereBetween('transacted_at', [$start, $end])
             ->where('type', '!=', 'order')
-            ->when(! $includeCogs, $noCogs)
+            ->when(! $includeCogs, $noAssetDeductions)
             ->groupBy('type')
             ->get()
             ->keyBy('type');
@@ -102,7 +97,7 @@ class FinancialTransactionController extends Controller {
         $netByTender = FinancialTransaction::whereBetween('transacted_at', [$start, $end])
             ->whereNotNull('payment_tender_id')
             ->where('type', '!=', 'order')
-            ->when(! $includeCogs, $noCogs)
+            ->when(! $includeCogs, $noAssetDeductions)
             ->with('tender')
             ->selectRaw("payment_tender_id,
                 SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as total_in,
@@ -127,7 +122,7 @@ class FinancialTransactionController extends Controller {
         // Balance as of end date: cumulative sum of non-order transactions up to end date,
         // using the same logic as the financial_balance column in the transaction list.
         $balanceAsOfEnd = (float) (FinancialTransaction::where('type', '!=', 'order')
-            ->when(! $includeCogs, $noCogs)
+            ->when(! $includeCogs, $noAssetDeductions)
             ->whereDate('transacted_at', '<=', $end->toDateString())
             ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
             ->value('bal') ?? 0.0);
@@ -148,14 +143,18 @@ class FinancialTransactionController extends Controller {
 
     public function store(Request $request): JsonResponse {
         if (! auth()->user()?->hasAnyRole('admin', 'auditor')) abort(403);
+        \Log::info('💾 POST /financial-transactions received', ['transacted_at_raw' => $request->input('transacted_at')]);
+
         $data = $request->validate([
-            'type'               => 'required|in:expense,income_adjustment',
+            'type'               => 'required|in:expense,income_adjustment,asset_deduction',
             'amount'             => 'required|numeric|min:0.01',
             'description'        => 'required|string|max:255',
             'notes'              => 'nullable|string',
-            'transacted_at'      => 'nullable|date',
+            'transacted_at'      => 'nullable|date_format:Y-m-d\TH:i',
             'payment_tender_id'  => 'nullable|exists:payment_tenders,id',
         ]);
+
+        \Log::info('💾 After validation', ['transacted_at' => $data['transacted_at'] ?? 'null', 'now' => now()->toDateTimeString()]);
 
         $tx = FinancialTransaction::create([
             'type'               => $data['type'],
@@ -166,6 +165,7 @@ class FinancialTransactionController extends Controller {
             'transacted_at'      => $data['transacted_at'] ?? now(),
             'payment_tender_id'  => $data['payment_tender_id'] ?? null,
         ]);
+        \Log::info('💾 Created transaction', ['id' => $tx->id, 'transacted_at' => $tx->transacted_at->toDateTimeString()]);
         return response()->json($tx, 201);
     }
 
@@ -180,7 +180,7 @@ class FinancialTransactionController extends Controller {
             'amount'            => 'sometimes|numeric|min:0.01',
             'description'       => 'sometimes|string|max:255',
             'notes'             => 'nullable|string',
-            'transacted_at'     => 'sometimes|date',
+            'transacted_at'     => 'sometimes|date_format:Y-m-d\TH:i',
             'payment_tender_id' => 'nullable|exists:payment_tenders,id',
         ]);
 

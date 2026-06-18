@@ -25,11 +25,12 @@ interface Bundle {
 }
 
 // ── State ───────────────────────────────────────────────────────────────────
-const today = new Date().toISOString().split('T')[0]
-const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().split('T')[0]
+const toManilaDate = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+const manilaToday = () => toManilaDate(new Date())
+const daysAgo = (n: number) => toManilaDate(new Date(Date.now() - n * 864e5))
 
 const startDate = ref(daysAgo(30))
-const endDate = ref(today)
+const endDate = ref(manilaToday())
 const categoryId = ref<number | ''>('')
 const categories = ref<{ id: number; name: string }[]>([])
 const loading = ref(false)
@@ -39,7 +40,7 @@ const trendMetric = ref<'orders' | 'revenue' | 'aov'>('orders')
 const fmt = (v: number) => '₱' + v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtShort = (v: number) => v >= 1000 ? '₱' + (v / 1000).toFixed(1) + 'K' : '₱' + Math.round(v)
 
-const setRange = (n: number) => { startDate.value = daysAgo(n); endDate.value = today; load() }
+const setRange = (n: number) => { startDate.value = daysAgo(n); endDate.value = manilaToday(); load() }
 
 const load = async () => {
     loading.value = true
