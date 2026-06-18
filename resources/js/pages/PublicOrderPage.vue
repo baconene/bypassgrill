@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3'
+import { Head, usePage } from '@inertiajs/vue3'
+import { computed } from 'vue'
 import { ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt } from 'lucide-vue-next'
 
 defineOptions({ layout: null })
+
+const page = usePage()
+const brandName = computed(() => (page.props as any).brandName || (page.props as any).name || 'Restaurant')
 
 interface OrderItem { name: string; quantity: number; unit_price: number; subtotal: number }
 interface OrderPayment { method: string; amount: number; change: number; status: string }
@@ -38,15 +42,14 @@ const payColor = (s: string) => ({
 </script>
 
 <template>
-    <Head :title="`Order #${order.id} — Bypass Grill`" />
+    <Head :title="`Order #${order.id} — ${brandName}`" />
 
     <div class="min-h-screen bg-background flex justify-center px-3 py-6 sm:py-10">
         <div class="w-full max-w-2xl space-y-4">
 
             <!-- Store header -->
             <div class="text-center mb-2">
-                <h1 class="text-2xl font-black tracking-tight">BYPASS GRILL</h1>
-                <p class="text-xs text-muted-foreground mt-0.5">Filipino Grill Restaurant</p>
+                <h1 class="text-2xl font-black tracking-tight">{{ brandName.toUpperCase() }}</h1>
             </div>
 
             <!-- Order header -->
@@ -205,7 +208,7 @@ const payColor = (s: string) => ({
             </div>
 
             <p class="text-center text-xs text-muted-foreground pt-2 pb-4">
-                Thank you for dining with us ♥ · bypassgrill.baconologies.com
+                Thank you for dining with us ♥ · {{ brandName }}
             </p>
         </div>
     </div>
