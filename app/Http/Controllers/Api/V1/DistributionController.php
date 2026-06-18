@@ -67,6 +67,21 @@ class DistributionController extends Controller
         return response()->json($this->service->trend($basis, $start, $end));
     }
 
+    /** Royalty analytics: top products, totals, by category. */
+    public function royaltyAnalytics(Request $request): JsonResponse
+    {
+        $this->adminOnly();
+        [$basis, $start, $end, $cat, $prod] = $this->filters($request);
+
+        $result = $this->service->compute($basis, $start, $end, $cat, $prod);
+        return response()->json([
+            'total'        => $result['royalty']['total'],
+            'by_product'   => $result['royalty']['by_product'],
+            'by_recipient' => $result['royalty']['by_recipient'],
+            'by_category'  => $result['royalty']['by_category'],
+        ]);
+    }
+
     /** CSV export of the current preview. */
     public function export(Request $request): StreamedResponse
     {
@@ -79,11 +94,15 @@ class DistributionController extends Controller
         $rows[] = [];
         $rows[] = ['Metric', 'Amount'];
         $rows[] = [$r['base_label'], $r['base_amount']];
+        $rows[] = ['Royalties', $r['royalty']['total']];
         $rows[] = ['Distributable', $r['distributable']];
         $rows[] = [];
         $rows[] = ['Recipient', 'Type', 'Percentage', 'Amount'];
         foreach ($r['members'] as $m) {
             $rows[] = [$m['name'], 'Member', $m['percentage'] . '%', $m['amount']];
+        }
+        foreach ($r['royalty']['by_recipient'] as $rr) {
+            $rows[] = [$rr['recipient_name'], 'Royalty', '', $rr['amount']];
         }
         $rows[] = ['Company Retained Earnings', 'Company', $r['company_percentage'] . '%', $r['company_amount']];
 
@@ -109,7 +128,7 @@ class DistributionController extends Controller
     private function filters(Request $request): array
     {
         $request->validate([
-            'basis'          => 'nullable|in:sales,profit',
+            'basis'          => 'nullable|in:sales,profit,hybrid',
             'start_date'     => 'nullable|date',
             'end_date'       => 'nullable|date',
             'category_id'    => 'nullable|integer',
