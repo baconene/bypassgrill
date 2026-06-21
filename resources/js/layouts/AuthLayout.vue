@@ -9,13 +9,12 @@ defineProps<{
 
 const page = usePage();
 const logoUrl = (page.props as any).logoUrl as string | null;
-const brandName = ((page.props as any).brandName as string | null) ?? 'The Boys';
+const brandName = ((page.props as any).brandName as string | null) ?? 'Bypass Grill';
 </script>
-
 
 <template>
     <div class="min-h-svh lg:grid lg:grid-cols-2">
-        <!-- Left panel — The Boys branding -->
+        <!-- Left panel — BypassGrill branding -->
         <div class="relative hidden lg:flex flex-col justify-between bg-zinc-950 p-12 overflow-hidden">
             <!-- Warm glow -->
             <div class="absolute inset-0 bg-gradient-to-br from-orange-950/60 via-zinc-950 to-zinc-950 pointer-events-none" />
@@ -36,19 +35,19 @@ const brandName = ((page.props as any).brandName as string | null) ?? 'The Boys'
 
             <!-- Hero text -->
             <div class="relative z-10 space-y-4">
-                <p class="text-orange-400 text-sm font-semibold uppercase tracking-widest">Burger Pop-Up · Calamba, Laguna</p>
+                <p class="text-orange-400 text-sm font-semibold uppercase tracking-widest">Restaurant POS</p>
                 <h1 class="text-4xl font-black text-white leading-tight">
-                    Grilled Fresh,<br/>
-                    <span class="text-orange-400">Every Day.</span>
+                    Your Grill,<br/>
+                    <span class="text-orange-400">Your Way.</span>
                 </h1>
                 <p class="text-zinc-400 text-base leading-relaxed max-w-xs">
-                    Flame-grilled burgers made with love by The Boys — Calamba, Laguna's favourite pop-up grill.
+                    Seamless ordering, kitchen management, and real-time reporting — all in one place.
                 </p>
             </div>
 
             <!-- Bottom tagline -->
             <p class="relative z-10 text-zinc-600 text-xs">
-                &copy; {{ new Date().getFullYear() }} {{ brandName }} &mdash; Grilled Burgers, Calamba, Laguna
+                &copy; {{ new Date().getFullYear() }} {{ brandName }}
             </p>
         </div>
 
