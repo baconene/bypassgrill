@@ -234,7 +234,7 @@ interface HeatmapData {
 }
 
 const hmDateFrom  = ref(new Date(new Date().setDate(new Date().getDate() - 89)).toISOString().slice(0, 10))
-const hmDateTo    = ref(today)
+const hmDateTo    = ref(manilaToday())
 const hmData      = ref<HeatmapData | null>(null)
 const hmLoading   = ref(false)
 const hmTooltip   = ref<{ slot: HeatmapSlot; x: number; y: number } | null>(null)
