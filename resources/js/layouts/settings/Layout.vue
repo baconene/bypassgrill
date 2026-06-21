@@ -24,6 +24,10 @@ const baseNavItems: NavItem[] = [
 const sidebarNavItems = computed<NavItem[]>(() => {
     const items = [...baseNavItems];
     if (isAdmin.value) {
+        items.push({ title: 'Page Content', href: '/settings/page-content' });
+        items.push({ title: 'Media', href: '/settings/media' });
+        items.push({ title: 'Prices', href: '/settings/prices' });
+        items.push({ title: 'Advertisements', href: '/settings/advertisements' });
         items.push({ title: 'Payment Tenders', href: '/settings/payment-tenders' });
         items.push({ title: 'Print Service', href: '/settings/print-service' });
         items.push({ title: 'Users', href: '/settings/users' });
@@ -70,8 +74,8 @@ const { isCurrentOrParentUrl } = useCurrentUrl();
 
             <Separator class="my-6 lg:hidden" />
 
-            <div class="flex-1 md:max-w-2xl">
-                <section class="max-w-xl space-y-12">
+            <div class="flex-1 min-w-0">
+                <section class="space-y-6">
                     <slot />
                 </section>
             </div>

@@ -16,7 +16,7 @@ const props = defineProps<{
     users: { id: number; name: string }[]
 }>()
 
-// ── Shared filters ──────────────────────────────────────────────────────────
+// ── Shared filters ────────────────────────────────────────────────────────
 const today = new Date().toISOString().split('T')[0]
 const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]
 const basis = ref<'sales' | 'profit'>('sales')
@@ -336,7 +336,7 @@ const tabs = [
             </button>
         </div>
 
-        <!-- ── DISTRIBUTION ─────────────────────────────────────────────── -->
+        <!-- ── DISTRIBUTION ───────────────────────────────────────────────── -->
         <template v-if="subTab === 'distribution'">
             <!-- Filters -->
             <div class="rounded-xl border bg-card shadow-sm p-4">
@@ -377,11 +377,40 @@ const tabs = [
                         <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Financial Summary — {{ result.financial_summary.period_end }}</p>
                     </div>
                     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                        <div class="space-y-0.5"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Gross Sales</p><p class="text-base font-bold">{{ fmt(result.financial_summary.gross_sales) }}</p></div>
-                        <div class="space-y-0.5"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Refunds</p><p class="text-base font-bold text-red-500">−{{ fmt(result.financial_summary.refunds) }}</p></div>
-                        <div class="space-y-0.5"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Net Sales</p><p class="text-base font-bold text-blue-600">{{ fmt(result.financial_summary.net_sales) }}</p></div>
-                        <div class="space-y-0.5"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Net Profit</p><p class="text-base font-bold" :class="result.financial_summary.net_profit >= 0 ? 'text-emerald-600' : 'text-red-500'">{{ fmt(result.financial_summary.net_profit) }}</p></div>
-                        <div class="space-y-0.5 border-l pl-3"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">{{ result.basis === 'profit' ? 'Profit Margin' : 'Sales Base' }}</p><p class="text-base font-bold text-primary">{{ result.basis === 'profit' && result.financial_summary.gross_sales > 0 ? ((result.financial_summary.net_profit / result.financial_summary.gross_sales) * 100).toFixed(1) + '%' : fmt(result.financial_summary.sales_base) }}</p></div>
+                        <div class="space-y-0.5">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Gross Sales</p>
+                            <p class="text-base font-bold">{{ fmt(result.financial_summary.gross_sales) }}</p>
+                        </div>
+                        <div class="space-y-0.5">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Refunds</p>
+                            <p class="text-base font-bold text-red-500">−{{ fmt(result.financial_summary.refunds) }}</p>
+                        </div>
+                        <div class="space-y-0.5">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Net Sales</p>
+                            <p class="text-base font-bold text-blue-600">{{ fmt(result.financial_summary.net_sales) }}</p>
+                        </div>
+                        <div v-if="(result.financial_summary.income_adjustments ?? 0) !== 0" class="space-y-0.5" title="Manual 'Other Income' entries from the Financial module — added to net profit.">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Other Income</p>
+                            <p class="text-base font-bold text-teal-600">+{{ fmt(result.financial_summary.income_adjustments) }}</p>
+                        </div>
+                        <div v-if="(result.financial_summary.expenses ?? 0) !== 0" class="space-y-0.5" title="Operating expenses (incl. paid bills) from the Financial module — deducted from net profit.">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Expenses</p>
+                            <p class="text-base font-bold text-red-500">−{{ fmt(result.financial_summary.expenses) }}</p>
+                        </div>
+                        <div v-if="(result.financial_summary.payroll ?? 0) !== 0" class="space-y-0.5" title="Payroll disbursements — deducted from net profit.">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">Payroll</p>
+                            <p class="text-base font-bold text-purple-600">−{{ fmt(result.financial_summary.payroll) }}</p>
+                        </div>
+                        <div class="space-y-0.5">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground" title="Cash basis: only paid bills and expenses are deducted — upcoming or unpaid bills are not reflected until paid. Includes manual Other Income / Expenses / Payroll.">
+                                Net Profit
+                            </p>
+                            <p class="text-base font-bold" :class="result.financial_summary.net_profit >= 0 ? 'text-emerald-600' : 'text-red-500'">{{ fmt(result.financial_summary.net_profit) }}</p>
+                        </div>
+                        <div class="space-y-0.5 border-l pl-3">
+                            <p class="text-[10px] uppercase tracking-wide text-muted-foreground">{{ result.basis === 'profit' ? 'Profit Margin' : 'Sales Basis' }}</p>
+                            <p class="text-base font-bold text-primary">{{ result.basis === 'profit' ? (result.financial_summary.gross_sales > 0 ? ((result.financial_summary.net_profit / result.financial_summary.gross_sales) * 100).toFixed(1) + '%' : '—') : fmt(result.financial_summary.sales_base) }}</p>
+                        </div>
                     </div>
                 </div>
 
@@ -580,7 +609,7 @@ const tabs = [
             </template>
         </template>
 
-        <!-- ── SHAREHOLDERS ─────────────────────────────────────────────── -->
+        <!-- ── SHAREHOLDERS ───────────────────────────────────────────────── -->
         <template v-if="subTab === 'shareholders'">
             <div class="rounded-xl border bg-card shadow-sm p-4">
                 <div class="flex items-center justify-between mb-3">
@@ -827,7 +856,7 @@ const tabs = [
             </div>
         </template>
 
-        <!-- ── TRENDS ───────────────────────────────────────────────────── -->
+        <!-- ── TRENDS ───────────────────────────────────────────────────────── -->
         <template v-if="subTab === 'trends'">
             <div class="rounded-xl border bg-card shadow-sm p-4">
                 <h3 class="font-bold text-sm mb-2 flex items-center gap-2"><TrendingUp class="h-4 w-4 text-primary" /> Monthly Distribution Trend (this year)</h3>
@@ -836,7 +865,7 @@ const tabs = [
             </div>
         </template>
 
-        <!-- ── HISTORY ──────────────────────────────────────────────────── -->
+        <!-- ── HISTORY ──────────────────────────────────────────────────────── -->
         <template v-if="subTab === 'history'">
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="p-4 border-b"><h3 class="font-bold text-sm">Distribution Snapshots</h3></div>
@@ -870,7 +899,7 @@ const tabs = [
             </div>
         </template>
 
-        <!-- ── HELP ─────────────────────────────────────────────────────── -->
+        <!-- ── HELP ───────────────────────────────────────────────────────────── -->
         <template v-if="subTab === 'help'">
             <div class="grid lg:grid-cols-2 gap-4">
                 <div class="rounded-xl border bg-card shadow-sm p-5 space-y-3 lg:col-span-2">

@@ -75,7 +75,6 @@ class ShareholderController extends Controller
         ]);
     }
 
-    /** Total active member ownership cannot exceed 100%. */
     private function assertUnder100(float $pct, string $status, ?int $excludeId = null): void
     {
         if ($status !== 'active') {

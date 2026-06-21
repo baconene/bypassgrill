@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
-import { Printer, CheckCircle2, AlertCircle, Loader2, Bell, Send, Wifi } from 'lucide-vue-next'
+import { Printer, CheckCircle2, AlertCircle, Loader2, Bell, Send, Wifi, Share2, QrCode } from 'lucide-vue-next'
 import api from '@/utils/api'
 
 defineOptions({
@@ -24,6 +24,9 @@ interface PrintServiceSettings {
     print_auto_print: boolean
     print_enabled: boolean
     print_channel: string
+    social_facebook: string | null
+    social_instagram: string | null
+    receipt_qr_type: 'none' | 'facebook' | 'order_url'
 }
 
 const props = defineProps<{
@@ -508,6 +511,82 @@ onMounted(() => {
                 <CheckCircle2 v-if="beamsResult.ok" class="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 <AlertCircle v-else class="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 {{ beamsResult.message }}
+            </div>
+        </div>
+
+        <!-- Social Links -->
+        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+            <h3 class="font-semibold text-sm flex items-center gap-2">
+                <Share2 class="h-4 w-4" /> Social Links
+            </h3>
+            <p class="text-xs text-muted-foreground -mt-2">
+                Used when printing QR codes on receipts. Enter the full URL for each platform.
+            </p>
+
+            <div>
+                <label class="text-xs font-medium text-muted-foreground block mb-1">Facebook Page URL</label>
+                <input
+                    v-model="form.social_facebook"
+                    type="url"
+                    placeholder="https://www.facebook.com/yourpage"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+            </div>
+
+            <div>
+                <label class="text-xs font-medium text-muted-foreground block mb-1">Instagram Profile URL</label>
+                <input
+                    v-model="form.social_instagram"
+                    type="url"
+                    placeholder="https://www.instagram.com/yourprofile"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+            </div>
+        </div>
+
+        <!-- Receipt QR Code -->
+        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+            <h3 class="font-semibold text-sm flex items-center gap-2">
+                <QrCode class="h-4 w-4" /> Receipt QR Code
+            </h3>
+            <p class="text-xs text-muted-foreground -mt-2">
+                Choose what the QR code on printed receipts links to. Only applies to the Android print service.
+            </p>
+
+            <div class="space-y-2">
+                <label
+                    v-for="opt in [
+                        { val: 'order_url', label: 'Order details link', desc: 'Links to the public order status page for this specific order.' },
+                        { val: 'facebook', label: 'Facebook page', desc: 'Links to your Facebook page URL set above.' },
+                        { val: 'none', label: 'No QR code', desc: 'The receipt will not include a QR code.' },
+                    ]"
+                    :key="opt.val"
+                    :class="[
+                        'flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition',
+                        form.receipt_qr_type === opt.val
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border hover:bg-muted/50',
+                    ]"
+                >
+                    <input
+                        type="radio"
+                        :value="opt.val"
+                        v-model="form.receipt_qr_type"
+                        class="mt-0.5"
+                    />
+                    <div>
+                        <p class="text-sm font-semibold">{{ opt.label }}</p>
+                        <p class="text-xs text-muted-foreground">{{ opt.desc }}</p>
+                    </div>
+                </label>
+            </div>
+
+            <div
+                v-if="form.receipt_qr_type === 'facebook' && !form.social_facebook"
+                class="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400"
+            >
+                <AlertCircle class="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                No Facebook URL set — add it in the Social Links section above.
             </div>
         </div>
 

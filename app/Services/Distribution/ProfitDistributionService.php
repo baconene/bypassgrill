@@ -9,12 +9,10 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Orchestrates the full profit / sales distribution. Treats existing sales and
- * financial tables as the single source of truth — never duplicates them.
- */
 class ProfitDistributionService
 {
+    private const VERSION_KEY = 'dist:cache_version';
+
     public function __construct(
         private SalesAggregateService    $sales,
         private ShareDistributionService $shares,
@@ -22,35 +20,33 @@ class ProfitDistributionService
         private IncentivePoolService     $incentive,
     ) {}
 
-    /**
-     * Compute a live distribution preview.
-     *
-     * @param string $basis 'sales' | 'profit'
-     */
     public function compute(string $basis, string $start, string $end, ?int $categoryId = null, ?int $productId = null, ?int $shareholderId = null): array
     {
-        $key = 'dist:' . md5(implode('|', [$basis, $start, $end, $categoryId, $productId, $shareholderId]));
+        $ver = Cache::get(self::VERSION_KEY, 0);
+        $key = 'dist:v' . $ver . ':' . md5(implode('|', [$basis, $start, $end, $categoryId, $productId, $shareholderId]));
 
         return Cache::remember($key, 300, function () use ($basis, $start, $end, $categoryId, $productId, $shareholderId) {
             $metrics   = $this->sales->salesMetrics($start, $end, $categoryId, $productId);
             $salesBase = round($metrics['net_sales'] - $metrics['refunds'], 2);
 
+            $scoped = $categoryId || $productId;
+            $zeroDetail = ['net_profit' => 0.0, 'income_adjustments' => 0.0, 'expenses' => 0.0, 'payroll' => 0.0];
+
             if ($basis === 'profit') {
-                $profitBase = $this->profitBase($start, $end, $categoryId, $productId, $metrics);
-                $base       = $profitBase;
-                $baseLabel  = $categoryId || $productId ? 'Gross Profit (scope)' : 'Net Profit';
+                $detail    = $this->profitDetail($start, $end, $categoryId, $productId, $metrics);
+                $base      = $detail['net_profit'];
+                $baseLabel = $scoped ? 'Gross Profit (scope)' : 'Net Profit';
             } else {
-                // Sales basis: only compute profitBase for the financial summary card;
-                // wrap in try-catch so a P&L failure never breaks the sales calculation.
                 try {
-                    $profitBase = $this->profitBase($start, $end, $categoryId, $productId, $metrics);
+                    $detail = $this->profitDetail($start, $end, $categoryId, $productId, $metrics);
                 } catch (\Throwable) {
-                    $profitBase = 0.0;
+                    $detail = $zeroDetail;
                 }
                 $base      = $salesBase;
                 $baseLabel = 'Net Sales';
             }
 
+            $profitBase    = $detail['net_profit'];
             $distributable = round(max(0, $base), 2);
             $alloc         = $this->shares->allocate($distributable, $shareholderId);
 
@@ -72,26 +68,46 @@ class ProfitDistributionService
                 'incentive'          => $incentive,
                 'chart'              => $this->chartData($alloc),
                 'financial_summary'  => [
-                    'gross_sales' => $metrics['gross_sales'],
-                    'net_sales'   => $metrics['net_sales'],
-                    'refunds'     => $metrics['refunds'],
-                    'cogs'        => $metrics['cogs'],
-                    'sales_base'  => $salesBase,
-                    'net_profit'  => $profitBase,
-                    'period_end'  => $end,
+                    'gross_sales'        => $metrics['gross_sales'],
+                    'net_sales'          => $metrics['net_sales'],
+                    'refunds'            => $metrics['refunds'],
+                    'cogs'               => $metrics['cogs'],
+                    'income_adjustments' => $detail['income_adjustments'],
+                    'expenses'           => $detail['expenses'],
+                    'payroll'            => $detail['payroll'],
+                    'sales_base'         => $salesBase,
+                    'net_profit'         => $profitBase,
+                    'period_end'         => $end,
                 ],
             ];
         });
     }
 
-    private function profitBase(string $start, string $end, ?int $categoryId, ?int $productId, array $metrics): float
+    public static function bumpCacheVersion(): void
+    {
+        Cache::add(self::VERSION_KEY, 0);
+        Cache::increment(self::VERSION_KEY);
+    }
+
+    private function profitDetail(string $start, string $end, ?int $categoryId, ?int $productId, array $metrics): array
     {
         if ($categoryId || $productId) {
-            return round($metrics['net_sales'], 2);
+            return [
+                'net_profit'         => round($metrics['net_sales'], 2),
+                'income_adjustments' => 0.0,
+                'expenses'           => 0.0,
+                'payroll'            => 0.0,
+            ];
         }
 
         $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), false);
-        return round((float) ($pl['net_profit'] ?? 0), 2);
+
+        return [
+            'net_profit'         => round((float) ($pl['net_profit'] ?? 0), 2),
+            'income_adjustments' => round((float) ($pl['income_adjustments']['total'] ?? 0), 2),
+            'expenses'           => round((float) ($pl['expenses']['total'] ?? 0), 2),
+            'payroll'            => round((float) ($pl['payroll']['total'] ?? 0), 2),
+        ];
     }
 
     private function chartData(array $alloc): array
@@ -105,7 +121,6 @@ class ProfitDistributionService
         return $data;
     }
 
-    /** Persist a historical snapshot from a computed result. */
     public function snapshot(array $result, ?array $filters = null): DistributionSnapshot
     {
         return DB::transaction(function () use ($result, $filters) {

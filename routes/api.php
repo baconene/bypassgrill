@@ -15,7 +15,6 @@ Route::middleware('auth')->get('/user', function (Request $request) {
 });
 
 Route::prefix('v1')->group(function () {
-    // Public routes — static routes BEFORE dynamic {product} to prevent shadowing
     Route::get('/payment-tenders', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'index']);
 
     Route::get('/categories', [CategoryController::class, 'index']);
@@ -25,32 +24,30 @@ Route::prefix('v1')->group(function () {
     Route::get('/products/category/{categoryId}', [ProductController::class, 'byCategory']);
     Route::get('/products/{product}', [ProductController::class, 'show']);
 
-    // Protected routes
-    Route::middleware('auth')->group(function () {
-        // Categories — write routes (read routes are public above)
+        if (app()->environment('local')) {
+            Route::get('/reports/heatmap', [ReportController::class, 'heatmap']);
+        }
+
+        Route::middleware('auth')->group(function () {
         Route::post('/categories', [CategoryController::class, 'store']);
         Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
 
-        // Products — write routes (read routes are public above)
         Route::post('/products', [ProductController::class, 'store']);
         Route::put('/products/{product}', [ProductController::class, 'update']);
-        Route::post('/products/{product}', [ProductController::class, 'update']); // FormData / file upload
+        Route::post('/products/{product}', [ProductController::class, 'update']);
         Route::post('/products/{product}/calculate-cost', [ProductController::class, 'calculateCost']);
         Route::delete('/products/{product}', [ProductController::class, 'destroy']);
 
-        // Orders — static sub-routes BEFORE apiResource to avoid {order} shadowing
         Route::get('/orders/active', [OrderController::class, 'activeOrders']);
         Route::get('/orders/queue', [OrderController::class, 'queueOrders']);
         Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus']);
         Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
         Route::apiResource('orders', OrderController::class);
 
-        // Payments
         Route::post('/payments', [PaymentController::class, 'store']);
         Route::get('/orders/{orderId}/payments', [PaymentController::class, 'orderPayments']);
         Route::post('/payments/{payment}/refund', [PaymentController::class, 'refund']);
 
-        // Inventory — static sub-routes BEFORE {ingredient}
         Route::post('/inventory', [InventoryController::class, 'store']);
         Route::get('/inventory', [InventoryController::class, 'index']);
         Route::get('/inventory/low-stock', [InventoryController::class, 'lowStock']);
@@ -58,7 +55,6 @@ Route::prefix('v1')->group(function () {
         Route::patch('/inventory/{ingredient}', [InventoryController::class, 'update']);
         Route::get('/inventory/{ingredient}/transactions', [InventoryController::class, 'transactions']);
 
-        // Reports
         Route::get('/reports/daily-sales', [ReportController::class, 'dailySales']);
         Route::get('/reports/monthly-sales', [ReportController::class, 'monthlySales']);
         Route::get('/reports/product-sales', [ReportController::class, 'productSales']);
@@ -67,22 +63,20 @@ Route::prefix('v1')->group(function () {
         Route::get('/reports/profit-loss', [ReportController::class, 'profitLoss']);
         Route::get('/reports/daily-chart', [ReportController::class, 'dailyChart']);
         Route::get('/reports/monthly-chart', [ReportController::class, 'monthlyChart']);
+        Route::get('/reports/heatmap', [ReportController::class, 'heatmap']);
         Route::get('/reports/analytics', [ReportController::class, 'analytics']);
 
-        // Payment Tenders (authenticated write + all-list)
         Route::get('/payment-tenders/all', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'all']);
         Route::post('/payment-tenders', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'store']);
         Route::put('/payment-tenders/{paymentTender}', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'update']);
         Route::delete('/payment-tenders/{paymentTender}', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'destroy']);
 
-        // Financial Transactions
         Route::get('/financial-transactions', [\App\Http\Controllers\Api\V1\FinancialTransactionController::class, 'index']);
         Route::get('/financial-transactions/summary', [\App\Http\Controllers\Api\V1\FinancialTransactionController::class, 'summary']);
         Route::post('/financial-transactions', [\App\Http\Controllers\Api\V1\FinancialTransactionController::class, 'store']);
         Route::patch('/financial-transactions/{financialTransaction}', [\App\Http\Controllers\Api\V1\FinancialTransactionController::class, 'update']);
         Route::delete('/financial-transactions/{financialTransaction}', [\App\Http\Controllers\Api\V1\FinancialTransactionController::class, 'destroy']);
 
-        // Bills / Payables
         Route::get('/bills/summary', [\App\Http\Controllers\Api\V1\BillController::class, 'summary']);
         Route::get('/bills/forecast', [\App\Http\Controllers\Api\V1\BillController::class, 'forecast']);
         Route::get('/bills', [\App\Http\Controllers\Api\V1\BillController::class, 'index']);
@@ -92,7 +86,6 @@ Route::prefix('v1')->group(function () {
         Route::post('/bills/{bill}/pay', [\App\Http\Controllers\Api\V1\BillController::class, 'pay']);
         Route::post('/bills/{bill}/installments/{installment}/pay', [\App\Http\Controllers\Api\V1\BillController::class, 'payInstallment']);
 
-        // Parcel Tracking
         Route::get('/parcels', [\App\Http\Controllers\Api\V1\ParcelController::class, 'index']);
         Route::get('/parcels/{parcel}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'show']);
         Route::post('/parcels', [\App\Http\Controllers\Api\V1\ParcelController::class, 'store']);
@@ -103,7 +96,6 @@ Route::prefix('v1')->group(function () {
         Route::delete('/parcels/{parcel}/items/{item}', [\App\Http\Controllers\Api\V1\ParcelController::class, 'destroyItem']);
         Route::patch('/parcels/{parcel}/items/{item}/toggle', [\App\Http\Controllers\Api\V1\ParcelController::class, 'toggleItem']);
 
-        // Print Service settings
         Route::get('/print-service/settings', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'getSettings']);
         Route::post('/print-service/settings', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'saveSettings']);
         Route::post('/print-service/test', [\App\Http\Controllers\Api\V1\PrintServiceController::class, 'testConnection']);
@@ -114,19 +106,16 @@ Route::prefix('v1')->group(function () {
             return response()->json(['ok' => true, 'message' => 'Config and app cache cleared. Broadcasting driver is now: ' . config('broadcasting.default')]);
         });
 
-        // HRIS — Employees
         Route::get('/hris/employees', [HrisController::class, 'employees']);
         Route::post('/hris/employees', [HrisController::class, 'storeEmployee']);
         Route::put('/hris/employees/{employee}', [HrisController::class, 'updateEmployee']);
         Route::delete('/hris/employees/{employee}', [HrisController::class, 'destroyEmployee']);
 
-        // HRIS — Payroll
         Route::get('/hris/payroll', [HrisController::class, 'payrollRecords']);
         Route::post('/hris/payroll', [HrisController::class, 'storePayroll']);
         Route::post('/hris/payroll/{payrollRecord}/pay', [HrisController::class, 'markPayrollPaid']);
         Route::delete('/hris/payroll/{payrollRecord}', [HrisController::class, 'destroyPayroll']);
 
-        // Print Jobs — webhook service for receipt printer
         Route::get('/print-jobs', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'index']);
         Route::post('/print-jobs', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'store']);
         Route::post('/print-jobs/test-channels', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'testChannels']);
@@ -134,7 +123,6 @@ Route::prefix('v1')->group(function () {
         Route::post('/print-jobs/{printJob}/ack', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'acknowledge']);
         Route::post('/print-jobs/{printJob}/retry', [\App\Http\Controllers\Api\V1\PrintJobController::class, 'retry']);
 
-        // Profit Distribution / Shareholder module (admin only — enforced in controllers)
         Route::get('/shareholders', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'index']);
         Route::post('/shareholders', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'store']);
         Route::put('/shareholders/{shareholder}', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'update']);
@@ -149,9 +137,19 @@ Route::prefix('v1')->group(function () {
         Route::put('/incentive-rules/{incentiveRule}', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'update']);
         Route::delete('/incentive-rules/{incentiveRule}', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'destroy']);
 
+        Route::get('/product-ownerships', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'index']);
+        Route::put('/product-ownerships/{productId}', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'update']);
+        Route::delete('/product-ownerships/{productId}', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'destroy']);
+
+        Route::get('/incentive-rules', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'index']);
+        Route::post('/incentive-rules', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'store']);
+        Route::put('/incentive-rules/{incentiveRule}', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'update']);
+        Route::delete('/incentive-rules/{incentiveRule}', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'destroy']);
+
         Route::get('/distribution/preview', [\App\Http\Controllers\Api\V1\DistributionController::class, 'preview']);
         Route::get('/distribution/trend', [\App\Http\Controllers\Api\V1\DistributionController::class, 'trend']);
         Route::get('/distribution/export', [\App\Http\Controllers\Api\V1\DistributionController::class, 'export']);
+        Route::get('/distribution/royalty-analytics', [\App\Http\Controllers\Api\V1\DistributionController::class, 'royaltyAnalytics']);
         Route::get('/distribution/snapshots', [\App\Http\Controllers\Api\V1\DistributionController::class, 'snapshots']);
         Route::get('/distribution/snapshots/{snapshot}', [\App\Http\Controllers\Api\V1\DistributionController::class, 'showSnapshot']);
         Route::post('/distribution/snapshots', [\App\Http\Controllers\Api\V1\DistributionController::class, 'storeSnapshot']);

@@ -17,6 +17,21 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureGates();
+        $this->configureDistributionCache();
+    }
+
+    /**
+     * Invalidate the profit-distribution cache whenever P&L inputs change, so the
+     * profit-sharing summary stays in sync with the live financial report.
+     */
+    protected function configureDistributionCache(): void
+    {
+        $bump = fn () => \App\Services\Distribution\ProfitDistributionService::bumpCacheVersion();
+
+        foreach ([\App\Models\Order::class, \App\Models\OrderItem::class, \App\Models\FinancialTransaction::class] as $model) {
+            $model::saved($bump);
+            $model::deleted($bump);
+        }
     }
 
     protected function configureDefaults(): void

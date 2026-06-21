@@ -18,6 +18,9 @@ class PrintServiceSetting extends Model
         'print_auto_print',
         'print_enabled',
         'print_channel',
+        'social_facebook',
+        'social_instagram',
+        'receipt_qr_type',
     ];
 
     protected $casts = [
@@ -38,6 +41,9 @@ class PrintServiceSetting extends Model
             'print_auto_print'    => false,
             'print_enabled'       => false,
             'print_channel'       => 'orders',
+            'social_facebook'     => null,
+            'social_instagram'    => null,
+            'receipt_qr_type'     => 'order_url',
         ]);
     }
 }

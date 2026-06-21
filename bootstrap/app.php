@@ -23,8 +23,6 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
-        // Allow API routes to use session-based auth (Inertia SPA — no Bearer tokens)
-        // EncryptCookies must come before StartSession so the session ID cookie can be decrypted
         $middleware->api(prepend: [
             \Illuminate\Cookie\Middleware\EncryptCookies::class,
             \Illuminate\Session\Middleware\StartSession::class,

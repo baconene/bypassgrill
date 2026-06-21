@@ -76,18 +76,14 @@ class OrderController extends Controller
     public function store(StoreOrderRequest $request): JsonResponse
     {
         $this->checkPermission('create orders');
-
         $order = $this->orderService->createOrder($request->validated());
-
         return response()->json(new OrderResource($order), 201);
     }
 
     public function show(Order $order): JsonResponse
     {
         $this->checkPermission('view orders');
-
         $order = $this->orderRepository->getWithItems($order->id);
-
         return response()->json(new OrderResource($order));
     }
 
@@ -134,34 +130,27 @@ class OrderController extends Controller
     public function destroy(Order $order): Response
     {
         $this->checkPermission('delete orders');
-
         return response()->noContent();
     }
 
     public function updateStatus(Order $order, UpdateOrderStatusRequest $request): JsonResponse
     {
         $this->checkPermission('update orders');
-
         $order = $this->orderService->updateOrderStatus($order, $request->enum('status', OrderStatus::class));
-
         return response()->json(new OrderResource($order));
     }
 
     public function cancel(Order $order): JsonResponse
     {
         $this->checkPermission('update orders');
-
         $order = $this->orderService->cancelOrder($order, request()->input('reason'));
-
         return response()->json(new OrderResource($order));
     }
 
     public function activeOrders(): JsonResponse
     {
         $this->checkPermission('view orders');
-
         $orders = $this->orderRepository->getActiveOrders();
-
         return response()->json(
             $orders->map(fn ($o) => \App\Http\Controllers\QueueMonitorController::formatOrder($o))->values()
         );
@@ -170,9 +159,7 @@ class OrderController extends Controller
     public function queueOrders(): JsonResponse
     {
         $this->checkPermission('view orders');
-
         $orders = $this->orderRepository->getQueueOrders();
-
         return response()->json(OrderResource::collection($orders));
     }
 

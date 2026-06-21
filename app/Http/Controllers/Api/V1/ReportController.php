@@ -32,7 +32,9 @@ class ReportController extends Controller
     {
         $this->checkPermission();
 
-        $date = request()->input('date') ? Carbon::parse(request()->input('date')) : null;
+        $date = request()->input('date')
+            ? Carbon::parse(request()->input('date'), 'Asia/Manila')
+            : null;
         $report = $this->reportService->getDailySalesReport($date);
 
         return response()->json($report);
@@ -122,7 +124,10 @@ class ReportController extends Controller
         $rows = \App\Models\FinancialTransaction::selectRaw(
             "DATE_FORMAT(transacted_at, '%Y-%m') as month,
              SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
-             SUM(CASE WHEN type IN ('expense','payroll')           THEN amount ELSE 0 END) as expense"
+             SUM(CASE WHEN type IN ('expense','payroll')
+                      AND description NOT LIKE 'COGS:%'
+                      AND description NOT LIKE 'Inventory Stock In%'
+                 THEN amount ELSE 0 END) as expense"
         )
             ->where('type', '!=', 'order')
             ->whereYear('transacted_at', $year)
@@ -156,7 +161,10 @@ class ReportController extends Controller
         $rows = \App\Models\FinancialTransaction::selectRaw(
             "DATE(transacted_at) as date,
              SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
-             SUM(CASE WHEN type IN ('expense','payroll')           THEN amount ELSE 0 END) as expense"
+             SUM(CASE WHEN type IN ('expense','payroll')
+                      AND description NOT LIKE 'COGS:%'
+                      AND description NOT LIKE 'Inventory Stock In%'
+                 THEN amount ELSE 0 END) as expense"
         )
             ->where('type', '!=', 'order')
             ->whereBetween('transacted_at', [$start, $end])
@@ -176,6 +184,79 @@ class ReportController extends Controller
         }
 
         return response()->json($result);
+    }
+
+    public function heatmap(): JsonResponse
+    {
+        $this->checkPermission();
+
+        $dateFrom = request()->input('date_from');
+        $dateTo   = request()->input('date_to');
+
+        $query = \App\Models\Order::where('payment_status', 'paid');
+
+        if ($dateFrom) $query->whereDate('created_at', '>=', $dateFrom);
+        if ($dateTo)   $query->whereDate('created_at', '<=', $dateTo);
+
+        $rows = $query
+            ->selectRaw('DAYOFWEEK(created_at) as dow, HOUR(created_at) as hr, COUNT(*) as orders')
+            ->groupByRaw('DAYOFWEEK(created_at), HOUR(created_at)')
+            ->orderByRaw('DAYOFWEEK(created_at), HOUR(created_at)')
+            ->get();
+
+        $dowMap = [1 => 'Sunday', 2 => 'Monday', 3 => 'Tuesday',
+                   4 => 'Wednesday', 5 => 'Thursday', 6 => 'Friday', 7 => 'Saturday'];
+
+        $lookup = [];
+        foreach ($rows as $row) {
+            $day = $dowMap[$row->dow] ?? 'Unknown';
+            $lookup[$day][(int) $row->hr] = (int) $row->orders;
+        }
+
+        $orderedDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+        $data       = [];
+        $matrix     = [];
+        $dayTotals  = array_fill_keys($orderedDays, 0);
+        $hourTotals = array_fill(0, 24, 0);
+
+        foreach ($orderedDays as $day) {
+            $matrix[$day] = [];
+            for ($h = 0; $h < 24; $h++) {
+                $count = $lookup[$day][$h] ?? 0;
+                $data[]        = ['day' => $day, 'hour' => $h, 'orders' => $count];
+                $matrix[$day][$h] = $count;
+                $dayTotals[$day]  += $count;
+                $hourTotals[$h]   += $count;
+            }
+        }
+
+        $maxOrders = 0;
+        $peakSlot  = ['day' => null, 'hour' => 0, 'orders' => 0];
+        foreach ($data as $slot) {
+            if ($slot['orders'] > $maxOrders) {
+                $maxOrders = $slot['orders'];
+                $peakSlot  = $slot;
+            }
+        }
+
+        $peakHourIdx = (int) array_search(max($hourTotals), $hourTotals);
+        $peakDay     = (string) array_search(max($dayTotals), $dayTotals);
+
+        return response()->json([
+            'xAxis'  => 'hour',
+            'yAxis'  => 'day',
+            'data'   => $data,
+            'matrix' => $matrix,
+            'insights' => [
+                'total_orders' => array_sum($hourTotals),
+                'peak_slot'    => $peakSlot,
+                'peak_hour'    => ['hour' => $peakHourIdx, 'total_orders' => $hourTotals[$peakHourIdx]],
+                'peak_day'     => ['day'  => $peakDay,     'total_orders' => $dayTotals[$peakDay] ?? 0],
+                'hour_totals'  => array_values($hourTotals),
+                'day_totals'   => $dayTotals,
+            ],
+        ]);
     }
 
     private function checkPermission(): void

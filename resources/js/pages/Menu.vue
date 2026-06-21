@@ -32,7 +32,7 @@ const menuItems = [
 </script>
 
 <template>
-    <Head title="Bypass Grill - Fresh Off The Grill Menu" />
+    <Head title="The Boys — Grilled Burgers Menu" />
 
     <div class="min-h-screen bg-black text-white">
         <!-- Grill fire background effect -->

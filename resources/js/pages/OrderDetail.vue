@@ -66,11 +66,9 @@ const payColor = (s: string) => ({
 const totalCost   = props.order.items.reduce((s, i) => s + i.cost_subtotal, 0)
 const grossProfit = props.order.total_amount - totalCost
 
-// ── Reprint ──────────────────────────────────────────────────────────────────
 const reprintReceipt = async () => {
     printing.value = true
     try {
-        // Send to Android printing service via Pusher Channels
         await api.post('/api/v1/print-jobs', { order_id: props.order.id })
         toast.success('Receipt sent to printer')
     } catch (err: any) {
@@ -126,7 +124,6 @@ const reprintReceipt = async () => {
             </button>
         </div>
 
-        <!-- Timeline + Customer -->
         <div class="grid sm:grid-cols-2 gap-3 sm:gap-4">
             <div class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -170,7 +167,6 @@ const reprintReceipt = async () => {
                 </div>
             </div>
 
-            <!-- Fill second column if no customer card -->
             <div v-else class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                     <ShoppingBag class="h-3.5 w-3.5" /> Order Info
@@ -192,7 +188,6 @@ const reprintReceipt = async () => {
             </div>
         </div>
 
-        <!-- Order Items -->
         <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
             <div class="p-4 border-b flex items-center gap-2">
                 <Package class="h-4 w-4 text-muted-foreground" />
@@ -264,7 +259,6 @@ const reprintReceipt = async () => {
             </div>
         </div>
 
-        <!-- Totals + Payments -->
         <div class="grid sm:grid-cols-2 gap-3 sm:gap-4">
             <div class="rounded-xl border bg-card shadow-sm p-4 space-y-2">
                 <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -325,7 +319,6 @@ const reprintReceipt = async () => {
             </div>
         </div>
 
-        <!-- Notes -->
         <div v-if="order.notes" class="rounded-xl border bg-card shadow-sm p-4">
             <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Notes</p>
             <p class="text-sm">{{ order.notes }}</p>

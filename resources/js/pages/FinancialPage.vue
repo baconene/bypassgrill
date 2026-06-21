@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Head } from '@inertiajs/vue3'
+import { Head, usePage } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
@@ -17,24 +17,27 @@ defineOptions({
     },
 })
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ───────────────────────────────────────────────────────────────────────
 interface FtSummary {
     period: { start: string; end: string }
     payments: { total: number; count: number }
     expenses: { total: number; count: number }
     income_adjustments: { total: number; count: number }
     payroll: { total: number; count: number }
+    asset_deductions: { total: number; count: number }
     net: number
+    balance_as_of_end: number
+    balance_by_tender: { tender: string; balance: number; count: number }[]
     by_tender: { tender: string; total: number; count: number }[]
     net_by_tender: { tender: string; total_in: number; total_out: number; net: number; count: number }[]
-    include_cogs: boolean
+    include_asset_deductions: boolean
 }
 interface PaymentTender {
     id: number; name: string; is_active: boolean
 }
 interface FtTransaction {
     id: number; type: string; amount: number; description: string; notes: string | null
-    transacted_at: string; running_balance: number; financial_balance: number | null
+    transacted_at: string; financial_balance: number | null
     payment_tender_id: number | null
     user?: { name: string }; tender?: { id: number; name: string }
 }
@@ -42,6 +45,10 @@ interface BillsSummary {
     total_due: number; overdue: number; upcoming: number; count: number
     period: { start: string; end: string }
 }
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+const page    = usePage()
+const isAdmin = computed(() => ((page.props.auth as any)?.roles ?? []).includes('admin'))
 
 // ── State ──────────────────────────────────────────────────────────────────────
 const today = new Date().toISOString().split('T')[0]
@@ -60,11 +67,12 @@ const entrySaving = ref(false)
 const ftDeleting = ref<number | null>(null)
 const summaryOpen = ref(true)
 const showTenderBreakdown = ref(false)
+const showBalanceByTender = ref(false)
 const ftSearch = ref('')
 const ftSortKey = ref<'transacted_at' | 'type' | 'amount' | 'description'>('transacted_at')
 const ftSortDir = ref<'asc' | 'desc'>('desc')
 const tenders = ref<PaymentTender[]>([])
-const includeCogs = ref(true)
+const includeAssetDeductions = ref(true)
 const editingTx = ref<FtTransaction | null>(null)
 const editForm = ref({ description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null as number | null })
 const editSaving = ref(false)
@@ -75,7 +83,10 @@ const fmt = (v: number | string | null | undefined) =>
 
 const fmtDatetime = (s: string) => {
     if (!s) return '—'
-    const d = new Date(s)
+    // MySQL returns "YYYY-MM-DD HH:MM:SS" (space separator); Safari rejects that format.
+    // Replace the space with T so all browsers get a valid ISO-8601 string.
+    const d = new Date(s.replace(' ', 'T'))
+    if (isNaN(d.getTime())) return s
     return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: '2-digit' }) + ' ' +
         d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
@@ -94,7 +105,7 @@ const typeBadgeClass = (t: string) => ({
 
 const isCredit = (t: string) => t === 'payment' || t === 'income_adjustment'
 
-// ── Computed ───────────────────────────────────────────────────────────────────
+// ── Computed ─────────────────────────────────────────────────────────────────────
 const pieData = computed(() => {
     if (!ftSummary.value) return []
     const s = ftSummary.value
@@ -142,7 +153,7 @@ const comparisonBars = computed(() => {
     if (!ftSummary.value) return []
     const s = ftSummary.value
     const income  = s.payments.total + (s.income_adjustments?.total ?? 0)
-    const outflow = s.expenses.total + (s.payroll?.total ?? 0)
+    const outflow = s.expenses.total + (s.payroll?.total ?? 0) + (s.asset_deductions?.total ?? 0)
     const payable = billsSummary.value?.total_due ?? 0
     const items = [
         { label: 'Total Income',  value: income,  barColor: 'bg-blue-500',    textColor: 'text-blue-600' },
@@ -187,7 +198,7 @@ const toggleSort = (key: typeof ftSortKey.value) => {
     else { ftSortKey.value = key; ftSortDir.value = 'desc' }
 }
 
-// ── Data loading ───────────────────────────────────────────────────────────────
+// ── Data loading ─────────────────────────────────────────────────────────────────
 const loadTenders = async () => {
     try {
         const res = await api.get('/api/v1/payment-tenders')
@@ -203,7 +214,7 @@ const loadFinancial = async (page = 1) => {
                 params: {
                     start_date: ftStartDate.value || undefined,
                     end_date: ftEndDate.value || undefined,
-                    include_cogs: includeCogs.value,
+                    include_asset_deductions: includeAssetDeductions.value,
                 },
             }),
             api.get('/api/v1/financial-transactions', {
@@ -212,7 +223,7 @@ const loadFinancial = async (page = 1) => {
                     start_date: ftStartDate.value || undefined,
                     end_date: ftEndDate.value || undefined,
                     type: ftTypeFilter.value || undefined,
-                    include_cogs: includeCogs.value,
+                    include_asset_deductions: includeAssetDeductions.value,
                 },
             }),
             api.get('/api/v1/bills/summary', {
@@ -232,6 +243,9 @@ const loadFinancial = async (page = 1) => {
 const saveEntry = async () => {
     if (!entryForm.value.description.trim() || !entryForm.value.amount) return
     entrySaving.value = true
+    const recordedDate = entryForm.value.transacted_at
+        ? entryForm.value.transacted_at.substring(0, 10)
+        : today
     const payload = {
         type: entryForm.value.type,
         amount: parseFloat(entryForm.value.amount),
@@ -240,13 +254,15 @@ const saveEntry = async () => {
         transacted_at: entryForm.value.transacted_at || null,
         payment_tender_id: entryForm.value.payment_tender_id || null,
     }
-    console.log('📤 Sending transacted_at:', entryForm.value.transacted_at)
     try {
         await api.post('/api/v1/financial-transactions', payload)
         const label = entryForm.value.type === 'income_adjustment' ? 'Income adjustment' : 'Expense'
         toast.success(`${label} recorded.`)
         entryForm.value = { type: 'expense', description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null }
         showEntryForm.value = false
+        // Widen the date filter to include the entry's date so it's always visible after save.
+        if (recordedDate < ftStartDate.value) ftStartDate.value = recordedDate
+        if (recordedDate > ftEndDate.value) ftEndDate.value = recordedDate
         await loadFinancial()
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to save entry.')
@@ -316,7 +332,7 @@ onMounted(async () => {
 
     <div class="space-y-5 p-4 md:p-6">
 
-        <!-- ── Collapsible Financial Overview ───────────────────────────────── -->
+        <!-- ── Collapsible Financial Overview ─────────────────────────────────── -->
         <div v-if="ftSummary" class="rounded-xl border bg-card shadow-sm overflow-hidden">
             <button @click="summaryOpen = !summaryOpen"
                 class="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/30 transition-colors">
@@ -326,7 +342,7 @@ onMounted(async () => {
                     <span class="text-xs font-normal text-muted-foreground">
                         {{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}
                     </span>
-                    <span v-if="!includeCogs"
+                    <span v-if="!includeAssetDeductions"
                         class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                         Asset Deductions excluded
                     </span>
@@ -338,7 +354,7 @@ onMounted(async () => {
             <div v-show="summaryOpen" class="border-t p-4 space-y-4">
                 <div class="grid lg:grid-cols-2 gap-5">
 
-                    <!-- LEFT: Allocation donut ─────────────────────────────── -->
+                    <!-- LEFT: Allocation donut ────────────────────────── -->
                     <div class="rounded-xl border bg-background p-4">
                         <h3 class="font-bold text-sm mb-4">Financial Allocation</h3>
                         <div v-if="pieData.length > 0" class="space-y-4">
@@ -396,7 +412,7 @@ onMounted(async () => {
                         <p v-else class="text-xs text-muted-foreground py-4 text-center">No allocation data for this period.</p>
                     </div>
 
-                    <!-- RIGHT: Comparison panel ─────────────────────────────── -->
+                    <!-- RIGHT: Comparison panel ───────────────────────── -->
                     <div class="space-y-3">
 
                         <!-- Balance as of end date -->
@@ -453,49 +469,84 @@ onMounted(async () => {
                                 <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deposit / Account Balances</h3>
                                 <p class="text-[10px] text-muted-foreground">per tender, this period</p>
                             </div>
-                            <div v-if="ftSummary.net_by_tender?.length > 0" class="overflow-x-auto">
-                                <table class="w-full text-xs">
-                                    <thead>
-                                        <tr class="border-b text-muted-foreground bg-muted/20">
-                                            <th class="px-4 py-2 text-left font-medium">Tender / Account</th>
-                                            <th class="px-4 py-2 text-right font-medium text-green-700">Money In</th>
-                                            <th class="px-4 py-2 text-right font-medium text-red-600">Money Out</th>
-                                            <th class="px-4 py-2 text-right font-medium">Net</th>
-                                            <th class="px-4 py-2 text-right font-medium text-muted-foreground">Txns</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-border">
-                                        <tr v-for="row in ftSummary.net_by_tender" :key="row.tender"
-                                            class="hover:bg-muted/20 transition-colors">
-                                            <td class="px-4 py-2.5 font-semibold">{{ row.tender }}</td>
-                                            <td class="px-4 py-2.5 text-right tabular-nums text-green-600 font-medium">+{{ fmt(row.total_in) }}</td>
-                                            <td class="px-4 py-2.5 text-right tabular-nums text-red-600 font-medium">-{{ fmt(row.total_out) }}</td>
-                                            <td class="px-4 py-2.5 text-right tabular-nums font-bold"
+                            <div v-if="ftSummary.net_by_tender?.length > 0">
+                                <!-- Mobile cards -->
+                                <div class="md:hidden divide-y divide-border">
+                                    <div v-for="row in ftSummary.net_by_tender" :key="row.tender"
+                                        class="px-4 py-3">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="font-semibold text-sm">{{ row.tender }}</span>
+                                            <span class="text-[11px] text-muted-foreground">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</span>
+                                        </div>
+                                        <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                                            <span class="text-green-600 font-medium">In: +{{ fmt(row.total_in) }}</span>
+                                            <span class="text-red-600 font-medium">Out: -{{ fmt(row.total_out) }}</span>
+                                            <span class="font-bold"
                                                 :class="row.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                                {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
-                                            </td>
-                                            <td class="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
-                                        </tr>
-                                    </tbody>
-                                    <tfoot class="border-t border-border bg-muted/30">
-                                        <tr>
-                                            <td class="px-4 py-2 font-bold text-xs">Total</td>
-                                            <td class="px-4 py-2 text-right tabular-nums font-bold text-green-700 text-xs">
-                                                +{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_in, 0)) }}
-                                            </td>
-                                            <td class="px-4 py-2 text-right tabular-nums font-bold text-red-600 text-xs">
-                                                -{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_out, 0)) }}
-                                            </td>
-                                            <td class="px-4 py-2 text-right tabular-nums font-black text-xs"
+                                                Net: {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="px-4 py-3 bg-muted/30">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="font-bold text-sm">Total</span>
+                                            <span class="text-[11px] text-muted-foreground">{{ ftSummary.net_by_tender.reduce((s, r) => s + r.count, 0) }} txns</span>
+                                        </div>
+                                        <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                                            <span class="text-green-700 font-bold">In: +{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_in, 0)) }}</span>
+                                            <span class="text-red-600 font-bold">Out: -{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_out, 0)) }}</span>
+                                            <span class="font-black"
                                                 :class="ftSummary.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                                {{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.net, 0)) }}
-                                            </td>
-                                            <td class="px-4 py-2 text-right tabular-nums text-muted-foreground text-xs">
-                                                {{ ftSummary.net_by_tender.reduce((s, r) => s + r.count, 0) }}
-                                            </td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
+                                                Net: {{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.net, 0)) }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Desktop table -->
+                                <div class="hidden md:block overflow-x-auto">
+                                    <table class="w-full text-xs">
+                                        <thead>
+                                            <tr class="border-b text-muted-foreground bg-muted/20">
+                                                <th class="px-4 py-2 text-left font-medium">Tender / Account</th>
+                                                <th class="px-4 py-2 text-right font-medium text-green-700">Money In</th>
+                                                <th class="px-4 py-2 text-right font-medium text-red-600">Money Out</th>
+                                                <th class="px-4 py-2 text-right font-medium">Net</th>
+                                                <th class="px-4 py-2 text-right font-medium text-muted-foreground">Txns</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-border">
+                                            <tr v-for="row in ftSummary.net_by_tender" :key="row.tender"
+                                                class="hover:bg-muted/20 transition-colors">
+                                                <td class="px-4 py-2.5 font-semibold">{{ row.tender }}</td>
+                                                <td class="px-4 py-2.5 text-right tabular-nums text-green-600 font-medium">+{{ fmt(row.total_in) }}</td>
+                                                <td class="px-4 py-2.5 text-right tabular-nums text-red-600 font-medium">-{{ fmt(row.total_out) }}</td>
+                                                <td class="px-4 py-2.5 text-right tabular-nums font-bold"
+                                                    :class="row.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                                    {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
+                                                </td>
+                                                <td class="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot class="border-t border-border bg-muted/30">
+                                            <tr>
+                                                <td class="px-4 py-2 font-bold text-xs">Total</td>
+                                                <td class="px-4 py-2 text-right tabular-nums font-bold text-green-700 text-xs">
+                                                    +{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_in, 0)) }}
+                                                </td>
+                                                <td class="px-4 py-2 text-right tabular-nums font-bold text-red-600 text-xs">
+                                                    -{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_out, 0)) }}
+                                                </td>
+                                                <td class="px-4 py-2 text-right tabular-nums font-black text-xs"
+                                                    :class="ftSummary.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                                    {{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.net, 0)) }}
+                                                </td>
+                                                <td class="px-4 py-2 text-right tabular-nums text-muted-foreground text-xs">
+                                                    {{ ftSummary.net_by_tender.reduce((s, r) => s + r.count, 0) }}
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
                             </div>
                             <p v-else class="px-4 py-4 text-xs text-muted-foreground text-center">
                                 No tender-tagged transactions in this period. Tag expenses and income adjustments to a tender when recording entries.
@@ -536,57 +587,60 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- ── Filters and actions bar ──────────────────────────────────────── -->
+        <!-- ── Filters and actions bar ────────────────────────────────────────── -->
         <div class="rounded-xl border bg-card shadow-sm p-4">
-            <div class="flex flex-wrap gap-3 items-end">
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                    <input v-model="ftStartDate" type="date" @change="loadFinancial()"
-                        class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                    <input v-model="ftEndDate" type="date" @change="loadFinancial()"
-                        class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
-                    <select v-model="ftTypeFilter" @change="loadFinancial()"
-                        class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                        <option value="">All Types</option>
-                        <option value="payment">Payment</option>
-                        <option value="expense">Expense</option>
-                        <option value="income_adjustment">Income Adjustment</option>
-                        <option value="payroll">Payroll</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Search</label>
-                    <div class="relative">
-                        <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                        <input v-model="ftSearch" type="text" placeholder="Filter transactions…"
-                            class="pl-8 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-52" />
+            <div class="flex flex-col sm:flex-row flex-wrap gap-3 sm:items-end">
+                <div class="flex gap-3 flex-1">
+                    <div class="flex-1 min-w-0">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="ftStartDate" type="date" @change="loadFinancial()"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="ftEndDate" type="date" @change="loadFinancial()"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                 </div>
-                <!-- Asset Deductions toggle -->
-                <div class="flex flex-col gap-1">
+                <div class="flex gap-3 flex-1 sm:flex-none">
+                    <div class="flex-1 sm:flex-none">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                        <select v-model="ftTypeFilter" @change="loadFinancial()"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="">All Types</option>
+                            <option value="payment">Payment</option>
+                            <option value="expense">Expense</option>
+                            <option value="income_adjustment">Income Adjustment</option>
+                            <option value="payroll">Payroll</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 sm:flex-none">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Search</label>
+                        <div class="relative">
+                            <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                            <input v-model="ftSearch" type="text" placeholder="Filter…"
+                                class="w-full pl-8 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary sm:w-52" />
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between sm:justify-start sm:flex-col sm:items-start gap-3 sm:gap-1">
                     <label class="text-xs font-medium text-muted-foreground">Include Asset Deductions</label>
-                    <button @click="includeCogs = !includeCogs; loadFinancial()"
-                        :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 self-start mt-0.5',
-                            includeCogs ? 'bg-primary' : 'bg-muted-foreground/30']"
-                        role="switch" :aria-checked="includeCogs">
+                    <button @click="includeAssetDeductions = !includeAssetDeductions; loadFinancial()"
+                        :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200',
+                            includeAssetDeductions ? 'bg-primary' : 'bg-muted-foreground/30']"
+                        role="switch" :aria-checked="includeAssetDeductions">
                         <span :class="['pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200',
-                            includeCogs ? 'translate-x-5' : 'translate-x-0']" />
+                            includeAssetDeductions ? 'translate-x-5' : 'translate-x-0']" />
                     </button>
                 </div>
                 <button @click="showEntryForm = !showEntryForm"
-                    class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 self-end">
+                    class="flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 sm:self-end">
                     <Plus class="h-3.5 w-3.5" /> Record Entry
                 </button>
             </div>
         </div>
 
-        <!-- ── Entry form ────────────────────────────────────────────────────── -->
+        <!-- ── Entry form ─────────────────────────────────────────────────────────── -->
         <div v-if="showEntryForm" class="rounded-xl border bg-card shadow-sm p-4">
             <p class="text-sm font-bold mb-3">Record Expense or Income Adjustment</p>
             <div class="grid sm:grid-cols-2 gap-3">
@@ -640,7 +694,7 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- ── Edit Entry form ──────────────────────────────────────────────────── -->
+        <!-- ── Edit Entry form ────────────────────────────────────────────────────── -->
         <div v-if="editingTx" class="rounded-xl border border-primary/30 bg-card shadow-sm p-4">
             <div class="flex items-center justify-between mb-3">
                 <p class="text-sm font-bold flex items-center gap-2">
@@ -663,6 +717,9 @@ onMounted(async () => {
                     <select v-model="editForm.payment_tender_id"
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                         <option :value="null">— Not tagged —</option>
+                        <option
+                            v-if="editingTx?.tender && !tenders.some(t => t.id === editingTx!.tender!.id)"
+                            :value="editingTx.tender.id">{{ editingTx.tender.name }}</option>
                         <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
                     </select>
                 </div>
@@ -692,13 +749,131 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- ── Transactions table ─────────────────────────────────────────────── -->
+        <!-- ── Transactions ────────────────────────────────────────────────────────── -->
         <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
             <div class="p-4 border-b flex items-center justify-between">
                 <h2 class="font-bold text-sm flex items-center gap-2"><DollarSign class="h-4 w-4" /> Transactions</h2>
-                <p v-if="ftSearch" class="text-xs text-muted-foreground">{{ sortedTx.length }} result{{ sortedTx.length !== 1 ? 's' : '' }}</p>
+                <div class="flex items-center gap-3">
+                    <p v-if="ftSearch" class="text-xs text-muted-foreground">{{ sortedTx.length }} result{{ sortedTx.length !== 1 ? 's' : '' }}</p>
+                    <button v-if="ftSummary?.balance_by_tender?.length"
+                        @click="showBalanceByTender = !showBalanceByTender"
+                        :class="['flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                            showBalanceByTender ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted']">
+                        Balance by Tender
+                        <ChevronDown class="h-3 w-3 transition-transform duration-200" :class="showBalanceByTender ? 'rotate-180' : ''" />
+                    </button>
+                </div>
             </div>
-            <div class="overflow-x-auto">
+
+            <!-- Balance by Tender collapsible -->
+            <div v-show="showBalanceByTender && ftSummary?.balance_by_tender?.length"
+                class="border-b bg-muted/20">
+                <div class="p-3">
+                    <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                        Running Balance by Tender — as of {{ ftSummary?.period?.end }}
+                    </p>
+                    <!-- Mobile -->
+                    <div class="md:hidden space-y-1.5">
+                        <div v-for="row in ftSummary?.balance_by_tender" :key="row.tender"
+                            class="flex items-center justify-between rounded-lg bg-background border px-3 py-2">
+                            <div>
+                                <span class="text-sm font-semibold">{{ row.tender }}</span>
+                                <span class="ml-2 text-[11px] text-muted-foreground">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</span>
+                            </div>
+                            <span class="font-bold tabular-nums text-sm"
+                                :class="row.balance >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                {{ row.balance >= 0 ? '' : '-' }}{{ fmt(Math.abs(row.balance)) }}
+                            </span>
+                        </div>
+                        <div class="flex items-center justify-between rounded-lg bg-muted/60 border px-3 py-2">
+                            <span class="text-sm font-bold">Total</span>
+                            <span class="font-black tabular-nums text-sm"
+                                :class="(ftSummary?.balance_as_of_end ?? 0) >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                {{ fmt(ftSummary?.balance_as_of_end ?? 0) }}
+                            </span>
+                        </div>
+                    </div>
+                    <!-- Desktop -->
+                    <div class="hidden md:block overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="border-b text-muted-foreground">
+                                    <th class="pb-1.5 text-left font-medium">Tender / Account</th>
+                                    <th class="pb-1.5 text-right font-medium">Txns</th>
+                                    <th class="pb-1.5 text-right font-medium">Running Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-border">
+                                <tr v-for="row in ftSummary?.balance_by_tender" :key="row.tender"
+                                    class="hover:bg-muted/20 transition-colors">
+                                    <td class="py-1.5 font-semibold">{{ row.tender }}</td>
+                                    <td class="py-1.5 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
+                                    <td class="py-1.5 text-right tabular-nums font-bold"
+                                        :class="row.balance >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                        {{ row.balance >= 0 ? '' : '-' }}{{ fmt(Math.abs(row.balance)) }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot class="border-t border-border">
+                                <tr>
+                                    <td class="pt-1.5 font-bold">Total</td>
+                                    <td class="pt-1.5 text-right tabular-nums text-muted-foreground">
+                                        {{ ftSummary?.balance_by_tender?.reduce((s, r) => s + r.count, 0) }}
+                                    </td>
+                                    <td class="pt-1.5 text-right tabular-nums font-black"
+                                        :class="(ftSummary?.balance_as_of_end ?? 0) >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
+                                        {{ fmt(ftSummary?.balance_as_of_end ?? 0) }}
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mobile card list -->
+            <div class="md:hidden divide-y">
+                <div v-for="tx in sortedTx" :key="tx.id"
+                    :class="['px-4 py-3 transition-colors', editingTx?.id === tx.id ? 'bg-primary/5 dark:bg-primary/10' : 'hover:bg-muted/20']">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2 flex-wrap mb-1">
+                                <span :class="['px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap', typeBadgeClass(tx.type)]">
+                                    {{ typeLabel(tx.type) }}
+                                </span>
+                                <span class="text-xs text-muted-foreground tabular-nums">{{ fmtDatetime(tx.transacted_at) }}</span>
+                            </div>
+                            <p class="text-sm font-medium leading-snug">{{ tx.description }}</p>
+                            <div class="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                                <span v-if="tx.tender?.name">{{ tx.tender.name }}</span>
+                                <span v-if="tx.user?.name" class="opacity-60">{{ tx.user.name }}</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-end gap-1 shrink-0">
+                            <span :class="['font-bold tabular-nums text-sm', isCredit(tx.type) ? 'text-green-600' : 'text-red-600']">
+                                {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
+                            </span>
+                            <span class="text-xs text-muted-foreground tabular-nums">{{ fmt(tx.financial_balance ?? 0) }}</span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <button v-if="tx.type !== 'order'" @click="startEdit(tx)"
+                                    :class="['hover:text-primary transition-colors', editingTx?.id === tx.id ? 'text-primary' : 'text-muted-foreground']"
+                                    title="Edit">
+                                    <Pencil class="h-4 w-4" />
+                                </button>
+                                <button v-if="isAdmin || ['expense', 'income_adjustment'].includes(tx.type)"
+                                    @click="deleteTransaction(tx)" :disabled="ftDeleting === tx.id"
+                                    class="text-red-600 hover:text-red-700 disabled:opacity-50 transition-colors"
+                                    title="Delete">
+                                    <Trash2 class="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Desktop table -->
+            <div class="hidden md:block overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                         <tr>
@@ -746,7 +921,7 @@ onMounted(async () => {
                             <td :class="['px-4 py-3 text-right font-semibold tabular-nums', isCredit(tx.type) ? 'text-green-600' : 'text-red-600']">
                                 {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
                             </td>
-                            <td class="px-4 py-3 text-right text-sm tabular-nums">{{ fmt(tx.financial_balance ?? tx.running_balance) }}</td>
+                            <td class="px-4 py-3 text-right text-sm tabular-nums">{{ fmt(tx.financial_balance ?? 0) }}</td>
                             <td class="px-4 py-3 text-sm text-muted-foreground">{{ tx.user?.name ?? '—' }}</td>
                             <td class="px-4 py-3 text-center">
                                 <div class="flex items-center justify-center gap-1">
@@ -756,7 +931,8 @@ onMounted(async () => {
                                         title="Edit">
                                         <Pencil class="h-4 w-4" />
                                     </button>
-                                    <button @click="deleteTransaction(tx)" :disabled="ftDeleting === tx.id"
+                                    <button v-if="isAdmin || ['expense', 'income_adjustment'].includes(tx.type)"
+                                        @click="deleteTransaction(tx)" :disabled="ftDeleting === tx.id"
                                         class="text-red-600 hover:text-red-700 disabled:opacity-50 transition-colors"
                                         title="Delete">
                                         <Trash2 class="h-4 w-4" />

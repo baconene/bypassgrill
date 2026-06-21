@@ -5,11 +5,6 @@ namespace App\Services\Distribution;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Read-only aggregates over the EXISTING sales tables (orders, order_items,
- * refunds). Revenue basis = paid orders, matching ReportService P&L so the
- * distribution always reconciles with the Financial module. Never writes.
- */
 class SalesAggregateService
 {
     private function bounds(string $start, string $end): array
@@ -20,10 +15,6 @@ class SalesAggregateService
         ];
     }
 
-    /**
-     * Sales metrics for a period + optional scope (category_id / product_id).
-     * @return array{gross_sales:float, discounts:float, net_sales:float, refunds:float, cogs:float, order_count:int}
-     */
     public function salesMetrics(string $start, string $end, ?int $categoryId = null, ?int $productId = null): array
     {
         [$from, $to] = $this->bounds($start, $end);
@@ -62,7 +53,6 @@ class SalesAggregateService
             ];
         }
 
-        // Scoped (category/product): item-level aggregation
         $base = DB::table('order_items')
             ->join('orders', 'orders.id', '=', 'order_items.order_id')
             ->join('products', 'products.id', '=', 'order_items.product_id')
@@ -79,18 +69,14 @@ class SalesAggregateService
 
         return [
             'gross_sales' => round($sales, 2),
-            'discounts'   => 0.0,                 // discounts are order-level, not split per item
+            'discounts'   => 0.0,
             'net_sales'   => round($sales, 2),
-            'refunds'     => 0.0,                 // refunds not tracked at item level
+            'refunds'     => 0.0,
             'cogs'        => round((float) $row->cogs, 2),
             'order_count' => (int) $row->cnt,
         ];
     }
 
-    /**
-     * Net sales per product for the period (for the royalty engine).
-     * @return array<int, array{product_id:int, category_id:int, name:string, net_sales:float, qty:int}>
-     */
     public function productNetSales(string $start, string $end, ?int $categoryId = null, ?int $productId = null): array
     {
         [$from, $to] = $this->bounds($start, $end);

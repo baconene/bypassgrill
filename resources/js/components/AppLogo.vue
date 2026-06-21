@@ -4,7 +4,7 @@ import AppLogoIcon from '@/components/AppLogoIcon.vue';
 
 const page = usePage();
 const logoUrl = (page.props as any).logoUrl as string | null;
-const brandName = ((page.props as any).brandName as string | null) ?? 'Bypass Grill';
+const brandName = ((page.props as any).brandName as string | null) ?? 'The Boys';
 </script>
 
 <template>

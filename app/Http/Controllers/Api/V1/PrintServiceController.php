@@ -39,6 +39,9 @@ class PrintServiceController extends Controller
             'print_auto_print'    => 'boolean',
             'print_enabled'       => 'boolean',
             'print_channel'       => 'nullable|string|max:100|regex:/^[A-Za-z0-9._-]+$/',
+            'social_facebook'     => 'nullable|string|max:255',
+            'social_instagram'    => 'nullable|string|max:255',
+            'receipt_qr_type'     => 'nullable|string|in:none,facebook,order_url',
         ]);
 
         $channel = ($data['print_channel'] ?? '') ?: 'orders';
@@ -50,6 +53,7 @@ class PrintServiceController extends Controller
         foreach (['print_store_name', 'print_store_address', 'print_store_phone', 'print_footer'] as $field) {
             $data[$field] = $data[$field] ?? '';
         }
+        $data['receipt_qr_type'] = $data['receipt_qr_type'] ?? 'order_url';
 
         try {
             // Core settings — these columns always exist, so this can never fail on schema.

@@ -1,11 +1,15 @@
 <?php
 
+use App\Http\Controllers\Settings\AdvertisementController;
+use App\Http\Controllers\Settings\LogoController;
+use App\Http\Controllers\Settings\MediaController;
+use App\Http\Controllers\Settings\PageContentController;
+use App\Http\Controllers\Settings\PriceManagementController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
-use App\Http\Controllers\Settings\UserManagementController;
-use App\Http\Controllers\Settings\LogoController;
 use App\Http\Controllers\Settings\PrintServiceSettingsController;
 use App\Http\Controllers\Settings\SystemController;
+use App\Http\Controllers\Settings\UserManagementController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
@@ -18,7 +22,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.payment-tenders')
         ->middleware('role:admin');
 
-    // User management (admin only)
     Route::get('settings/users', [UserManagementController::class, 'index'])
         ->name('settings.users')
         ->middleware('role:admin');
@@ -32,12 +35,10 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.users.destroy')
         ->middleware('role:admin');
 
-    // Print Service (admin only)
     Route::get('settings/print-service', [PrintServiceSettingsController::class, 'edit'])
         ->name('settings.print-service')
         ->middleware('role:admin');
 
-    // Logo (admin only)
     Route::get('settings/logo', [LogoController::class, 'edit'])
         ->name('settings.logo')
         ->middleware('role:admin');
@@ -68,6 +69,72 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('role:admin');
     Route::delete('settings/logo', [LogoController::class, 'destroy'])
         ->name('settings.logo.destroy')
+        ->middleware('role:admin');
+
+    Route::get('settings/prices', [PriceManagementController::class, 'index'])
+        ->name('settings.prices')
+        ->middleware('role:admin');
+    Route::patch('settings/prices', [PriceManagementController::class, 'update'])
+        ->name('settings.prices.update')
+        ->middleware('role:admin');
+
+    Route::get('settings/advertisements', [AdvertisementController::class, 'index'])
+        ->name('settings.advertisements')
+        ->middleware('role:admin');
+    Route::post('settings/advertisements', [AdvertisementController::class, 'store'])
+        ->name('settings.advertisements.store')
+        ->middleware('role:admin');
+    Route::patch('settings/advertisements/{advertisement}', [AdvertisementController::class, 'update'])
+        ->name('settings.advertisements.update')
+        ->middleware('role:admin');
+    Route::delete('settings/advertisements/{advertisement}', [AdvertisementController::class, 'destroy'])
+        ->name('settings.advertisements.destroy')
+        ->middleware('role:admin');
+    Route::post('settings/advertisements/{advertisement}/toggle', [AdvertisementController::class, 'toggle'])
+        ->name('settings.advertisements.toggle')
+        ->middleware('role:admin');
+
+    Route::get('settings/page-content', [PageContentController::class, 'index'])
+        ->name('settings.page-content')
+        ->middleware('role:admin');
+    Route::post('settings/page-content', [PageContentController::class, 'store'])
+        ->name('settings.page-content.store')
+        ->middleware('role:admin');
+    Route::patch('settings/page-content/{section}', [PageContentController::class, 'update'])
+        ->name('settings.page-content.update')
+        ->middleware('role:admin');
+    Route::delete('settings/page-content/{section}', [PageContentController::class, 'destroy'])
+        ->name('settings.page-content.destroy')
+        ->middleware('role:admin');
+    Route::post('settings/page-content/reorder', [PageContentController::class, 'reorder'])
+        ->name('settings.page-content.reorder')
+        ->middleware('role:admin');
+    Route::post('settings/page-content/{section}/toggle', [PageContentController::class, 'toggle'])
+        ->name('settings.page-content.toggle')
+        ->middleware('role:admin');
+
+    Route::get('settings/media', [MediaController::class, 'index'])
+        ->name('settings.media')
+        ->middleware('role:admin');
+    Route::post('settings/media', [MediaController::class, 'store'])
+        ->name('settings.media.store')
+        ->middleware('role:admin');
+    Route::get('settings/media/json', function () {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+        return response()->json(
+            \App\Models\MediaFile::latest()->get()->map(fn ($f) => [
+                'id'            => $f->id,
+                'original_name' => $f->original_name,
+                'filename'      => $f->filename,
+                'mime_type'     => $f->mime_type,
+                'size'          => $f->size,
+                'url'           => $f->url,
+                'is_image'      => $f->is_image,
+            ])
+        );
+    })->name('settings.media.json')->middleware('role:admin');
+    Route::delete('settings/media/{media}', [MediaController::class, 'destroy'])
+        ->name('settings.media.destroy')
         ->middleware('role:admin');
 });
 

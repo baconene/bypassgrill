@@ -4,34 +4,18 @@ use Illuminate\Database\Eloquent\Model;
 
 class FinancialTransaction extends Model {
 
-    protected static function boot(): void
-    {
-        parent::boot();
-
-        // Automatically compute running_balance for every new transaction so
-        // records created by OrderService / PaymentService are correct too.
-        static::creating(function (FinancialTransaction $tx): void {
-            $prev = static::orderByDesc('transacted_at')
-                ->orderByDesc('id')
-                ->value('running_balance') ?? 0.0;
-
-            $tx->running_balance = round($prev + match ($tx->type) {
-                'payment', 'income_adjustment'  => (float) $tx->amount,
-                'expense', 'order', 'payroll', 'asset_deduction' => -(float) $tx->amount,
-                default                         => 0.0,
-            }, 2);
-        });
-    }
+    // Running balance is derived on read (FinancialTransactionController computes
+    // `financial_balance` in chronological order). It is intentionally NOT stored,
+    // since an insert-time column breaks for backdated / out-of-order entries.
 
     protected $fillable = [
         'type', 'amount', 'description',
         'order_id', 'payment_id', 'payment_tender_id', 'payroll_record_id',
-        'user_id', 'notes', 'transacted_at', 'running_balance',
+        'user_id', 'notes', 'transacted_at',
     ];
     protected $casts = [
-        'amount'          => 'decimal:2',
-        'running_balance' => 'decimal:2',
-        'transacted_at'   => 'datetime',
+        'amount'        => 'decimal:2',
+        'transacted_at' => 'datetime',
     ];
 
     public function order() { return $this->belongsTo(Order::class); }

@@ -152,8 +152,17 @@ class PrintJobService
                 'amount' => $amountTendered,
                 'change' => $change,
             ] : null,
-            'qr_url' => rtrim(config('app.url'), '/') . '/public/orders/' . $order->id,
+            'qr_url' => $this->resolveQrUrl($settings, $order),
         ];
+    }
+
+    private function resolveQrUrl(PrintServiceSetting $settings, Order $order): ?string
+    {
+        return match ($settings->receipt_qr_type ?? 'order_url') {
+            'none'      => null,
+            'facebook'  => $settings->social_facebook ?: null,
+            default     => rtrim(config('app.url'), '/') . '/public/orders/' . $order->id,
+        };
     }
 
     private function formatOrderType(string $type): string

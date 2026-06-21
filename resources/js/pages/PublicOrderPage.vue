@@ -47,12 +47,10 @@ const payColor = (s: string) => ({
     <div class="min-h-screen bg-background flex justify-center px-3 py-6 sm:py-10">
         <div class="w-full max-w-2xl space-y-4">
 
-            <!-- Store header -->
             <div class="text-center mb-2">
                 <h1 class="text-2xl font-black tracking-tight">{{ brandName.toUpperCase() }}</h1>
             </div>
 
-            <!-- Order header -->
             <div class="rounded-xl border bg-card shadow-sm p-4">
                 <div class="flex items-center gap-2 flex-wrap">
                     <h2 class="text-lg sm:text-xl font-black flex items-center gap-1.5">
@@ -75,7 +73,6 @@ const payColor = (s: string) => ({
                 </p>
             </div>
 
-            <!-- Timeline + Customer -->
             <div class="grid sm:grid-cols-2 gap-3 sm:gap-4">
                 <div class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
                     <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -125,7 +122,6 @@ const payColor = (s: string) => ({
                 </div>
             </div>
 
-            <!-- Items -->
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="p-4 border-b flex items-center gap-2">
                     <Package class="h-4 w-4 text-muted-foreground" />
@@ -153,7 +149,6 @@ const payColor = (s: string) => ({
                 </div>
             </div>
 
-            <!-- Totals + Payment -->
             <div class="grid sm:grid-cols-2 gap-3 sm:gap-4">
                 <div class="rounded-xl border bg-card shadow-sm p-4 space-y-2">
                     <h3 class="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
@@ -201,7 +196,6 @@ const payColor = (s: string) => ({
                 </div>
             </div>
 
-            <!-- Notes -->
             <div v-if="order.notes" class="rounded-xl border bg-card shadow-sm p-4">
                 <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Notes</p>
                 <p class="text-sm">{{ order.notes }}</p>

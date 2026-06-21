@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { Plus, Pencil, Trash2, X, PlusCircle, MinusCircle, UtensilsCrossed, FolderPlus, Check, ImageIcon, Upload, Calculator } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, X, PlusCircle, MinusCircle, UtensilsCrossed, FolderPlus, Check, ImageIcon, Upload, Calculator, Eye, TrendingUp, PackagePlus } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -84,6 +84,8 @@ const openAdd = () => {
     editingId.value    = null
     form.value         = blankForm()
     recipes.value      = []
+    comboItems.value   = []
+    showCombo.value    = false
     imageFile.value    = null
     imagePreview.value = null
     removeImage.value  = false
@@ -103,6 +105,8 @@ const openEdit = (p: Product) => {
         display_order: p.display_order,
     }
     recipes.value      = p.recipes.map((r) => ({ ingredient_id: r.ingredient_id, quantity: r.quantity, unit: r.unit ?? '' }))
+    comboItems.value   = []
+    showCombo.value    = false
     imageFile.value    = null
     imagePreview.value = p.image
     removeImage.value  = false
@@ -150,6 +154,92 @@ const calculateCostFromRecipes = async () => {
         toast.success(`Cost estimated: ₱${form.value.cost.toFixed(2)}`)
     }
 }
+
+// ─── Combo meal builder ───────────────────────────────────────────────────────
+// Build a product from other products: merge their recipes (summing duplicate
+// ingredients) and total their price/cost into this one product.
+interface ComboItemRow { product_id: number; quantity: number }
+const showCombo   = ref(false)
+const comboItems  = ref<ComboItemRow[]>([])
+
+// Component options exclude the product being edited (a combo can't contain itself).
+const comboProductOptions = computed(() =>
+    props.products.filter((p) => p.id !== editingId.value)
+)
+
+const addComboItem    = () => comboItems.value.push({ product_id: 0, quantity: 1 })
+const removeComboItem = (i: number) => comboItems.value.splice(i, 1)
+
+const comboPricePreview = computed(() =>
+    comboItems.value.reduce((sum, c) => {
+        const p = props.products.find((x) => x.id === c.product_id)
+        return sum + (p ? Number(p.price) * c.quantity : 0)
+    }, 0),
+)
+const comboCostPreview = computed(() =>
+    comboItems.value.reduce((sum, c) => {
+        const p = props.products.find((x) => x.id === c.product_id)
+        return sum + (p ? Number(p.cost) * c.quantity : 0)
+    }, 0),
+)
+
+const mergeCombo = () => {
+    const valid = comboItems.value.filter((c) => c.product_id > 0 && c.quantity > 0)
+    if (valid.length === 0) {
+        toast.warning('Add at least one component product')
+        return
+    }
+
+    // Merge recipes by ingredient_id, summing quantity × component quantity.
+    const merged = new Map<number, RecipeRow>()
+    for (const c of valid) {
+        const p = props.products.find((x) => x.id === c.product_id)
+        if (!p) continue
+        for (const r of p.recipes) {
+            const addQty = Number(r.quantity) * c.quantity
+            const existing = merged.get(r.ingredient_id)
+            if (existing) {
+                existing.quantity = Number((existing.quantity + addQty).toFixed(3))
+            } else {
+                merged.set(r.ingredient_id, {
+                    ingredient_id: r.ingredient_id,
+                    quantity: Number(addQty.toFixed(3)),
+                    unit: r.unit ?? '',
+                })
+            }
+        }
+    }
+
+    recipes.value    = Array.from(merged.values())
+    form.value.price = Number(comboPricePreview.value.toFixed(2))
+    form.value.cost  = Number(comboCostPreview.value.toFixed(2))
+
+    const totalItems = valid.reduce((n, c) => n + c.quantity, 0)
+    const noRecipes  = recipes.value.length === 0
+    toast.success(
+        `Merged ${totalItems} item(s) → price ₱${form.value.price.toFixed(2)}` +
+        (noRecipes ? ' (components have no ingredients to merge)' : `, ${recipes.value.length} ingredient(s)`),
+    )
+}
+
+// ─── Margin helpers ───────────────────────────────────────────────────────────
+const marginPct = (price: number, cost: number): string => {
+    if (price <= 0) return '—'
+    return ((price - cost) / price * 100).toFixed(1) + '%'
+}
+
+const marginClass = (price: number, cost: number): string => {
+    if (price <= 0) return 'text-muted-foreground'
+    const m = (price - cost) / price * 100
+    if (m >= 50) return 'text-green-600 dark:text-green-400 font-semibold'
+    if (m >= 25) return 'text-yellow-600 dark:text-yellow-400 font-semibold'
+    return 'text-red-600 dark:text-red-400 font-semibold'
+}
+
+// ─── View modal ───────────────────────────────────────────────────────────────
+const viewProduct = ref<Product | null>(null)
+
+const openView = (p: Product) => { viewProduct.value = p }
 
 // ─── Submit ───────────────────────────────────────────────────────────────────
 const submitForm = async () => {
@@ -267,13 +357,18 @@ const doDelete = async () => {
                             <th class="px-4 py-3 text-left">Category</th>
                             <th class="px-4 py-3 text-right">Price</th>
                             <th class="px-4 py-3 text-right">Cost</th>
+                            <th class="px-4 py-3 text-right">Margin</th>
                             <th class="px-4 py-3 text-center">Ingredients</th>
                             <th class="px-4 py-3 text-center">Status</th>
                             <th class="px-4 py-3 text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y">
-                        <tr v-for="p in filtered" :key="p.id" class="hover:bg-muted/20">
+                        <tr
+                            v-for="p in filtered" :key="p.id"
+                            class="hover:bg-muted/20 cursor-pointer"
+                            @click="openView(p)"
+                        >
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-3">
                                     <div class="h-10 w-10 shrink-0 rounded-lg overflow-hidden bg-muted/40 border">
@@ -291,6 +386,9 @@ const doDelete = async () => {
                             <td class="px-4 py-3 text-muted-foreground">{{ p.category_name ?? '—' }}</td>
                             <td class="px-4 py-3 text-right font-bold">₱{{ p.price.toFixed(2) }}</td>
                             <td class="px-4 py-3 text-right text-muted-foreground">₱{{ p.cost.toFixed(2) }}</td>
+                            <td class="px-4 py-3 text-right">
+                                <span :class="marginClass(p.price, p.cost)">{{ marginPct(p.price, p.cost) }}</span>
+                            </td>
                             <td class="px-4 py-3 text-center">
                                 <span class="inline-flex items-center gap-1 text-xs text-muted-foreground">
                                     <UtensilsCrossed class="h-3.5 w-3.5" />
@@ -302,19 +400,22 @@ const doDelete = async () => {
                                     {{ p.is_active ? 'Active' : 'Inactive' }}
                                 </span>
                             </td>
-                            <td class="px-4 py-3 text-center">
+                            <td class="px-4 py-3 text-center" @click.stop>
                                 <div class="flex items-center justify-center gap-2">
-                                    <button @click="openEdit(p)" class="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground">
+                                    <button @click="openView(p)" class="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground" title="View details">
+                                        <Eye class="h-4 w-4" />
+                                    </button>
+                                    <button @click="openEdit(p)" class="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground" title="Edit">
                                         <Pencil class="h-4 w-4" />
                                     </button>
-                                    <button @click="confirmDelete(p)" class="rounded-lg p-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 text-muted-foreground hover:text-red-600">
+                                    <button @click="confirmDelete(p)" class="rounded-lg p-1.5 hover:bg-red-50 dark:hover:bg-red-950/20 text-muted-foreground hover:text-red-600" title="Delete">
                                         <Trash2 class="h-4 w-4" />
                                     </button>
                                 </div>
                             </td>
                         </tr>
                         <tr v-if="filtered.length === 0">
-                            <td colspan="7" class="px-4 py-10 text-center text-muted-foreground text-sm">No products found.</td>
+                            <td colspan="8" class="px-4 py-10 text-center text-muted-foreground text-sm">No products found.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -470,6 +571,54 @@ const doDelete = async () => {
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Combo Meal Builder -->
+                        <div class="rounded-xl border border-dashed p-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-semibold flex items-center gap-1.5">
+                                        <PackagePlus class="h-4 w-4 text-primary" /> Combo Meal
+                                    </p>
+                                    <p class="text-xs text-muted-foreground">Build from existing products — merges their ingredients and sums price &amp; cost.</p>
+                                </div>
+                                <button type="button" @click="showCombo = !showCombo"
+                                    :class="['rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted transition-colors', showCombo ? 'bg-primary/10 border-primary text-primary' : 'text-muted-foreground']">
+                                    {{ showCombo ? 'Hide' : 'Build Combo' }}
+                                </button>
+                            </div>
+
+                            <div v-if="showCombo" class="mt-3 space-y-2">
+                                <div v-if="comboItems.length === 0" class="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
+                                    Add the products that make up this combo (add the same product twice, or set its quantity).
+                                </div>
+                                <div v-for="(c, i) in comboItems" :key="i" class="flex items-center gap-2 rounded-lg border bg-muted/20 p-2">
+                                    <select v-model="c.product_id"
+                                        class="flex-1 rounded-md border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary">
+                                        <option :value="0" disabled>Select product…</option>
+                                        <option v-for="p in comboProductOptions" :key="p.id" :value="p.id">{{ p.name }} (₱{{ Number(p.price).toFixed(2) }})</option>
+                                    </select>
+                                    <input v-model.number="c.quantity" type="number" min="1" step="1" placeholder="Qty"
+                                        class="w-20 rounded-md border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary" />
+                                    <button type="button" @click="removeComboItem(i)" class="text-muted-foreground hover:text-red-500">
+                                        <MinusCircle class="h-4 w-4" />
+                                    </button>
+                                </div>
+
+                                <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                                    <button type="button" @click="addComboItem"
+                                        class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted">
+                                        <PlusCircle class="h-3.5 w-3.5" /> Add Product
+                                    </button>
+                                    <button type="button" @click="mergeCombo" :disabled="comboItems.length === 0"
+                                        class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed">
+                                        <Check class="h-3.5 w-3.5" /> Merge ingredients &amp; price (≈₱{{ comboPricePreview.toFixed(2) }})
+                                    </button>
+                                </div>
+                                <p class="text-xs text-muted-foreground">
+                                    Merging replaces the ingredients above with the combined recipe and fills price &amp; cost (both stay editable).
+                                </p>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="p-5 border-t flex gap-3">
@@ -477,6 +626,93 @@ const doDelete = async () => {
                         <button @click="submitForm" :disabled="submitting"
                             class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
                             {{ submitting ? 'Saving…' : (editingId ? 'Save Changes' : 'Create Product') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
+
+    <!-- View Product Details Modal -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="viewProduct" class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto" @click.self="viewProduct = null">
+                <div class="w-full max-w-lg rounded-2xl bg-background shadow-2xl my-8">
+                    <!-- Header -->
+                    <div class="p-5 border-b flex items-center justify-between">
+                        <h3 class="text-lg font-bold">Product Details</h3>
+                        <button @click="viewProduct = null" class="rounded-full p-1 hover:bg-muted"><X class="h-4 w-4" /></button>
+                    </div>
+
+                    <div class="p-5 space-y-5">
+                        <!-- Image + name row -->
+                        <div class="flex gap-4 items-start">
+                            <div class="h-24 w-24 shrink-0 rounded-xl overflow-hidden bg-muted/40 border">
+                                <img v-if="viewProduct.image" :src="viewProduct.image" :alt="viewProduct.name" class="h-full w-full object-cover" />
+                                <div v-else class="h-full w-full flex items-center justify-center">
+                                    <ImageIcon class="h-8 w-8 text-muted-foreground opacity-30" />
+                                </div>
+                            </div>
+                            <div class="flex-1 min-w-0 space-y-1">
+                                <p class="text-xl font-bold leading-tight">{{ viewProduct.name }}</p>
+                                <p class="text-sm text-muted-foreground">{{ viewProduct.category_name ?? '—' }}</p>
+                                <p v-if="viewProduct.sku" class="text-xs text-muted-foreground font-mono">SKU: {{ viewProduct.sku }}</p>
+                                <span :class="['inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold mt-1', viewProduct.is_active ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400']">
+                                    {{ viewProduct.is_active ? 'Active' : 'Inactive' }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Price / Cost / Margin cards -->
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="rounded-xl border bg-muted/20 p-3 text-center">
+                                <p class="text-xs text-muted-foreground mb-1">Selling Price</p>
+                                <p class="text-lg font-black text-foreground">₱{{ viewProduct.price.toFixed(2) }}</p>
+                            </div>
+                            <div class="rounded-xl border bg-muted/20 p-3 text-center">
+                                <p class="text-xs text-muted-foreground mb-1">Cost</p>
+                                <p class="text-lg font-bold text-foreground">₱{{ viewProduct.cost.toFixed(2) }}</p>
+                            </div>
+                            <div class="rounded-xl border bg-muted/20 p-3 text-center">
+                                <p class="text-xs text-muted-foreground mb-1 flex items-center justify-center gap-1">
+                                    <TrendingUp class="h-3 w-3" /> Margin
+                                </p>
+                                <p :class="['text-lg', marginClass(viewProduct.price, viewProduct.cost)]">
+                                    {{ marginPct(viewProduct.price, viewProduct.cost) }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Description -->
+                        <div v-if="viewProduct.description">
+                            <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Description</p>
+                            <p class="text-sm text-foreground leading-relaxed">{{ viewProduct.description }}</p>
+                        </div>
+
+                        <!-- Ingredients -->
+                        <div>
+                            <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                Ingredients ({{ viewProduct.recipes.length }})
+                            </p>
+                            <div v-if="viewProduct.recipes.length === 0" class="rounded-lg border border-dashed p-3 text-center text-sm text-muted-foreground">
+                                No ingredients linked.
+                            </div>
+                            <div v-else class="rounded-xl border divide-y overflow-hidden">
+                                <div v-for="r in viewProduct.recipes" :key="r.ingredient_id"
+                                    class="flex items-center justify-between px-4 py-2.5 text-sm">
+                                    <span class="font-medium">{{ r.ingredient_name }}</span>
+                                    <span class="text-muted-foreground text-xs font-mono">{{ r.quantity }} {{ r.unit }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Footer actions -->
+                    <div class="p-5 border-t flex gap-3">
+                        <button @click="viewProduct = null" class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted">Close</button>
+                        <button @click="() => { openEdit(viewProduct!); viewProduct = null }"
+                            class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">
+                            Edit Product
                         </button>
                     </div>
                 </div>

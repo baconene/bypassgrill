@@ -41,7 +41,7 @@ interface FtSummary {
 }
 interface FtTransaction {
     id: number; type: string; amount: number; description: string; transacted_at: string
-    financial_balance: number | null; notes: string | null
+    financial_balance?: number | null; notes: string | null
     user?: { name: string }; tender?: { name: string }
 }
 interface OrderRow {
@@ -65,7 +65,7 @@ const props = defineProps<{
 }>()
 
 // ── Active tab ─────────────────────────────────────────────────────────────────
-type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'analytics'
+type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'heatmap' | 'analytics'
 const tab = ref<Tab>('orders')
 const loading = ref(false)
 
@@ -79,6 +79,7 @@ const tabs: { key: Tab; label: string }[] = [
     { key: 'products',  label: 'Product Sales' },
     { key: 'pl',        label: 'P&L' },
     { key: 'bills',     label: 'Bills' },
+    { key: 'heatmap',   label: '🔥 Peak Hours' },
 ]
 
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
@@ -139,9 +140,11 @@ interface PL {
     gross_profit: number; gross_margin: number
     income_adjustments: { total: number; count: number; breakdown: PLBreakdownItem[] }
     expenses: { total: number; count: number; breakdown: PLBreakdownItem[] }
+    inventory_purchases: { total: number; count: number; included_in_expenses: boolean; breakdown: PLBreakdownItem[] }
     payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
     net_profit: number; net_margin: number
     include_cogs?: boolean
+    unpaid_completed?: { total: number; count: number }
 }
 interface BillInstallment {
     id: number; installment_number: number; amount: number
@@ -171,7 +174,35 @@ interface BillForecast {
 const plStartDate = ref(manilaMonthStart())
 const plEndDate = ref(manilaToday())
 const plIncludeCogs = ref(true)
-const plReport = ref<PL | null>(null)
+const plReport     = ref<PL | null>(null)
+
+// Which P&L sections are collapsed (all open by default)
+const plCollapsed = ref<Record<string, boolean>>({
+    revenue:      false,
+    cogs:         false,
+    inventory:    false,
+    other_income: false,
+    expenses:     false,
+    payroll:      false,
+})
+
+// Sales = COGS + Gross Profit breakdown for the stacked bar
+const salesChart = computed(() => {
+    const r = plReport.value
+    if (!r || !r.include_cogs || r.revenue.net_revenue <= 0) return null
+    const revenue     = r.revenue.net_revenue
+    const cogs        = r.cogs.total
+    const grossProfit = Math.max(0, r.gross_profit)
+    const denominator = Math.max(revenue, cogs + grossProfit, 0.01)
+    return {
+        revenue,
+        cogs,
+        cogsH:        Math.min(100, (cogs        / denominator) * 100),
+        grossProfit,
+        grossH:       Math.min(100, (grossProfit / denominator) * 100),
+        grossMargin:  r.gross_margin,
+    }
+})
 
 // ── Daily chart ────────────────────────────────────────────────────────────────
 interface ChartDay { date: string; income: number; expense: number }
@@ -185,6 +216,78 @@ interface MonthChartEntry { month: string; income: number; expense: number }
 const monthChartData      = ref<MonthChartEntry[]>([])
 const monthChartLoading   = ref(false)
 const monthChartCollapsed = ref(false)
+
+// ── Heatmap ───────────────────────────────────────────────────────────────────
+interface HeatmapSlot { day: string; hour: number; orders: number }
+interface HeatmapInsights {
+    total_orders: number
+    peak_slot:   HeatmapSlot
+    peak_hour:   { hour: number; total_orders: number }
+    peak_day:    { day: string;  total_orders: number }
+    hour_totals: number[]
+    day_totals:  Record<string, number>
+}
+interface HeatmapData {
+    data:     HeatmapSlot[]
+    matrix:   Record<string, number[]>
+    insights: HeatmapInsights
+}
+
+const hmDateFrom  = ref(new Date(new Date().setDate(new Date().getDate() - 89)).toISOString().slice(0, 10))
+const hmDateTo    = ref(today)
+const hmData      = ref<HeatmapData | null>(null)
+const hmLoading   = ref(false)
+const hmTooltip   = ref<{ slot: HeatmapSlot; x: number; y: number } | null>(null)
+
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const HOURS = Array.from({ length: 24 }, (_, i) => i)
+
+const hmMax = computed(() => {
+    if (!hmData.value) return 1
+    return Math.max(1, ...hmData.value.data.map(d => d.orders))
+})
+
+// Returns a Tailwind-compatible inline style for the cell background
+function cellStyle(orders: number): string {
+    if (orders === 0) return 'background:#1a1a1a'
+    const ratio = orders / hmMax.value
+    // Interpolate from #431407 (very dark) → #f97316 (orange-500) → #fef08a (yellow-200)
+    if (ratio < 0.25)  return `background:rgba(249,115,22,${0.15 + ratio * 0.6})`
+    if (ratio < 0.50)  return `background:rgba(249,115,22,${0.30 + ratio * 0.7})`
+    if (ratio < 0.75)  return `background:rgba(234,88,12,${0.55 + ratio * 0.4})`
+    return `background:rgba(220,38,38,${0.70 + ratio * 0.3})`
+}
+
+function cellText(orders: number): string {
+    const ratio = orders / hmMax.value
+    return ratio > 0.4 ? 'text-white' : orders > 0 ? 'text-orange-200' : 'text-zinc-700'
+}
+
+function hmFmtHour(h: number): string {
+    if (h === 0)  return '12a'
+    if (h < 12)   return `${h}a`
+    if (h === 12) return '12p'
+    return `${h - 12}p`
+}
+
+function showTooltip(e: MouseEvent, slot: HeatmapSlot) {
+    const rect = (e.target as HTMLElement).getBoundingClientRect()
+    hmTooltip.value = { slot, x: rect.left + rect.width / 2, y: rect.top - 8 }
+}
+
+const loadHeatmap = async () => {
+    hmLoading.value = true
+    try {
+        const res = await api.get('/api/v1/reports/heatmap', {
+            params: { date_from: hmDateFrom.value, date_to: hmDateTo.value },
+        })
+        hmData.value = res.data
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to load heatmap')
+    } finally {
+        hmLoading.value = false
+    }
+}
 
 // ── Financial ─────────────────────────────────────────────────────────────────
 const ftStartDate = ref(daysAgo(30))
@@ -309,6 +412,10 @@ const dueSoonBills = computed(() => bills.value.filter(b => b.status === 'due_to
 
 const topProducts = computed(() =>
     [...productSales.value].sort((a, b) => b.total_sales - a.total_sales).slice(0, 10)
+)
+
+const totalProductSales = computed(() =>
+    productSales.value.reduce((s, p) => s + Number(p.total_sales), 0)
 )
 
 const chartTotals = computed(() => {
@@ -536,6 +643,8 @@ const generateReport = async () => {
         } else if (tab.value === 'bills') {
             await loadBills()
             await loadForecast()
+        } else if (tab.value === 'heatmap') {
+            await loadHeatmap()
         }
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to load report')
@@ -793,18 +902,20 @@ onMounted(async () => {
     <Head title="Reports" />
 
     <div class="space-y-5">
-        <!-- Tab bar -->
-        <div class="flex flex-wrap gap-1 rounded-xl border bg-card p-1.5 shadow-sm">
-            <button
-                v-for="t in tabs" :key="t.key"
-                @click="switchTab(t.key)"
-                :class="[
-                    'rounded-lg px-4 py-2 text-sm font-medium transition',
-                    tab === t.key
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                ]"
-            >{{ t.label }}</button>
+        <!-- Tab bar — horizontally scrollable so tabs never wrap on mobile -->
+        <div class="overflow-x-auto rounded-xl border bg-card shadow-sm scrollbar-none">
+            <div class="flex gap-1 p-1.5 w-max">
+                <button
+                    v-for="t in tabs" :key="t.key"
+                    @click="switchTab(t.key)"
+                    :class="[
+                        'rounded-lg px-4 py-2 text-sm font-medium transition whitespace-nowrap',
+                        tab === t.key
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    ]"
+                >{{ t.label }}</button>
+            </div>
         </div>
 
         <!-- Trend Analytics (self-contained tab with its own filters) -->
@@ -887,10 +998,12 @@ onMounted(async () => {
 
                 <!-- Product sales date range -->
                 <template v-if="tab === 'products'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="prodDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="prodDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div class="flex gap-2 w-full sm:contents">
+                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                            <input v-model="prodDateFrom" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                            <input v-model="prodDateTo" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    </div>
                 </template>
 
                 <!-- P&L date range -->
@@ -901,7 +1014,10 @@ onMounted(async () => {
                         <input v-model="plEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                     <div class="flex items-center gap-2">
                         <input v-model="plIncludeCogs" type="checkbox" id="pl_cogs_toggle" class="rounded border-gray-300" />
-                        <label for="pl_cogs_toggle" class="text-xs font-medium text-muted-foreground">Include COGS in expenses</label>
+                        <label for="pl_cogs_toggle" class="text-xs font-medium text-muted-foreground">
+                            Include COGS
+                            <span class="opacity-60 font-normal">— when ON: restocking is an asset (not opex); consumed cost flows via COGS</span>
+                        </label>
                     </div>
                 </template>
 
@@ -918,14 +1034,24 @@ onMounted(async () => {
                     </div>
                 </template>
 
+                <!-- Heatmap date range -->
+                <template v-if="tab === 'heatmap'">
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input v-model="hmDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input v-model="hmDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                </template>
+
                 <!-- Financial date range -->
                 <template v-if="tab === 'financial'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="ftStartDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="ftEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
-                        <select v-model="ftTypeFilter" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <div class="flex gap-2 w-full sm:contents">
+                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                            <input v-model="ftStartDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                            <input v-model="ftEndDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    </div>
+                    <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                        <select v-model="ftTypeFilter" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All Types</option>
                             <option value="order">Orders</option>
                             <option value="payment">Payments</option>
@@ -1062,6 +1188,86 @@ onMounted(async () => {
                         Next <ChevronRight class="h-3.5 w-3.5" />
                     </button>
                 </div>
+            </div>
+        </template>
+
+        <!-- ── Heatmap (Peak Hours) ───────────────────────────────────────── -->
+        <template v-if="tab === 'heatmap'">
+            <div class="rounded-xl border bg-card shadow-sm p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="font-bold text-sm flex items-center gap-2">🔥 Peak Hours</h2>
+                    <div class="text-xs text-muted-foreground">Total orders: {{ hmData?.insights?.total_orders ?? 0 }}</div>
+                </div>
+
+                <div v-if="hmLoading" class="py-10 text-center text-muted-foreground">Loading heatmap…</div>
+
+                <div v-else-if="hmData" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div class="col-span-2">
+                        <div class="overflow-x-auto">
+                            <div class="inline-block min-w-full">
+                                <div class="grid" :style="{ gridTemplateColumns: '120px repeat(24, 40px)' }">
+                                    <!-- header: hour labels -->
+                                    <div class="px-2 py-2 text-xs text-muted-foreground">Day / Hour</div>
+                                    <div v-for="h in 24" :key="h" class="px-1 py-1 text-[10px] text-center text-muted-foreground">{{ hmFmtHour(h - 1) }}</div>
+
+                                    <!-- rows: days -->
+                                    <div v-for="day in DAYS" :key="day" class="contents">
+                                        <div class="px-2 py-1 text-sm font-semibold text-muted-foreground">{{ day }}</div>
+                                        <div v-for="h in 24" :key="day + '-' + h" class="p-1">
+                                            <div
+                                                class="h-8 w-10 rounded-sm flex items-center justify-center text-xs font-semibold cursor-default"
+                                                :style="cellStyle(hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0)"
+                                                :class="cellText(hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0)
+                                                    .split(' ')
+                                                    .join(' ')
+                                                "
+                                                @mouseenter="(e) => showTooltip(e, { day, hour: h - 1, orders: hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0 })"
+                                                @mouseleave="() => hmTooltip = null"
+                                            >
+                                                {{ hmData!.data.find(d => d.day === day && d.hour === (h - 1))?.orders ?? 0 }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-span-1 space-y-3">
+                        <div class="rounded-xl border p-3 bg-muted/20">
+                            <p class="text-xs text-muted-foreground font-semibold">Peak Slot</p>
+                            <div class="mt-2">
+                                <p class="font-bold text-lg">{{ hmData.insights.peak_slot.day }} · {{ hmFmtHour(hmData.insights.peak_slot.hour) }}</p>
+                                <p class="text-sm text-muted-foreground">Orders: <strong>{{ hmData.insights.peak_slot.orders }}</strong></p>
+                            </div>
+                        </div>
+
+                        <div class="rounded-xl border p-3 bg-card">
+                            <p class="text-xs text-muted-foreground font-semibold">Totals</p>
+                            <div class="mt-2 text-sm">
+                                <p>Total orders: <strong>{{ hmData.insights.total_orders }}</strong></p>
+                                <p class="mt-1">Peak day: <strong>{{ hmData.insights.peak_day.day }}</strong> ({{ hmData.insights.peak_day.total_orders }})</p>
+                                <p class="mt-1">Peak hour: <strong>{{ hmData.insights.peak_hour.hour }}</strong> ({{ hmData.insights.peak_hour.total_orders }})</p>
+                            </div>
+                        </div>
+
+                        <div class="rounded-xl border p-3 bg-card">
+                            <p class="text-xs text-muted-foreground font-semibold">Legend</p>
+                            <div class="mt-2 flex flex-col gap-2">
+                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-orange-500"></div><span class="text-xs text-muted-foreground">High</span></div>
+                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-amber-400"></div><span class="text-xs text-muted-foreground">Medium</span></div>
+                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-zinc-800"></div><span class="text-xs text-muted-foreground">Low / None</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="py-10 text-center text-muted-foreground">No heatmap data for the selected range.</div>
+            </div>
+
+            <!-- Tooltip -->
+            <div v-if="hmTooltip" :style="{ position: 'fixed', left: hmTooltip.x + 'px', top: (hmTooltip.y - 48) + 'px', transform: 'translateX(-50%)' }" class="pointer-events-none z-50">
+                <div class="rounded-md bg-black text-white text-xs px-3 py-1 shadow-lg">{{ hmTooltip.slot.day }} {{ hmFmtHour(hmTooltip.slot.hour) }} — {{ hmTooltip.slot.orders }} orders</div>
             </div>
         </template>
 
@@ -1304,7 +1510,49 @@ onMounted(async () => {
             </div>
 
             <div v-if="ftTransactions.length > 0" class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                <div class="overflow-x-auto">
+
+                <!-- Mobile card list -->
+                <div class="md:hidden divide-y">
+                    <div v-for="tx in ftTransactions" :key="tx.id" class="px-4 py-3 hover:bg-muted/20 transition-colors">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2 flex-wrap mb-1">
+                                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold', typeBadgeClass(tx.type)]">{{ typeLabel(tx.type) }}</span>
+                                    <span class="text-xs text-muted-foreground tabular-nums">{{ fmtDatetime(tx.transacted_at) }}</span>
+                                </div>
+                                <p class="text-sm font-medium leading-snug">{{ tx.description }}</p>
+                                <div class="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                                    <span v-if="tx.tender?.name">{{ tx.tender.name }}</span>
+                                    <span v-if="tx.user?.name" class="opacity-60">{{ tx.user.name }}</span>
+                                </div>
+                            </div>
+                            <div class="flex flex-col items-end gap-1 shrink-0">
+                                <span class="font-bold tabular-nums text-sm" :class="isCredit(tx.type) ? 'text-green-600' : 'text-red-600'">
+                                    {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
+                                </span>
+                                <span class="text-xs tabular-nums" :class="(tx.financial_balance ?? 0) >= 0 ? 'text-muted-foreground' : 'text-red-600'">
+                                    {{ fmt(tx.financial_balance ?? 0) }}
+                                </span>
+                                <div class="flex items-center gap-1 mt-1">
+                                    <button v-if="tx.type !== 'order'" @click="openEditFt(tx)"
+                                        class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition"
+                                        title="Edit entry">
+                                        <Pencil class="h-3.5 w-3.5" />
+                                    </button>
+                                    <button v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
+                                        @click="deleteEntry(tx)" :disabled="ftDeleting === tx.id"
+                                        class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition"
+                                        title="Delete entry">
+                                        <Trash2 class="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Desktop table -->
+                <div class="hidden md:block overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
@@ -1333,21 +1581,15 @@ onMounted(async () => {
                                 <td class="px-4 py-2 text-muted-foreground text-xs">{{ tx.user?.name ?? '—' }}</td>
                                 <td class="px-4 py-2 text-center">
                                     <div class="flex items-center justify-center gap-1">
-                                        <button
-                                            v-if="tx.type !== 'order'"
-                                            @click="openEditFt(tx)"
+                                        <button v-if="tx.type !== 'order'" @click="openEditFt(tx)"
                                             class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition"
-                                            title="Edit entry"
-                                        >
+                                            title="Edit entry">
                                             <Pencil class="h-3.5 w-3.5" />
                                         </button>
-                                        <button
-                                            v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
-                                            @click="deleteEntry(tx)"
-                                            :disabled="ftDeleting === tx.id"
+                                        <button v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
+                                            @click="deleteEntry(tx)" :disabled="ftDeleting === tx.id"
                                             class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition"
-                                            title="Delete entry"
-                                        >
+                                            title="Delete entry">
                                             <Trash2 class="h-3.5 w-3.5" />
                                         </button>
                                     </div>
@@ -1389,90 +1631,185 @@ onMounted(async () => {
                         <h2 class="font-bold text-base flex items-center gap-2"><TrendingUp class="h-4 w-4" /> Profit & Loss Statement</h2>
                     </div>
                     <div class="divide-y">
-                        <!-- Revenue -->
-                        <div class="px-5 py-4 space-y-2">
-                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Revenue</p>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Gross Sales ({{ plReport.revenue.order_count }} orders)</span>
-                                <span class="font-semibold">{{ fmt(plReport.revenue.gross_sales) }}</span>
+
+                        <!-- ── Revenue ──────────────────────────────────────────── -->
+                        <div class="px-5 py-3">
+                            <button class="w-full flex items-center justify-between py-1 group"
+                                @click="plCollapsed.revenue = !plCollapsed.revenue">
+                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                                    Revenue
+                                </span>
+                                <ChevronDown v-if="!plCollapsed.revenue" class="h-3.5 w-3.5 text-muted-foreground" />
+                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                            <div v-show="!plCollapsed.revenue" class="mt-2 space-y-1.5">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-muted-foreground">Gross Sales ({{ plReport.revenue.order_count }} orders)</span>
+                                    <span class="font-semibold">{{ fmt(plReport.revenue.gross_sales) }}</span>
+                                </div>
+                                <div v-if="plReport.revenue.discounts > 0" class="flex justify-between text-sm">
+                                    <span class="text-muted-foreground pl-4">— Discounts</span>
+                                    <span class="text-red-500">−{{ fmt(plReport.revenue.discounts) }}</span>
+                                </div>
                             </div>
-                            <div v-if="plReport.revenue.discounts > 0" class="flex justify-between text-sm">
-                                <span class="text-muted-foreground pl-4">— Discounts</span>
-                                <span class="text-red-500">−{{ fmt(plReport.revenue.discounts) }}</span>
-                            </div>
-                            <div class="flex justify-between text-sm font-bold border-t pt-2">
+                            <div class="flex justify-between text-sm font-bold border-t mt-2 pt-2">
                                 <span>Net Revenue</span>
                                 <span class="text-green-600">{{ fmt(plReport.revenue.net_revenue) }}</span>
                             </div>
                         </div>
 
-                        <!-- COGS -->
-                        <div v-if="plIncludeCogs" class="px-5 py-4 space-y-2">
-                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Cost of Goods Sold (COGS)</p>
-                            <div v-if="!plReport.cogs.has_data" class="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg px-3 py-2">
-                                No cost data — set ingredient costs and product recipes to enable COGS tracking.
+                        <!-- ── COGS ─────────────────────────────────────────────── -->
+                        <div v-if="plIncludeCogs" class="px-5 py-3">
+                            <button class="w-full flex items-center justify-between py-1 group"
+                                @click="plCollapsed.cogs = !plCollapsed.cogs">
+                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                                    Cost of Goods Sold (COGS)
+                                </span>
+                                <ChevronDown v-if="!plCollapsed.cogs" class="h-3.5 w-3.5 text-muted-foreground" />
+                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                            <div v-show="!plCollapsed.cogs" class="mt-2 space-y-1.5">
+                                <div v-if="!plReport.cogs.has_data"
+                                    class="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg px-3 py-2">
+                                    No cost data — set ingredient costs and product recipes to enable COGS tracking.
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-muted-foreground">Total COGS</span>
+                                    <span class="font-semibold text-red-500">−{{ fmt(plReport.cogs.total) }}</span>
+                                </div>
                             </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Total COGS</span>
-                                <span class="font-semibold text-red-500">−{{ fmt(plReport.cogs.total) }}</span>
-                            </div>
-                            <div class="flex justify-between text-sm font-bold border-t pt-2">
+                            <div class="flex justify-between text-sm font-bold border-t mt-2 pt-2">
                                 <span>Gross Profit <span class="text-xs font-normal text-muted-foreground">({{ plReport.gross_margin }}% margin)</span></span>
                                 <span :class="plReport.gross_profit >= 0 ? 'text-green-600' : 'text-red-600'">{{ fmt(plReport.gross_profit) }}</span>
                             </div>
                         </div>
 
-                        <!-- Other Income (income adjustments) -->
-                        <div v-if="(plReport.income_adjustments?.total ?? 0) > 0" class="px-5 py-4 space-y-2">
-                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Other Income / Credit Adjustments ({{ plReport.income_adjustments.count }})</p>
-                            <div class="space-y-1">
+                        <!-- ── Inventory Purchases ───────────────────────────────── -->
+                        <div v-if="(plReport.inventory_purchases?.total ?? 0) > 0"
+                            class="px-5 py-3 bg-amber-50/40 dark:bg-amber-950/10">
+                            <button class="w-full flex items-center justify-between py-1 group"
+                                @click="plCollapsed.inventory = !plCollapsed.inventory">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 group-hover:text-amber-900 dark:group-hover:text-amber-300 transition-colors">
+                                        Inventory Purchases ({{ plReport.inventory_purchases.count }})
+                                    </span>
+                                    <span :class="[
+                                        'text-[10px] font-semibold px-2 py-0.5 rounded-full',
+                                        plReport.inventory_purchases.included_in_expenses
+                                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+                                    ]">
+                                        {{ plReport.inventory_purchases.included_in_expenses ? 'In opex' : 'Asset — excluded' }}
+                                    </span>
+                                </div>
+                                <ChevronDown v-if="!plCollapsed.inventory" class="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                <ChevronRight v-else class="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                            </button>
+                            <div v-show="!plCollapsed.inventory" class="mt-2 space-y-1.5">
+                                <p class="text-[11px] text-muted-foreground leading-relaxed">
+                                    <template v-if="plReport.inventory_purchases.included_in_expenses">
+                                        COGS is OFF — restock counted as operating expense (cash-basis view).
+                                    </template>
+                                    <template v-else>
+                                        COGS is ON — restock moves Cash→Inventory (asset). Cost flows via COGS when sold.
+                                        Excluded from opex to prevent double-counting.
+                                    </template>
+                                </p>
+                                <div v-for="inv in plReport.inventory_purchases.breakdown" :key="inv.transacted_at + inv.description"
+                                    class="flex justify-between text-xs text-muted-foreground pl-2">
+                                    <span class="truncate max-w-xs">{{ inv.description }} <span class="opacity-60">— {{ inv.transacted_at?.slice(0, 10) }}</span></span>
+                                    <span class="shrink-0 ml-4 text-amber-600">
+                                        {{ plReport.inventory_purchases.included_in_expenses ? '−' : '' }}{{ fmt(inv.amount) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="flex justify-between text-sm font-semibold border-t border-amber-200 dark:border-amber-800 mt-2 pt-2">
+                                <span class="text-amber-700 dark:text-amber-400">Total Inventory Purchases</span>
+                                <span class="text-amber-700 dark:text-amber-400">{{ fmt(plReport.inventory_purchases.total) }}</span>
+                            </div>
+                        </div>
+
+                        <!-- ── Other Income ──────────────────────────────────────── -->
+                        <div v-if="(plReport.income_adjustments?.total ?? 0) > 0" class="px-5 py-3">
+                            <button class="w-full flex items-center justify-between py-1 group"
+                                @click="plCollapsed.other_income = !plCollapsed.other_income">
+                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                                    Other Income / Adjustments ({{ plReport.income_adjustments.count }})
+                                </span>
+                                <ChevronDown v-if="!plCollapsed.other_income" class="h-3.5 w-3.5 text-muted-foreground" />
+                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                            <div v-show="!plCollapsed.other_income" class="mt-2 space-y-1">
                                 <div v-for="adj in plReport.income_adjustments.breakdown" :key="adj.transacted_at + adj.description"
                                     class="flex justify-between text-xs text-muted-foreground pl-2">
                                     <span class="truncate max-w-xs">{{ adj.description }} <span class="opacity-60">— {{ adj.transacted_at?.slice(0, 10) }}</span></span>
                                     <span class="shrink-0 ml-4 text-teal-600">+{{ fmt(adj.amount) }}</span>
                                 </div>
                             </div>
-                            <div class="flex justify-between text-sm font-semibold border-t pt-2">
+                            <div class="flex justify-between text-sm font-semibold border-t mt-2 pt-2">
                                 <span>Total Other Income</span>
                                 <span class="text-teal-600">+{{ fmt(plReport.income_adjustments.total) }}</span>
                             </div>
                         </div>
 
-                        <!-- Operating Expenses -->
-                        <div class="px-5 py-4 space-y-2">
-                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Operating Expenses ({{ plReport.expenses.count }})</p>
-                            <div v-if="plReport.expenses.breakdown.length > 0" class="space-y-1">
-                                <div v-for="exp in plReport.expenses.breakdown" :key="exp.transacted_at + exp.description"
-                                    class="flex justify-between text-xs text-muted-foreground pl-2">
-                                    <span class="truncate max-w-xs">{{ exp.description }} <span class="opacity-60">— {{ exp.transacted_at?.slice(0, 10) }}</span></span>
-                                    <span class="shrink-0 ml-4">−{{ fmt(exp.amount) }}</span>
+                        <!-- ── Operating Expenses ───────────────────────────────── -->
+                        <div class="px-5 py-3">
+                            <button class="w-full flex items-center justify-between py-1 group"
+                                @click="plCollapsed.expenses = !plCollapsed.expenses">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                                        Operating Expenses ({{ plReport.expenses.count }})
+                                    </span>
+                                    <span v-if="plIncludeCogs" class="text-[10px] text-muted-foreground opacity-60">
+                                        COGS &amp; restock excluded
+                                    </span>
                                 </div>
+                                <ChevronDown v-if="!plCollapsed.expenses" class="h-3.5 w-3.5 text-muted-foreground" />
+                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                            <div v-show="!plCollapsed.expenses" class="mt-2 space-y-1">
+                                <template v-if="plReport.expenses.breakdown.length > 0">
+                                    <div v-for="exp in plReport.expenses.breakdown" :key="exp.transacted_at + exp.description"
+                                        class="flex justify-between text-xs text-muted-foreground pl-2">
+                                        <span class="truncate max-w-xs">{{ exp.description }} <span class="opacity-60">— {{ exp.transacted_at?.slice(0, 10) }}</span></span>
+                                        <span class="shrink-0 ml-4">−{{ fmt(exp.amount) }}</span>
+                                    </div>
+                                </template>
+                                <p v-else class="text-xs text-muted-foreground pl-2">No expenses recorded for this period.</p>
                             </div>
-                            <div v-else class="text-xs text-muted-foreground pl-2">No expenses recorded for this period.</div>
-                            <div class="flex justify-between text-sm font-semibold border-t pt-2">
+                            <div class="flex justify-between text-sm font-semibold border-t mt-2 pt-2">
                                 <span>Total Expenses</span>
                                 <span class="text-red-500">−{{ fmt(plReport.expenses.total) }}</span>
                             </div>
                         </div>
 
-                        <!-- Payroll -->
-                        <div class="px-5 py-4 space-y-2">
-                            <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground">Payroll Disbursements ({{ plReport.payroll?.count ?? 0 }})</p>
-                            <div v-if="(plReport.payroll?.breakdown ?? []).length > 0" class="space-y-1">
-                                <div v-for="pr in plReport.payroll.breakdown" :key="pr.transacted_at + pr.description"
-                                    class="flex justify-between text-xs text-muted-foreground pl-2">
-                                    <span class="truncate max-w-xs">{{ pr.description }} <span class="opacity-60">— {{ pr.transacted_at?.slice(0, 10) }}</span></span>
-                                    <span class="shrink-0 ml-4 text-purple-600">−{{ fmt(pr.amount) }}</span>
-                                </div>
+                        <!-- ── Payroll ───────────────────────────────────────────── -->
+                        <div class="px-5 py-3">
+                            <button class="w-full flex items-center justify-between py-1 group"
+                                @click="plCollapsed.payroll = !plCollapsed.payroll">
+                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                                    Payroll Disbursements ({{ plReport.payroll?.count ?? 0 }})
+                                </span>
+                                <ChevronDown v-if="!plCollapsed.payroll" class="h-3.5 w-3.5 text-muted-foreground" />
+                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                            <div v-show="!plCollapsed.payroll" class="mt-2 space-y-1">
+                                <template v-if="(plReport.payroll?.breakdown ?? []).length > 0">
+                                    <div v-for="pr in plReport.payroll.breakdown" :key="pr.transacted_at + pr.description"
+                                        class="flex justify-between text-xs text-muted-foreground pl-2">
+                                        <span class="truncate max-w-xs">{{ pr.description }} <span class="opacity-60">— {{ pr.transacted_at?.slice(0, 10) }}</span></span>
+                                        <span class="shrink-0 ml-4 text-purple-600">−{{ fmt(pr.amount) }}</span>
+                                    </div>
+                                </template>
+                                <p v-else class="text-xs text-muted-foreground pl-2">No payroll disbursements for this period.</p>
                             </div>
-                            <div v-else class="text-xs text-muted-foreground pl-2">No payroll disbursements for this period.</div>
-                            <div class="flex justify-between text-sm font-semibold border-t pt-2">
+                            <div class="flex justify-between text-sm font-semibold border-t mt-2 pt-2">
                                 <span>Total Payroll</span>
                                 <span class="text-purple-600">−{{ fmt(plReport.payroll?.total ?? 0) }}</span>
                             </div>
                         </div>
 
-                        <!-- Net Profit -->
+                        <!-- ── Net Profit ────────────────────────────────────────── -->
                         <div :class="['px-5 py-5', plReport.net_profit >= 0 ? 'bg-green-50 dark:bg-green-950/20' : 'bg-red-50 dark:bg-red-950/20']">
                             <div class="flex justify-between items-center">
                                 <div>
@@ -1484,6 +1821,117 @@ onMounted(async () => {
                                 <p class="text-2xl font-black" :class="plReport.net_profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600'">
                                     {{ fmt(plReport.net_profit) }}
                                 </p>
+                            </div>
+                            <p class="text-[11px] text-muted-foreground mt-2">
+                                Cash basis — only <strong>paid</strong> bills and expenses are deducted. Upcoming or unpaid bills are not reflected here until they're paid.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Completed but unpaid (excluded from profit) ─────────────── -->
+                <div v-if="(plReport.unpaid_completed?.count ?? 0) > 0"
+                    class="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/20 p-4 flex items-start gap-3">
+                    <TrendingDown class="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div class="text-sm text-amber-800 dark:text-amber-300">
+                        <p class="font-semibold">
+                            {{ plReport.unpaid_completed!.count }} completed order(s) worth {{ fmt(plReport.unpaid_completed!.total) }} are not in this profit.
+                        </p>
+                        <p class="text-xs mt-0.5 text-amber-700 dark:text-amber-400">
+                            Revenue is recognised only when an order is fully paid (any tender). Record the outstanding payment to include these in profit.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- ── Sales = COGS + Gross Profit stacked bar ─────────────────── -->
+                <div v-if="salesChart" class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                    <div class="p-4 border-b bg-muted/30 flex items-center gap-2">
+                        <TrendingUp class="h-4 w-4 text-orange-500" />
+                        <h2 class="font-bold text-base">Revenue Breakdown: Sales = COGS + Gross Profit</h2>
+                    </div>
+                    <div class="p-6 flex flex-col sm:flex-row items-center sm:items-end gap-8">
+
+                        <!-- Vertical stacked bar -->
+                        <div class="flex flex-col items-center gap-3 shrink-0">
+                            <div class="relative w-28 flex flex-col-reverse rounded-xl overflow-hidden shadow-lg"
+                                style="height: 260px;">
+                                <!-- COGS — bottom segment -->
+                                <div
+                                    class="relative w-full bg-red-500 transition-all duration-700 ease-out flex items-center justify-center"
+                                    :style="{ height: salesChart.cogsH + '%', minHeight: salesChart.cogsH > 0 ? '24px' : '0' }"
+                                >
+                                    <span v-if="salesChart.cogsH > 8"
+                                        class="text-white text-[10px] font-black leading-tight text-center px-1 select-none">
+                                        {{ salesChart.cogsH.toFixed(0) }}%
+                                    </span>
+                                </div>
+                                <!-- Gross Profit — top segment -->
+                                <div
+                                    class="relative w-full bg-emerald-500 transition-all duration-700 ease-out flex items-center justify-center"
+                                    :style="{ height: salesChart.grossH + '%', minHeight: salesChart.grossH > 0 ? '24px' : '0' }"
+                                >
+                                    <span v-if="salesChart.grossH > 8"
+                                        class="text-white text-[10px] font-black leading-tight text-center px-1 select-none">
+                                        {{ salesChart.grossH.toFixed(0) }}%
+                                    </span>
+                                </div>
+                            </div>
+                            <p class="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Net Revenue</p>
+                            <p class="text-sm font-black">{{ fmt(salesChart.revenue) }}</p>
+                        </div>
+
+                        <!-- Legend + breakdown table -->
+                        <div class="flex-1 min-w-0 space-y-4 w-full">
+                            <!-- Gross Profit row -->
+                            <div class="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20 p-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="h-3 w-3 rounded-sm bg-emerald-500 shrink-0"></div>
+                                    <span class="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Gross Profit</span>
+                                    <span class="ml-auto text-[11px] font-semibold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 rounded-full">
+                                        {{ salesChart.grossMargin }}% margin
+                                    </span>
+                                </div>
+                                <div class="flex items-baseline gap-2">
+                                    <p class="text-2xl font-black text-emerald-700 dark:text-emerald-400">{{ fmt(salesChart.grossProfit) }}</p>
+                                    <p class="text-xs text-muted-foreground">= Revenue − COGS</p>
+                                </div>
+                                <!-- Gross Profit bar (horizontal reference) -->
+                                <div class="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
+                                    <div class="h-full bg-emerald-500 rounded-full transition-all duration-700"
+                                        :style="{ width: salesChart.grossH + '%' }"></div>
+                                </div>
+                                <p class="text-[11px] text-muted-foreground mt-1">{{ salesChart.grossH.toFixed(1) }}% of net revenue</p>
+                            </div>
+
+                            <!-- COGS row -->
+                            <div class="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20 p-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="h-3 w-3 rounded-sm bg-red-500 shrink-0"></div>
+                                    <span class="text-xs font-bold uppercase tracking-wider text-red-700 dark:text-red-400">COGS</span>
+                                    <span class="text-[11px] text-muted-foreground ml-1">Cost of Goods Sold</span>
+                                </div>
+                                <div class="flex items-baseline gap-2">
+                                    <p class="text-2xl font-black text-red-600">{{ fmt(salesChart.cogs) }}</p>
+                                    <p class="text-xs text-muted-foreground">ingredient cost per order</p>
+                                </div>
+                                <!-- COGS bar (horizontal reference) -->
+                                <div class="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
+                                    <div class="h-full bg-red-500 rounded-full transition-all duration-700"
+                                        :style="{ width: salesChart.cogsH + '%' }"></div>
+                                </div>
+                                <p class="text-[11px] text-muted-foreground mt-1">{{ salesChart.cogsH.toFixed(1) }}% of net revenue</p>
+                            </div>
+
+                            <!-- Formula row -->
+                            <div class="rounded-xl border border-border bg-muted/30 p-4 text-center">
+                                <p class="text-xs text-muted-foreground font-mono">
+                                    <span class="text-foreground font-bold">{{ fmt(salesChart.revenue) }}</span>
+                                    <span class="mx-2 opacity-50">=</span>
+                                    <span class="text-red-600 font-bold">{{ fmt(salesChart.cogs) }}</span>
+                                    <span class="mx-2 text-muted-foreground">+</span>
+                                    <span class="text-emerald-600 font-bold">{{ fmt(salesChart.grossProfit) }}</span>
+                                </p>
+                                <p class="text-[11px] text-muted-foreground mt-1">Net Revenue = COGS + Gross Profit</p>
                             </div>
                         </div>
                     </div>
@@ -1948,7 +2396,52 @@ onMounted(async () => {
                 <div class="p-4 border-b">
                     <h2 class="font-bold text-sm">Product Sales — {{ prodDateFrom }} to {{ prodDateTo }}</h2>
                 </div>
-                <div class="overflow-x-auto">
+
+                <!-- Mobile cards -->
+                <div class="md:hidden divide-y">
+                    <div v-for="(item, i) in topProducts" :key="item.product_id"
+                        class="px-4 py-3 hover:bg-muted/20 transition-colors">
+                        <div class="flex items-start gap-3">
+                            <!-- Rank badge -->
+                            <div :class="['shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black',
+                                i === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                i === 1 ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' :
+                                i === 2 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                                'bg-muted text-muted-foreground']">
+                                {{ i + 1 }}
+                            </div>
+                            <!-- Content -->
+                            <div class="flex-1 min-w-0">
+                                <!-- Row 1: name | qty | % -->
+                                <div class="flex items-center justify-between gap-2 mb-1.5">
+                                    <p class="font-semibold text-sm truncate">{{ item.product_name }}</p>
+                                    <div class="flex items-center gap-1.5 shrink-0">
+                                        <span class="text-xs bg-muted rounded-full px-2 py-0.5 font-medium tabular-nums">
+                                            ×{{ item.total_quantity }}
+                                        </span>
+                                        <span class="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5 font-semibold tabular-nums">
+                                            {{ totalProductSales > 0 ? ((Number(item.total_sales) / totalProductSales) * 100).toFixed(1) : '0.0' }}%
+                                        </span>
+                                    </div>
+                                </div>
+                                <!-- Row 2: revenue | bar -->
+                                <div class="flex items-center gap-3">
+                                    <p class="text-sm font-bold text-green-600 tabular-nums shrink-0">{{ fmt(item.total_sales) }}</p>
+                                    <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div class="h-full bg-primary rounded-full transition-all duration-500"
+                                            :style="{ width: topProducts[0]?.total_sales ? ((Number(item.total_sales) / Number(topProducts[0].total_sales)) * 100) + '%' : '0%' }" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="topProducts.length === 0" class="px-4 py-8 text-center text-muted-foreground text-sm">
+                        No data available for this period.
+                    </div>
+                </div>
+
+                <!-- Desktop table -->
+                <div class="hidden md:block overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
@@ -1956,15 +2449,19 @@ onMounted(async () => {
                                 <th class="px-4 py-3 text-left">Product</th>
                                 <th class="px-4 py-3 text-right">Qty Sold</th>
                                 <th class="px-4 py-3 text-right">Revenue</th>
+                                <th class="px-4 py-3 text-right">% of Sales</th>
                                 <th class="px-4 py-3 text-left">Share</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y">
                             <tr v-for="(item, i) in topProducts" :key="item.product_id" class="hover:bg-muted/20">
-                                <td class="px-4 py-2 text-muted-foreground">{{ i + 1 }}</td>
+                                <td class="px-4 py-2 text-muted-foreground font-medium">{{ i + 1 }}</td>
                                 <td class="px-4 py-2 font-medium">{{ item.product_name }}</td>
-                                <td class="px-4 py-2 text-right">{{ item.total_quantity }}</td>
-                                <td class="px-4 py-2 text-right font-bold text-green-600">{{ fmt(item.total_sales) }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums">{{ item.total_quantity }}</td>
+                                <td class="px-4 py-2 text-right font-bold text-green-600 tabular-nums">{{ fmt(item.total_sales) }}</td>
+                                <td class="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                                    {{ totalProductSales > 0 ? ((Number(item.total_sales) / totalProductSales) * 100).toFixed(1) : '0.0' }}%
+                                </td>
                                 <td class="px-4 py-2 w-40">
                                     <div class="flex items-center gap-2">
                                         <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
@@ -1975,7 +2472,7 @@ onMounted(async () => {
                                 </td>
                             </tr>
                             <tr v-if="topProducts.length === 0">
-                                <td colspan="5" class="px-4 py-8 text-center text-muted-foreground">No data available for this period.</td>
+                                <td colspan="6" class="px-4 py-8 text-center text-muted-foreground">No data available for this period.</td>
                             </tr>
                         </tbody>
                     </table>

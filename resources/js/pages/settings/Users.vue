@@ -337,7 +337,7 @@ const submitForm = () => {
                     </div>
                     <div>
                         <label class="text-xs font-medium text-muted-foreground block mb-1">Email Address *</label>
-                        <input v-model="form.email" type="email" placeholder="staff@bypassgrill.com"
+                        <input v-model="form.email" type="email" placeholder="staff@theboys.com"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div>

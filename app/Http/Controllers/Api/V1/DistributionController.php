@@ -15,18 +15,15 @@ class DistributionController extends Controller
 {
     public function __construct(private ProfitDistributionService $service) {}
 
-    /** Live preview — recomputed from existing sales/financial data. */
     public function preview(Request $request): JsonResponse
     {
         $this->adminOnly();
         [$basis, $start, $end, $cat, $prod, $sh] = $this->filters($request);
-
         return response()->json(
             $this->service->compute($basis, $start, $end, $cat, $prod, $sh)
         );
     }
 
-    /** Persist a historical snapshot. */
     public function storeSnapshot(Request $request): JsonResponse
     {
         $this->adminOnly();
@@ -58,12 +55,10 @@ class DistributionController extends Controller
         return response()->json($snapshot->load(['details', 'creator:id,name']));
     }
 
-    /** Monthly distribution trend. */
     public function trend(Request $request): JsonResponse
     {
         $this->adminOnly();
         [$basis, $start, $end] = $this->filters($request);
-
         return response()->json($this->service->trend($basis, $start, $end));
     }
 

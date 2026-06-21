@@ -9,12 +9,13 @@ defineProps<{
 
 const page = usePage();
 const logoUrl = (page.props as any).logoUrl as string | null;
-const brandName = ((page.props as any).brandName as string | null) ?? 'Bypass Grill';
+const brandName = ((page.props as any).brandName as string | null) ?? 'The Boys';
 </script>
+
 
 <template>
     <div class="min-h-svh lg:grid lg:grid-cols-2">
-        <!-- Left panel — BypassGrill branding -->
+        <!-- Left panel — The Boys branding -->
         <div class="relative hidden lg:flex flex-col justify-between bg-zinc-950 p-12 overflow-hidden">
             <!-- Warm glow -->
             <div class="absolute inset-0 bg-gradient-to-br from-orange-950/60 via-zinc-950 to-zinc-950 pointer-events-none" />
@@ -35,19 +36,19 @@ const brandName = ((page.props as any).brandName as string | null) ?? 'Bypass Gr
 
             <!-- Hero text -->
             <div class="relative z-10 space-y-4">
-                <p class="text-orange-400 text-sm font-semibold uppercase tracking-widest">Restaurant POS</p>
+                <p class="text-orange-400 text-sm font-semibold uppercase tracking-widest">Burger Pop-Up · Calamba, Laguna</p>
                 <h1 class="text-4xl font-black text-white leading-tight">
-                    Your Grill,<br/>
-                    <span class="text-orange-400">Your Way.</span>
+                    Grilled Fresh,<br/>
+                    <span class="text-orange-400">Every Day.</span>
                 </h1>
                 <p class="text-zinc-400 text-base leading-relaxed max-w-xs">
-                    Seamless ordering, kitchen management, and real-time reporting — all in one place.
+                    Flame-grilled burgers made with love by The Boys — Calamba, Laguna's favourite pop-up grill.
                 </p>
             </div>
 
             <!-- Bottom tagline -->
             <p class="relative z-10 text-zinc-600 text-xs">
-                &copy; {{ new Date().getFullYear() }} {{ brandName }}
+                &copy; {{ new Date().getFullYear() }} {{ brandName }} &mdash; Grilled Burgers, Calamba, Laguna
             </p>
         </div>
 

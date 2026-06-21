@@ -40,19 +40,6 @@ class PaymentService {
 
             if ($totalPaid >= $order->total_amount && $order->payment_status !== 'paid') {
                 $order->update(['payment_status' => 'paid']);
-
-                // Record cost of goods sold (COGS) using per-item product costs
-                $cogs = $order->items()->sum('cost_subtotal');
-                if ($cogs > 0) {
-                    FinancialTransaction::create([
-                        'type'          => 'expense',
-                        'amount'        => round((float) $cogs, 2),
-                        'description'   => "COGS: Order #{$order->id}",
-                        'order_id'      => $order->id,
-                        'user_id'       => auth()->id(),
-                        'transacted_at' => now(),
-                    ]);
-                }
             }
 
             return $payment;
