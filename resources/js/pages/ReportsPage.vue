@@ -93,6 +93,33 @@ const selectedMonth = ref(new Date().getMonth() + 1)
 const dailyReport = ref<DailyReport | null>(props.initialDailyReport)
 const monthlyReport = ref<MonthlyReport | null>(null)
 
+// ── FT Breakdown (daily + monthly) ────────────────────────────────────────────
+interface FtBreakdownType  { type: string; total: number; count: number }
+interface FtBreakdownTender { tender: string; total_in: number; total_out: number; net: number; count: number }
+interface FtBreakdown { by_type: FtBreakdownType[]; by_tender: FtBreakdownTender[] }
+const ftBreakdown = ref<FtBreakdown | null>(null)
+
+const ftTypeLabel: Record<string, string> = {
+    payment:           'Payments (Income)',
+    income_adjustment: 'Income Adjustment',
+    expense:           'Expense',
+    payroll:           'Payroll',
+    asset_deduction:   'Asset Deduction',
+}
+const ftTypeColor: Record<string, string> = {
+    payment:           'text-green-600',
+    income_adjustment: 'text-teal-600',
+    expense:           'text-red-500',
+    payroll:           'text-purple-600',
+    asset_deduction:   'text-orange-500',
+}
+
+const loadFtBreakdown = async (startDate: string, endDate: string) => {
+    ftBreakdown.value = null
+    const res = await api.get('/api/v1/reports/ft-breakdown', { params: { start_date: startDate, end_date: endDate } })
+    ftBreakdown.value = res.data
+}
+
 // ── Products ───────────────────────────────────────────────────────────────────
 const productSales = ref<ProductSale[]>(props.initialProductSales)
 const prodDateFrom = ref(manilaMonthStart())
@@ -640,12 +667,16 @@ const generateReport = async () => {
             const [salesRes] = await Promise.all([
                 api.get('/api/v1/reports/daily-sales', { params: { date: selectedDate.value } }),
                 loadChartData(),
+                loadFtBreakdown(selectedDate.value, selectedDate.value),
             ])
             dailyReport.value = salesRes.data
         } else if (tab.value === 'monthly') {
+            const monthStart = new Date(selectedYear.value, selectedMonth.value - 1, 1)
+            const monthEnd   = new Date(selectedYear.value, selectedMonth.value, 0)
             const [res] = await Promise.all([
                 api.get('/api/v1/reports/monthly-sales', { params: { year: selectedYear.value, month: selectedMonth.value } }),
                 loadMonthlyChartData(),
+                loadFtBreakdown(toManilaDate(monthStart), toManilaDate(monthEnd)),
             ])
             monthlyReport.value = res.data
         } else if (tab.value === 'products') {
@@ -2376,6 +2407,104 @@ onMounted(async () => {
                     </div>
                 </div>
             </div>
+
+            <!-- FT Breakdown card -->
+            <div v-if="ftBreakdown" class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="px-4 py-3 border-b bg-muted/30">
+                    <h2 class="font-bold text-sm">Transaction Breakdown — {{ ftBreakdown.period.start }}</h2>
+                </div>
+                <div class="divide-y">
+                    <!-- By Type -->
+                    <div class="p-4">
+                        <p class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-3">By Transaction Type</p>
+                        <div class="space-y-2">
+                            <div v-for="row in ftBreakdown.by_type" :key="row.type"
+                                class="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span class="text-sm font-medium truncate">{{ ftTypeLabel[row.type] ?? row.type }}</span>
+                                    <span class="text-[11px] text-muted-foreground shrink-0">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</span>
+                                </div>
+                                <span class="text-sm font-bold tabular-nums shrink-0 ml-3" :class="ftTypeColor[row.type] ?? ''">
+                                    {{ ['payment','income_adjustment'].includes(row.type) ? '+' : '-' }}{{ fmt(row.total) }}
+                                </span>
+                            </div>
+                            <div v-if="!ftBreakdown.by_type.length" class="text-sm text-muted-foreground text-center py-2">No transactions for this period.</div>
+                        </div>
+                    </div>
+                    <!-- By Tender -->
+                    <div class="p-4">
+                        <p class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-3">By Tender</p>
+                        <!-- Mobile -->
+                        <div class="md:hidden space-y-2">
+                            <div v-for="row in ftBreakdown.by_tender" :key="row.tender"
+                                class="rounded-lg bg-muted/30 px-3 py-2">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="font-semibold text-sm">{{ row.tender }}</span>
+                                    <span class="text-[11px] text-muted-foreground">{{ row.count }} txns</span>
+                                </div>
+                                <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                                    <span class="text-green-600">In: +{{ fmt(row.total_in) }}</span>
+                                    <span class="text-red-500">Out: -{{ fmt(row.total_out) }}</span>
+                                    <span :class="row.net >= 0 ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold'">
+                                        Net: {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <!-- Total row -->
+                            <div v-if="ftBreakdown.by_tender.length" class="rounded-lg border px-3 py-2">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="font-bold text-sm">Total</span>
+                                    <span class="text-[11px] text-muted-foreground">{{ ftBreakdown.by_tender.reduce((s,r) => s+r.count,0) }} txns</span>
+                                </div>
+                                <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-bold">
+                                    <span class="text-green-600">In: +{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</span>
+                                    <span class="text-red-500">Out: -{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_out,0)) }}</span>
+                                    <span :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-600' : 'text-red-500'">
+                                        Net: {{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.net,0)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Desktop table -->
+                        <div class="hidden md:block overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="text-[11px] text-muted-foreground uppercase tracking-wide border-b">
+                                        <th class="text-left pb-2 font-semibold">Tender</th>
+                                        <th class="text-right pb-2 font-semibold">In</th>
+                                        <th class="text-right pb-2 font-semibold">Out</th>
+                                        <th class="text-right pb-2 font-semibold">Net</th>
+                                        <th class="text-right pb-2 font-semibold">Txns</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y">
+                                    <tr v-for="row in ftBreakdown.by_tender" :key="row.tender" class="hover:bg-muted/20">
+                                        <td class="py-2 font-medium">{{ row.tender }}</td>
+                                        <td class="py-2 text-right tabular-nums text-green-600">+{{ fmt(row.total_in) }}</td>
+                                        <td class="py-2 text-right tabular-nums text-red-500">-{{ fmt(row.total_out) }}</td>
+                                        <td class="py-2 text-right tabular-nums font-semibold" :class="row.net >= 0 ? 'text-green-600' : 'text-red-500'">
+                                            {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
+                                        </td>
+                                        <td class="py-2 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
+                                    </tr>
+                                </tbody>
+                                <tfoot v-if="ftBreakdown.by_tender.length" class="border-t font-bold">
+                                    <tr>
+                                        <td class="pt-2">Total</td>
+                                        <td class="pt-2 text-right tabular-nums text-green-600">+{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</td>
+                                        <td class="pt-2 text-right tabular-nums text-red-500">-{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_out,0)) }}</td>
+                                        <td class="pt-2 text-right tabular-nums" :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-600' : 'text-red-500'">
+                                            {{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.net,0)) }}
+                                        </td>
+                                        <td class="pt-2 text-right tabular-nums text-muted-foreground">{{ ftBreakdown.by_tender.reduce((s,r) => s+r.count,0) }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        <p v-if="!ftBreakdown.by_tender.length" class="text-sm text-muted-foreground text-center py-2">No transactions for this period.</p>
+                    </div>
+                </div>
+            </div>
         </template>
 
         <!-- ── Monthly Sales ──────────────────────────────────────────────────── -->
@@ -2465,6 +2594,103 @@ onMounted(async () => {
                     <div class="rounded-lg bg-yellow-50 dark:bg-yellow-950/20 p-4">
                         <p class="text-xs text-muted-foreground mb-1">Discounts</p>
                         <p class="text-2xl font-black text-yellow-600">{{ fmt(monthlyReport.total_discount) }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FT Breakdown card -->
+            <div v-if="ftBreakdown" class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                <div class="px-4 py-3 border-b bg-muted/30">
+                    <h2 class="font-bold text-sm">Transaction Breakdown — {{ ftBreakdown.period.start }} to {{ ftBreakdown.period.end }}</h2>
+                </div>
+                <div class="divide-y">
+                    <!-- By Type -->
+                    <div class="p-4">
+                        <p class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-3">By Transaction Type</p>
+                        <div class="space-y-2">
+                            <div v-for="row in ftBreakdown.by_type" :key="row.type"
+                                class="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span class="text-sm font-medium truncate">{{ ftTypeLabel[row.type] ?? row.type }}</span>
+                                    <span class="text-[11px] text-muted-foreground shrink-0">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</span>
+                                </div>
+                                <span class="text-sm font-bold tabular-nums shrink-0 ml-3" :class="ftTypeColor[row.type] ?? ''">
+                                    {{ ['payment','income_adjustment'].includes(row.type) ? '+' : '-' }}{{ fmt(row.total) }}
+                                </span>
+                            </div>
+                            <div v-if="!ftBreakdown.by_type.length" class="text-sm text-muted-foreground text-center py-2">No transactions for this period.</div>
+                        </div>
+                    </div>
+                    <!-- By Tender -->
+                    <div class="p-4">
+                        <p class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-3">By Tender</p>
+                        <!-- Mobile -->
+                        <div class="md:hidden space-y-2">
+                            <div v-for="row in ftBreakdown.by_tender" :key="row.tender"
+                                class="rounded-lg bg-muted/30 px-3 py-2">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="font-semibold text-sm">{{ row.tender }}</span>
+                                    <span class="text-[11px] text-muted-foreground">{{ row.count }} txns</span>
+                                </div>
+                                <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                                    <span class="text-green-600">In: +{{ fmt(row.total_in) }}</span>
+                                    <span class="text-red-500">Out: -{{ fmt(row.total_out) }}</span>
+                                    <span :class="row.net >= 0 ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold'">
+                                        Net: {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-if="ftBreakdown.by_tender.length" class="rounded-lg border px-3 py-2">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="font-bold text-sm">Total</span>
+                                    <span class="text-[11px] text-muted-foreground">{{ ftBreakdown.by_tender.reduce((s,r) => s+r.count,0) }} txns</span>
+                                </div>
+                                <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-bold">
+                                    <span class="text-green-600">In: +{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</span>
+                                    <span class="text-red-500">Out: -{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_out,0)) }}</span>
+                                    <span :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-600' : 'text-red-500'">
+                                        Net: {{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.net,0)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Desktop table -->
+                        <div class="hidden md:block overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="text-[11px] text-muted-foreground uppercase tracking-wide border-b">
+                                        <th class="text-left pb-2 font-semibold">Tender</th>
+                                        <th class="text-right pb-2 font-semibold">In</th>
+                                        <th class="text-right pb-2 font-semibold">Out</th>
+                                        <th class="text-right pb-2 font-semibold">Net</th>
+                                        <th class="text-right pb-2 font-semibold">Txns</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y">
+                                    <tr v-for="row in ftBreakdown.by_tender" :key="row.tender" class="hover:bg-muted/20">
+                                        <td class="py-2 font-medium">{{ row.tender }}</td>
+                                        <td class="py-2 text-right tabular-nums text-green-600">+{{ fmt(row.total_in) }}</td>
+                                        <td class="py-2 text-right tabular-nums text-red-500">-{{ fmt(row.total_out) }}</td>
+                                        <td class="py-2 text-right tabular-nums font-semibold" :class="row.net >= 0 ? 'text-green-600' : 'text-red-500'">
+                                            {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
+                                        </td>
+                                        <td class="py-2 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
+                                    </tr>
+                                </tbody>
+                                <tfoot v-if="ftBreakdown.by_tender.length" class="border-t font-bold">
+                                    <tr>
+                                        <td class="pt-2">Total</td>
+                                        <td class="pt-2 text-right tabular-nums text-green-600">+{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</td>
+                                        <td class="pt-2 text-right tabular-nums text-red-500">-{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_out,0)) }}</td>
+                                        <td class="pt-2 text-right tabular-nums" :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-600' : 'text-red-500'">
+                                            {{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.net,0)) }}
+                                        </td>
+                                        <td class="pt-2 text-right tabular-nums text-muted-foreground">{{ ftBreakdown.by_tender.reduce((s,r) => s+r.count,0) }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        <p v-if="!ftBreakdown.by_tender.length" class="text-sm text-muted-foreground text-center py-2">No transactions for this period.</p>
                     </div>
                 </div>
             </div>

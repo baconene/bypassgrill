@@ -186,6 +186,51 @@ class ReportController extends Controller
         return response()->json($result);
     }
 
+    public function ftBreakdown(): JsonResponse
+    {
+        $this->checkPermission();
+
+        $start = Carbon::parse(request()->input('start_date', Carbon::today()->toDateString()))->startOfDay();
+        $end   = Carbon::parse(request()->input('end_date',   Carbon::today()->toDateString()))->endOfDay();
+
+        $byType = \App\Models\FinancialTransaction::selectRaw('type, SUM(amount) as total, COUNT(*) as count')
+            ->whereBetween('transacted_at', [$start, $end])
+            ->where('type', '!=', 'order')
+            ->groupBy('type')
+            ->get()
+            ->map(fn ($r) => [
+                'type'  => $r->type,
+                'total' => round((float) $r->total, 2),
+                'count' => (int) $r->count,
+            ])
+            ->values();
+
+        $byTender = \App\Models\FinancialTransaction::whereBetween('transacted_at', [$start, $end])
+            ->where('type', '!=', 'order')
+            ->with('tender')
+            ->selectRaw("payment_tender_id,
+                SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as total_in,
+                SUM(CASE WHEN type IN ('expense','payroll','asset_deduction') THEN amount ELSE 0 END) as total_out,
+                COUNT(*) as cnt")
+            ->groupBy('payment_tender_id')
+            ->get()
+            ->map(fn ($r) => [
+                'tender'    => $r->payment_tender_id ? ($r->tender?->name ?? 'Unknown') : 'Untagged',
+                'total_in'  => round((float) $r->total_in,  2),
+                'total_out' => round((float) $r->total_out, 2),
+                'net'       => round((float) $r->total_in - (float) $r->total_out, 2),
+                'count'     => (int) $r->cnt,
+            ])
+            ->sortByDesc('total_in')
+            ->values();
+
+        return response()->json([
+            'period'    => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
+            'by_type'   => $byType,
+            'by_tender' => $byTender,
+        ]);
+    }
+
     public function heatmap(): JsonResponse
     {
         $this->checkPermission();
