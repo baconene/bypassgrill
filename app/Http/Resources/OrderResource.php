@@ -28,6 +28,7 @@ class OrderResource extends JsonResource
             'user' => new UserResource($this->user),
             'payments' => PaymentResource::collection($this->whenLoaded('payments')),
             'created_at' => $this->created_at,
+            'completed_at' => $this->completed_at,
             'updated_at' => $this->updated_at,
         ];
     }

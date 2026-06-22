@@ -232,7 +232,7 @@ const loadFinancial = async (page = 1) => {
         ])
         ftSummary.value = summaryRes.data
         ftTransactions.value = listRes.data.data ?? []
-        ftMeta.value = listRes.data.meta ?? null
+        ftMeta.value = listRes.data.meta ?? listRes.data
         billsSummary.value = billsRes.data
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to load transactions.')

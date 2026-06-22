@@ -94,6 +94,7 @@ class OrderController extends Controller
         $data = $request->validate([
             'notes'                  => 'nullable|string|max:500',
             'discount_amount'        => 'nullable|numeric|min:0',
+            'created_at'             => 'nullable|date',
             'items'                  => 'required|array|min:1',
             'items.*.product_id'     => 'required|integer|exists:products,id',
             'items.*.quantity'       => 'required|integer|min:1',
@@ -105,6 +106,12 @@ class OrderController extends Controller
             }
             if (array_key_exists('discount_amount', $data)) {
                 $order->update(['discount_amount' => $data['discount_amount']]);
+            }
+            if (!empty($data['created_at'])) {
+                $order->timestamps = false;
+                $order->created_at = Carbon::parse($data['created_at'], 'Asia/Manila');
+                $order->save();
+                $order->timestamps = true;
             }
 
             $order->items()->delete();
@@ -130,6 +137,7 @@ class OrderController extends Controller
     public function destroy(Order $order): Response
     {
         $this->checkPermission('delete orders');
+        $order->delete();
         return response()->noContent();
     }
 

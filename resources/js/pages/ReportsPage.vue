@@ -110,6 +110,7 @@ const ordersSummary = ref<{ total_count: number; paid_count: number; unpaid_coun
 const ordPage = ref(1)
 const ordSortBy = ref('created_at')
 const ordSortDir = ref<'asc' | 'desc'>('desc')
+const ordDeleting = ref<number | null>(null)
 
 const sortOrders = (col: string) => {
     if (ordSortBy.value === col) {
@@ -521,6 +522,22 @@ const loadOrders = async (page = 1) => {
     ordersSummary.value = res.data.summary ?? null
 }
 
+const editOrder = (order: OrderRow) => router.visit('/orders/' + order.id)
+
+const deleteOrder = async (order: OrderRow) => {
+    if (!confirm(`Delete Order #${order.id}?\nThis cannot be undone.`)) return
+    ordDeleting.value = order.id
+    try {
+        await api.delete(`/api/v1/orders/${order.id}`)
+        toast.success(`Order #${order.id} deleted.`)
+        await loadOrders(ordPage.value)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to delete order.')
+    } finally {
+        ordDeleting.value = null
+    }
+}
+
 const loadInventory = async (page = 1) => {
     invPage.value = page
     const res = await api.get('/api/v1/reports/inventory-transactions', {
@@ -673,7 +690,7 @@ const openEditFt = (tx: FtTransaction) => {
         amount: String(tx.amount),
         description: tx.description,
         notes: tx.notes ?? '',
-        transacted_at: tx.transacted_at.slice(0, 10),
+        transacted_at: tx.transacted_at ? tx.transacted_at.replace(' ', 'T').substring(0, 16) : '',
     }
     showEntryForm.value = false
 }
@@ -1102,7 +1119,52 @@ onMounted(async () => {
                         Page {{ ordersMeta.current_page }} of {{ ordersMeta.last_page }} &nbsp;·&nbsp; {{ ordersMeta.total }} total
                     </span>
                 </div>
-                <div class="overflow-x-auto">
+
+                <!-- Mobile card list -->
+                <div class="md:hidden divide-y">
+                    <div v-for="order in ordersData" :key="order.id"
+                        class="px-4 py-3 hover:bg-muted/20 transition-colors">
+                        <!-- Row 1: Order # + total + actions -->
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <span class="font-bold text-primary text-base">#{{ order.id }}</span>
+                                <span v-if="order.queue_number" class="ml-2 text-xs text-muted-foreground">Q{{ order.queue_number }}</span>
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span class="font-bold text-sm">{{ fmt(order.total_amount) }}</span>
+                                <button @click.stop="editOrder(order)"
+                                    class="text-muted-foreground hover:text-primary transition-colors p-1"
+                                    title="Edit order">
+                                    <Pencil class="h-4 w-4" />
+                                </button>
+                                <button @click="deleteOrder(order)" :disabled="ordDeleting === order.id"
+                                    class="text-red-500 hover:text-red-700 disabled:opacity-40 transition-colors p-1"
+                                    title="Delete order">
+                                    <Trash2 class="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Row 2: date + type + table -->
+                        <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <span>{{ fmtDatetime(order.created_at) }}</span>
+                            <span class="rounded-full bg-muted px-2 py-0.5 font-medium">{{ orderTypeBadge(order.order_type) }}</span>
+                            <span v-if="order.table_number">Table {{ order.table_number }}</span>
+                            <span>{{ itemCount(order.items) }} item{{ itemCount(order.items) !== 1 ? 's' : '' }}</span>
+                        </div>
+                        <!-- Row 3: status + payment badges -->
+                        <div class="mt-1.5 flex items-center gap-2 flex-wrap">
+                            <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusBadge(order.status)]">{{ order.status }}</span>
+                            <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payBadge(order.payment_status)]">{{ order.payment_status }}</span>
+                            <span v-if="order.notes" class="text-xs text-muted-foreground truncate max-w-[180px]">{{ order.notes }}</span>
+                        </div>
+                    </div>
+                    <div v-if="ordersData.length === 0 && !loading" class="px-4 py-10 text-center text-muted-foreground text-sm">
+                        No orders found. Adjust filters and click Generate.
+                    </div>
+                </div>
+
+                <!-- Desktop table -->
+                <div class="hidden md:block overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
@@ -1151,6 +1213,7 @@ onMounted(async () => {
                                     </span>
                                 </th>
                                 <th class="px-4 py-3 text-left">Notes</th>
+                                <th class="px-4 py-3 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y">
@@ -1170,6 +1233,20 @@ onMounted(async () => {
                                 <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payBadge(order.payment_status)]">{{ order.payment_status }}</span></td>
                                 <td class="px-4 py-3 text-right font-bold">{{ fmt(order.total_amount) }}</td>
                                 <td class="px-4 py-3 text-xs text-muted-foreground max-w-[140px] truncate">{{ order.notes ?? '—' }}</td>
+                                <td class="px-4 py-3 text-center" @click.stop>
+                                    <div class="flex items-center justify-center gap-2">
+                                        <button @click="editOrder(order)"
+                                            class="text-muted-foreground hover:text-primary transition-colors"
+                                            title="Edit order">
+                                            <Pencil class="h-4 w-4" />
+                                        </button>
+                                        <button @click="deleteOrder(order)" :disabled="ordDeleting === order.id"
+                                            class="text-red-500 hover:text-red-700 disabled:opacity-40 transition-colors"
+                                            title="Delete order">
+                                            <Trash2 class="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                </td>
                             </tr>
                             <tr v-if="ordersData.length === 0 && !loading">
                                 <td colspan="10" class="px-4 py-10 text-center text-muted-foreground">No orders found. Adjust filters and click Generate.</td>
@@ -1177,6 +1254,7 @@ onMounted(async () => {
                         </tbody>
                     </table>
                 </div>
+
                 <div v-if="ordersMeta && ordersMeta.last_page > 1" class="flex items-center justify-between px-4 py-3 border-t">
                     <button @click="loadOrders(ordPage - 1)" :disabled="ordPage <= 1 || loading"
                         class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40">
@@ -1442,8 +1520,9 @@ onMounted(async () => {
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date (optional)</label>
-                        <input v-model="entryForm.transacted_at" type="date"
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date &amp; Time (optional)</label>
+                        <input v-model="entryForm.transacted_at" type="datetime-local"
+                            min="2000-01-01T00:00" max="2099-12-31T23:59"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div class="sm:col-span-3">
@@ -1488,8 +1567,9 @@ onMounted(async () => {
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date</label>
-                        <input v-model="ftEditForm.transacted_at" type="date"
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date &amp; Time</label>
+                        <input v-model="ftEditForm.transacted_at" type="datetime-local"
+                            min="2000-01-01T00:00" max="2099-12-31T23:59"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div class="sm:col-span-3">
