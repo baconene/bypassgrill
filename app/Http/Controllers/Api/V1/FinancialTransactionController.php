@@ -86,23 +86,23 @@ class FinancialTransactionController extends Controller {
             ]);
 
         $netByTender = FinancialTransaction::whereBetween('transacted_at', [$start, $end])
-            ->whereNotNull('payment_tender_id')
             ->where('type', '!=', 'order')
             ->when(! $includeAssetDeductions, $noAssetDeductions)
             ->with('tender')
             ->selectRaw("payment_tender_id,
                 SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as total_in,
-                SUM(CASE WHEN type IN ('expense','payroll')           THEN amount ELSE 0 END) as total_out,
+                SUM(CASE WHEN type IN ('expense','payroll','asset_deduction') THEN amount ELSE 0 END) as total_out,
                 COUNT(*) as cnt")
             ->groupBy('payment_tender_id')
             ->get()
             ->map(fn($r) => [
-                'tender'    => $r->tender?->name ?? 'Unknown',
+                'tender'    => $r->payment_tender_id ? ($r->tender?->name ?? 'Unknown') : 'Untagged',
                 'total_in'  => round((float) $r->total_in,  2),
                 'total_out' => round((float) $r->total_out, 2),
                 'net'       => round((float) $r->total_in - (float) $r->total_out, 2),
                 'count'     => (int) $r->cnt,
             ])
+            ->sortByDesc('net')
             ->values();
 
         $incomeAdj       = (float)($rows['income_adjustment']?->total ?? 0);
