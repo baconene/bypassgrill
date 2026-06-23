@@ -51,6 +51,13 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('settings/clock', [\App\Http\Controllers\Settings\SystemClockController::class, 'disable'])
         ->name('settings.clock.disable')->middleware('role:admin');
 
+    Route::get('settings/kitchen', [\App\Http\Controllers\Settings\KitchenSettingsController::class, 'edit'])
+        ->name('settings.kitchen')
+        ->middleware('role:admin');
+    Route::post('settings/kitchen', [\App\Http\Controllers\Settings\KitchenSettingsController::class, 'update'])
+        ->name('settings.kitchen.update')
+        ->middleware('role:admin');
+
     // System (admin only)
     Route::get('settings/system', [SystemController::class, 'index'])
         ->name('settings.system')

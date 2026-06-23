@@ -22,6 +22,8 @@ interface ServingTime {
     avg_seconds: number | null
     completed_today: number
     peak_hours: { hour: number; order_count: number; avg_seconds: number }[]
+    fast_minutes: number
+    slow_minutes: number
 }
 
 const props = defineProps<{
@@ -70,17 +72,21 @@ const fmtHour = (h: number): string => {
 
 const servingSpeedClass = computed(() => {
     const s = props.servingTime?.avg_seconds
+    const fastSec = (props.servingTime?.fast_minutes ?? 5) * 60
+    const slowSec = (props.servingTime?.slow_minutes ?? 10) * 60
     if (s == null) return 'text-muted-foreground'
-    if (s < 300) return 'text-emerald-600'
-    if (s < 600) return 'text-yellow-600'
+    if (s < fastSec) return 'text-emerald-600'
+    if (s < slowSec) return 'text-yellow-600'
     return 'text-red-500'
 })
 
 const servingSpeedLabel = computed(() => {
     const s = props.servingTime?.avg_seconds
+    const fastSec = (props.servingTime?.fast_minutes ?? 5) * 60
+    const slowSec = (props.servingTime?.slow_minutes ?? 10) * 60
     if (s == null) return 'No data yet'
-    if (s < 300) return 'Fast'
-    if (s < 600) return 'Moderate'
+    if (s < fastSec) return 'Fast'
+    if (s < slowSec) return 'Moderate'
     return 'Slow'
 })
 </script>
@@ -116,11 +122,11 @@ const servingSpeedLabel = computed(() => {
                         <p class="text-xs" :class="servingSpeedClass">{{ servingSpeedLabel }}</p>
                         <div class="relative group">
                             <Info class="h-3 w-3 text-muted-foreground cursor-help" />
-                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block z-10 w-44 rounded-lg border bg-popover px-3 py-2 shadow-md text-[11px] leading-snug text-popover-foreground">
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block z-10 w-48 rounded-lg border bg-popover px-3 py-2 shadow-md text-[11px] leading-snug text-popover-foreground">
                                 <p class="font-semibold mb-1">Serving Speed</p>
-                                <p class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span> Fast — under 5 min</p>
-                                <p class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full bg-yellow-500 shrink-0"></span> Moderate — 5 to 10 min</p>
-                                <p class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full bg-red-500 shrink-0"></span> Slow — over 10 min</p>
+                                <p class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span> Fast — under {{ servingTime.fast_minutes }} min</p>
+                                <p class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full bg-yellow-500 shrink-0"></span> Moderate — {{ servingTime.fast_minutes }} to {{ servingTime.slow_minutes }} min</p>
+                                <p class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full bg-red-500 shrink-0"></span> Slow — over {{ servingTime.slow_minutes }} min</p>
                             </div>
                         </div>
                     </div>

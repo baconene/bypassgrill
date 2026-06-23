@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Ingredient;
+use App\Models\KitchenSetting;
 use App\Models\Order;
 use App\Services\InventoryService;
 use App\Services\ReportService;
@@ -107,10 +108,14 @@ class DashboardController extends Controller
             ->values()
             ->toArray();
 
+        $kitchenSetting = KitchenSetting::getSetting();
+
         return [
             'avg_seconds'     => $row->avg_seconds ? (int) round((float) $row->avg_seconds) : null,
             'completed_today' => (int) ($row->completed_count ?? 0),
             'peak_hours'      => $peakHours,
+            'fast_minutes'    => $kitchenSetting->serving_fast_minutes,
+            'slow_minutes'    => $kitchenSetting->serving_slow_minutes,
         ];
     }
 
