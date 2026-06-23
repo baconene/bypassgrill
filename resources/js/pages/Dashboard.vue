@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
-import { ShoppingCart, ChefHat, Package, BarChart3, ClipboardList, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Users, Timer, Flame } from 'lucide-vue-next'
+import { ShoppingCart, ChefHat, Package, BarChart3, ClipboardList, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Users, Timer, Flame, Info } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -112,7 +112,18 @@ const servingSpeedLabel = computed(() => {
                     <p class="text-3xl font-black" :class="servingSpeedClass">
                         {{ fmtSeconds(servingTime.avg_seconds) }}
                     </p>
-                    <p class="text-xs mt-0.5" :class="servingSpeedClass">{{ servingSpeedLabel }}</p>
+                    <div class="flex items-center gap-1 mt-0.5">
+                        <p class="text-xs" :class="servingSpeedClass">{{ servingSpeedLabel }}</p>
+                        <div class="relative group">
+                            <Info class="h-3 w-3 text-muted-foreground cursor-help" />
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block z-10 w-44 rounded-lg border bg-popover px-3 py-2 shadow-md text-[11px] leading-snug text-popover-foreground">
+                                <p class="font-semibold mb-1">Serving Speed</p>
+                                <p class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span> Fast — under 5 min</p>
+                                <p class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full bg-yellow-500 shrink-0"></span> Moderate — 5 to 10 min</p>
+                                <p class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full bg-red-500 shrink-0"></span> Slow — over 10 min</p>
+                            </div>
+                        </div>
+                    </div>
                     <p class="text-xs text-muted-foreground mt-0.5">{{ servingTime.completed_today }} orders completed</p>
                 </div>
 
