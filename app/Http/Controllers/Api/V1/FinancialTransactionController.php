@@ -91,7 +91,7 @@ class FinancialTransactionController extends Controller {
             ->with('tender')
             ->selectRaw("payment_tender_id,
                 SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as total_in,
-                SUM(CASE WHEN type IN ('expense','payroll','asset_deduction') THEN amount ELSE 0 END) as total_out,
+                SUM(CASE WHEN type IN ('expense','payroll','asset_deduction','payout_share') THEN amount ELSE 0 END) as total_out,
                 COUNT(*) as cnt")
             ->groupBy('payment_tender_id')
             ->get()
@@ -110,6 +110,7 @@ class FinancialTransactionController extends Controller {
         $payments        = (float)($rows['payment']?->total ?? 0);
         $payroll         = (float)($rows['payroll']?->total ?? 0);
         $assetDeductions = (float)($rows['asset_deduction']?->total ?? 0);
+        $payoutShare     = (float)($rows['payout_share']?->total ?? 0);
 
         $balanceAsOfEnd = (float) (FinancialTransaction::where('type', '!=', 'order')
             ->when(! $includeAssetDeductions, $noAssetDeductions)
@@ -142,7 +143,8 @@ class FinancialTransactionController extends Controller {
             'income_adjustments'      => ['total' => $incomeAdj,        'count' => (int) ($rows['income_adjustment']?->count ?? 0)],
             'payroll'                 => ['total' => $payroll,          'count' => (int) ($rows['payroll']?->count          ?? 0)],
             'asset_deductions'        => ['total' => $assetDeductions,  'count' => (int) ($rows['asset_deduction']?->count  ?? 0)],
-            'net'                     => $payments + $incomeAdj - $expenses - $payroll - $assetDeductions,
+            'net'                     => $payments + $incomeAdj - $expenses - $payroll - $assetDeductions - $payoutShare,
+            'payout_shares'           => ['total' => $payoutShare, 'count' => (int) ($rows['payout_share']?->count ?? 0)],
             'balance_as_of_end'       => $balanceAsOfEnd,
             'balance_by_tender'       => $balByTender,
             'by_tender'               => $byTender,

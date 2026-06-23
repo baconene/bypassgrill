@@ -5,7 +5,7 @@ import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
     PieChart, Users, History, TrendingUp, RefreshCw, Plus, Trash2, Pencil,
-    Download, Save, X, HelpCircle, Gift, Package,
+    Download, Save, X, HelpCircle, Gift, Package, Banknote, CheckCircle2,
 } from 'lucide-vue-next'
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard' }, { title: 'Profit Sharing', href: '/distribution' }] } })
@@ -292,6 +292,41 @@ const trendOptions = computed(() => ({
 // ── Snapshots history ─────────────────────────────────────────────────────────
 const snapshots = ref<any[]>([])
 const loadSnapshots = async () => { snapshots.value = (await api.get('/api/v1/distribution/snapshots')).data }
+
+// ── Payout modal ──────────────────────────────────────────────────────────────
+const tenders = ref<{ id: number; name: string }[]>([])
+const loadTenders = async () => {
+    if (tenders.value.length) return
+    const res = await api.get('/api/v1/payment-tenders/all')
+    tenders.value = res.data
+}
+
+const payoutModal = ref<{ open: boolean; snapshot: any | null; tenderId: number | ''; notes: string; loading: boolean }>({
+    open: false, snapshot: null, tenderId: '', notes: '', loading: false,
+})
+
+const openPayoutModal = async (snapshot: any) => {
+    await loadTenders()
+    payoutModal.value = { open: true, snapshot, tenderId: '', notes: '', loading: false }
+}
+
+const submitPayout = async () => {
+    if (!payoutModal.value.tenderId) { toast.error('Please select a tender.'); return }
+    payoutModal.value.loading = true
+    try {
+        await api.post(`/api/v1/distribution/snapshots/${payoutModal.value.snapshot.id}/payout`, {
+            tender_id: payoutModal.value.tenderId,
+            notes: payoutModal.value.notes || null,
+        })
+        toast.success('Payout recorded successfully.')
+        payoutModal.value.open = false
+        loadSnapshots()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to record payout.')
+    } finally {
+        payoutModal.value.loading = false
+    }
+}
 
 // ── Tab activation ────────────────────────────────────────────────────────────
 watch(subTab, (t) => {
@@ -869,6 +904,8 @@ const tabs = [
         <template v-if="subTab === 'history'">
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="p-4 border-b"><h3 class="font-bold text-sm">Distribution Snapshots</h3></div>
+
+                <!-- Mobile cards -->
                 <div class="sm:hidden divide-y">
                     <div v-for="s in snapshots" :key="s.id" class="p-3 space-y-1.5">
                         <div class="flex justify-between items-center">
@@ -879,11 +916,31 @@ const tabs = [
                         <div class="flex justify-between text-xs"><span class="text-muted-foreground">Members</span><span>{{ fmt(s.members_amount) }}</span></div>
                         <div class="flex justify-between text-xs"><span class="text-muted-foreground">Company</span><span class="text-emerald-600 font-medium">{{ fmt(s.company_amount) }}</span></div>
                         <div class="text-xs text-muted-foreground">By: {{ s.creator?.name ?? '—' }}</div>
+                        <!-- Payout status -->
+                        <div v-if="s.paid_at" class="flex items-center gap-1 text-xs text-emerald-600 font-medium">
+                            <CheckCircle2 class="h-3 w-3" /> Paid {{ s.paid_at?.slice(0,10) }} by {{ s.payer?.name ?? '—' }}
+                        </div>
+                        <button v-else @click="openPayoutModal(s)"
+                            class="flex items-center gap-1.5 text-xs font-semibold text-primary border border-primary/40 rounded-lg px-2.5 py-1 hover:bg-primary/5 transition-colors">
+                            <Banknote class="h-3 w-3" /> Record Payout
+                        </button>
                     </div>
                     <div v-if="!snapshots.length" class="px-4 py-8 text-center text-muted-foreground text-sm">No snapshots saved yet.</div>
                 </div>
+
+                <!-- Desktop table -->
                 <table class="hidden sm:table w-full text-sm">
-                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase"><tr><th class="px-4 py-2 text-left">Period</th><th class="px-4 py-2 text-left">Basis</th><th class="px-4 py-2 text-right">Distributable</th><th class="px-4 py-2 text-right">Members</th><th class="px-4 py-2 text-right">Company</th><th class="px-4 py-2 text-left">By</th></tr></thead>
+                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase">
+                        <tr>
+                            <th class="px-4 py-2 text-left">Period</th>
+                            <th class="px-4 py-2 text-left">Basis</th>
+                            <th class="px-4 py-2 text-right">Distributable</th>
+                            <th class="px-4 py-2 text-right">Members</th>
+                            <th class="px-4 py-2 text-right">Company</th>
+                            <th class="px-4 py-2 text-left">By</th>
+                            <th class="px-4 py-2 text-left">Payout</th>
+                        </tr>
+                    </thead>
                     <tbody class="divide-y">
                         <tr v-for="s in snapshots" :key="s.id" class="hover:bg-muted/20">
                             <td class="px-4 py-2 whitespace-nowrap">{{ s.period_start?.slice(0,10) }} → {{ s.period_end?.slice(0,10) }}</td>
@@ -892,12 +949,72 @@ const tabs = [
                             <td class="px-4 py-2 text-right">{{ fmt(s.members_amount) }}</td>
                             <td class="px-4 py-2 text-right text-emerald-600">{{ fmt(s.company_amount) }}</td>
                             <td class="px-4 py-2 text-xs text-muted-foreground">{{ s.creator?.name ?? '—' }}</td>
+                            <td class="px-4 py-2">
+                                <div v-if="s.paid_at" class="flex items-center gap-1 text-xs text-emerald-600 font-medium whitespace-nowrap">
+                                    <CheckCircle2 class="h-3.5 w-3.5 shrink-0" />
+                                    {{ s.paid_at?.slice(0,10) }} · {{ s.payer?.name ?? '—' }}
+                                </div>
+                                <button v-else @click="openPayoutModal(s)"
+                                    class="flex items-center gap-1 text-xs font-semibold text-primary border border-primary/40 rounded-lg px-2.5 py-1 hover:bg-primary/5 transition-colors whitespace-nowrap">
+                                    <Banknote class="h-3 w-3" /> Record Payout
+                                </button>
+                            </td>
                         </tr>
-                        <tr v-if="!snapshots.length"><td colspan="6" class="px-4 py-8 text-center text-muted-foreground">No snapshots saved yet.</td></tr>
+                        <tr v-if="!snapshots.length"><td colspan="7" class="px-4 py-8 text-center text-muted-foreground">No snapshots saved yet.</td></tr>
                     </tbody>
                 </table>
             </div>
         </template>
+
+        <!-- ── PAYOUT MODAL ───────────────────────────────────────────────────── -->
+        <div v-if="payoutModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="payoutModal.open = false">
+            <div class="w-full max-w-md rounded-2xl bg-background shadow-2xl p-6 space-y-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="font-bold text-base flex items-center gap-2"><Banknote class="h-4 w-4 text-primary" /> Record Payout</h2>
+                    <button @click="payoutModal.open = false" class="text-muted-foreground hover:text-foreground"><X class="h-4 w-4" /></button>
+                </div>
+
+                <!-- Snapshot summary -->
+                <div class="rounded-xl bg-muted/40 p-3 space-y-1 text-sm">
+                    <div class="flex justify-between"><span class="text-muted-foreground">Period</span><span class="font-medium">{{ payoutModal.snapshot?.period_start?.slice(0,10) }} → {{ payoutModal.snapshot?.period_end?.slice(0,10) }}</span></div>
+                    <div class="flex justify-between"><span class="text-muted-foreground">Members Total</span><span class="font-bold text-primary">{{ fmt(payoutModal.snapshot?.members_amount) }}</span></div>
+                    <div class="flex justify-between"><span class="text-muted-foreground">Company Retained</span><span class="font-medium text-emerald-600">{{ fmt(payoutModal.snapshot?.company_amount) }}</span></div>
+                </div>
+
+                <!-- Tender select -->
+                <div>
+                    <label class="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1.5">Payout Tender / Method</label>
+                    <select v-model="payoutModal.tenderId"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                        <option value="" disabled>Select tender…</option>
+                        <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
+                    </select>
+                </div>
+
+                <!-- Notes -->
+                <div>
+                    <label class="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1.5">Notes <span class="font-normal">(optional)</span></label>
+                    <textarea v-model="payoutModal.notes" rows="2"
+                        placeholder="e.g. Cash payout during partner meeting"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none" />
+                </div>
+
+                <p class="text-xs text-muted-foreground">One <code class="bg-muted px-1 rounded">payout_share</code> financial transaction will be created per recipient and recorded under the selected tender.</p>
+
+                <div class="flex gap-2 pt-1">
+                    <button @click="payoutModal.open = false"
+                        class="flex-1 rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors">
+                        Cancel
+                    </button>
+                    <button @click="submitPayout" :disabled="payoutModal.loading || !payoutModal.tenderId"
+                        class="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+                        <RefreshCw v-if="payoutModal.loading" class="h-3.5 w-3.5 animate-spin" />
+                        <CheckCircle2 v-else class="h-3.5 w-3.5" />
+                        Confirm Payout
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <!-- ── HELP ───────────────────────────────────────────────────────────── -->
         <template v-if="subTab === 'help'">

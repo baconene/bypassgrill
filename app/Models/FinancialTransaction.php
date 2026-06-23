@@ -11,6 +11,7 @@ class FinancialTransaction extends Model {
     protected $fillable = [
         'type', 'amount', 'description',
         'order_id', 'payment_id', 'payment_tender_id', 'payroll_record_id',
+        'distribution_snapshot_id', 'shareholder_id',
         'user_id', 'notes', 'transacted_at',
     ];
     protected $casts = [
@@ -22,5 +23,7 @@ class FinancialTransaction extends Model {
     public function payment() { return $this->belongsTo(Payment::class); }
     public function tender() { return $this->belongsTo(PaymentTender::class, 'payment_tender_id'); }
     public function payrollRecord() { return $this->belongsTo(\App\Models\PayrollRecord::class, 'payroll_record_id'); }
+    public function distributionSnapshot() { return $this->belongsTo(\App\Models\DistributionSnapshot::class, 'distribution_snapshot_id'); }
+    public function shareholder() { return $this->belongsTo(\App\Models\Shareholder::class); }
     public function user() { return $this->belongsTo(User::class); }
 }

@@ -210,7 +210,7 @@ class ReportController extends Controller
             ->with('tender')
             ->selectRaw("payment_tender_id,
                 SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as total_in,
-                SUM(CASE WHEN type IN ('expense','payroll','asset_deduction') THEN amount ELSE 0 END) as total_out,
+                SUM(CASE WHEN type IN ('expense','payroll','asset_deduction','payout_share') THEN amount ELSE 0 END) as total_out,
                 COUNT(*) as cnt")
             ->groupBy('payment_tender_id')
             ->get()
