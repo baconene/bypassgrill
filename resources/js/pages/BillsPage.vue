@@ -430,7 +430,151 @@ onMounted(async () => {
                 </div>
             </div>
 
-            <div class="overflow-x-auto">
+            <!-- Mobile bill cards (< sm) -->
+            <div class="sm:hidden divide-y">
+                <template v-for="bill in bills" :key="`m-${bill.id}`">
+                    <div :class="['p-4', bill.is_active ? '' : 'opacity-50']">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0 flex-1">
+                                <p class="font-semibold text-sm">{{ bill.name }}</p>
+                                <p v-if="bill.description" class="text-xs text-muted-foreground">{{ bill.description }}</p>
+                                <p v-if="bill.is_installment" class="text-xs text-orange-600 mt-0.5">
+                                    Plan: {{ bill.installments_paid }}/{{ bill.installment_count }} paid
+                                </p>
+                            </div>
+                            <span :class="['flex-shrink-0 px-2 py-1 rounded-full text-xs font-medium', billStatusBadge(bill.status)]">
+                                {{ bill.status.replace(/_/g, ' ') }}
+                            </span>
+                        </div>
+                        <div class="mt-2 flex items-center justify-between">
+                            <span class="font-bold text-base">{{ fmt(bill.amount) }}</span>
+                            <span class="text-xs text-muted-foreground">{{ frequencyLabel(bill.frequency) }}</span>
+                        </div>
+                        <div class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                            <span v-if="bill.category">{{ bill.category }}</span>
+                            <span>Due: {{ bill.due_date }}</span>
+                            <span v-if="bill.last_paid_at">Last paid: {{ fmtDatetime(bill.last_paid_at) }}</span>
+                        </div>
+                        <div class="mt-2.5">
+                            <button @click="expandedBillId === bill.id ? (expandedBillId = null) : (expandedBillId = bill.id)"
+                                class="text-primary hover:underline text-xs font-medium">
+                                {{ expandedBillId === bill.id ? 'Hide details ▲' : 'Show details ▼' }}
+                            </button>
+                        </div>
+                        <!-- Expanded detail -->
+                        <div v-if="expandedBillId === bill.id" class="mt-3 space-y-3">
+                            <!-- Burndown chart (payment plans only) -->
+                            <div v-if="bill.is_installment && bill.installments.length > 0 && burndownData" class="space-y-1.5">
+                                <div class="flex items-center justify-between">
+                                    <p class="text-xs font-semibold text-muted-foreground">Payment Burndown</p>
+                                    <div class="flex items-center gap-4 text-xs text-muted-foreground">
+                                        <span class="flex items-center gap-1.5">
+                                            <svg width="16" height="4"><line x1="0" y1="2" x2="16" y2="2" stroke="#22c55e" stroke-width="2.5"/></svg>
+                                            Paid
+                                        </span>
+                                        <span class="flex items-center gap-1.5">
+                                            <svg width="16" height="4"><line x1="0" y1="2" x2="16" y2="2" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4,2"/></svg>
+                                            Remaining
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="rounded-lg border bg-background p-2">
+                                    <svg viewBox="0 0 500 160" class="w-full" style="height:160px">
+                                        <defs>
+                                            <linearGradient id="bdPaidGradM" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stop-color="#22c55e" stop-opacity="0.25" />
+                                                <stop offset="100%" stop-color="#22c55e" stop-opacity="0.02" />
+                                            </linearGradient>
+                                        </defs>
+                                        <g v-for="tick in burndownData!.yTicks" :key="tick.v">
+                                            <line :x1="54" :y1="tick.y" :x2="488" :y2="tick.y" stroke="currentColor" stroke-opacity="0.07" stroke-width="1" />
+                                            <text :x="50" :y="tick.y + 3.5" text-anchor="end" fill="currentColor" fill-opacity="0.5" font-size="9">{{ tick.label }}</text>
+                                        </g>
+                                        <text v-for="tick in burndownData!.xTicks" :key="tick.n" :x="tick.x" y="155" text-anchor="middle" fill="currentColor" fill-opacity="0.5" font-size="9">{{ tick.label }}</text>
+                                        <line x1="54" y1="14" x2="54" y2="132" stroke="currentColor" stroke-opacity="0.15" stroke-width="1" />
+                                        <line x1="54" y1="132" x2="488" y2="132" stroke="currentColor" stroke-opacity="0.15" stroke-width="1" />
+                                        <polygon v-if="burndownData!.areaPoints" :points="burndownData!.areaPoints" fill="url(#bdPaidGradM)" />
+                                        <polyline v-if="burndownData!.unpaidPts.length >= 2" :points="burndownData!.unpaidPolyStr" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5,3" stroke-linecap="round" />
+                                        <polyline v-if="burndownData!.paidPts.length >= 2" :points="burndownData!.paidPolyStr" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                                        <circle v-for="pt in burndownData!.pts" :key="pt.n" :cx="pt.svgX" :cy="pt.svgY" r="3" :fill="pt.paid ? '#22c55e' : 'none'" :stroke="pt.paid ? '#16a34a' : '#94a3b8'" stroke-width="1.5" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <!-- Installment schedule -->
+                            <div v-if="bill.is_installment && bill.installments.length > 0" class="space-y-1.5">
+                                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Installment Schedule</p>
+                                <div class="rounded-lg border overflow-hidden overflow-x-auto">
+                                    <table class="w-full text-xs min-w-[520px]">
+                                        <thead class="bg-muted/50 text-muted-foreground">
+                                            <tr>
+                                                <th class="px-3 py-2 text-left font-medium">#</th>
+                                                <th class="px-3 py-2 text-right font-medium">Amount</th>
+                                                <th class="px-3 py-2 text-left font-medium">Due Date</th>
+                                                <th class="px-3 py-2 text-left font-medium">Status</th>
+                                                <th class="px-3 py-2 text-left font-medium">Paid On</th>
+                                                <th class="px-3 py-2 text-right font-medium">Balance After</th>
+                                                <th class="px-3 py-2 text-center font-medium">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="inst in sortedInstallments(bill)" :key="inst.id"
+                                                :class="['border-t transition-colors', inst.paid_at ? 'bg-green-50/50 dark:bg-green-950/10' : '']">
+                                                <td class="px-3 py-2.5 font-bold text-muted-foreground">#{{ inst.installment_number }}</td>
+                                                <td class="px-3 py-2.5 text-right font-semibold tabular-nums">{{ fmt(inst.amount) }}</td>
+                                                <td class="px-3 py-2.5 tabular-nums">{{ inst.due_date }}</td>
+                                                <td class="px-3 py-2.5">
+                                                    <span :class="['px-2 py-0.5 rounded-full text-xs font-medium', installmentStatusBadge(inst.status)]">
+                                                        {{ inst.status.replace(/_/g, ' ') }}
+                                                    </span>
+                                                </td>
+                                                <td class="px-3 py-2.5 text-muted-foreground tabular-nums">{{ inst.paid_at ? fmtDatetime(inst.paid_at) : '—' }}</td>
+                                                <td class="px-3 py-2.5 text-right tabular-nums font-medium"
+                                                    :class="runningRemaining(bill, inst.installment_number) === 0 ? 'text-green-600' : 'text-orange-600'">
+                                                    {{ fmt(runningRemaining(bill, inst.installment_number)) }}
+                                                </td>
+                                                <td class="px-3 py-2.5 text-center">
+                                                    <span v-if="inst.paid_at" class="text-green-600 font-bold">✓</span>
+                                                    <button v-else-if="bill.is_active"
+                                                        @click="payInstallment(bill, inst)"
+                                                        :disabled="payingInstallmentId === inst.id"
+                                                        class="rounded bg-green-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-green-700 disabled:opacity-50">
+                                                        {{ payingInstallmentId === inst.id ? '…' : 'Pay' }}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot class="border-t bg-muted/30">
+                                            <tr>
+                                                <td colspan="4" class="px-3 py-2 text-muted-foreground">{{ bill.installments_paid }}/{{ bill.installment_count }} paid</td>
+                                                <td class="px-3 py-2 text-right font-bold text-green-600">Paid: {{ fmt(bill.installments.filter(i => i.paid_at).reduce((s, i) => s + i.amount, 0)) }}</td>
+                                                <td class="px-3 py-2 text-right font-bold text-orange-600">{{ fmt(bill.installments.filter(i => !i.paid_at).reduce((s, i) => s + i.amount, 0)) }} left</td>
+                                                <td></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+                            <!-- Action buttons -->
+                            <div class="flex flex-wrap gap-2 pt-1">
+                                <button v-if="!bill.is_installment && bill.is_active" @click="payBill(bill)" :disabled="billPaying === bill.id"
+                                    class="flex-1 rounded bg-green-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-700 disabled:opacity-50">
+                                    {{ billPaying === bill.id ? 'Processing…' : '💰 Mark as Paid' }}
+                                </button>
+                                <button @click="openBillForm(bill)" class="flex-1 rounded border px-3 py-1.5 text-xs font-medium hover:bg-muted flex items-center justify-center gap-1">
+                                    <Pencil class="h-3 w-3" /> Edit
+                                </button>
+                                <button @click="deleteBill(bill)" :disabled="billDeleting === bill.id"
+                                    class="flex-1 rounded border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 disabled:opacity-50">
+                                    {{ billDeleting === bill.id ? 'Deleting…' : '🗑️ Delete' }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Desktop bill table (≥ sm) -->
+            <div class="hidden sm:block overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                         <tr>
@@ -617,67 +761,116 @@ onMounted(async () => {
                 </select>
             </div>
 
-            <div v-if="billForecast" class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
-                        <tr>
-                            <th class="px-4 py-3 text-left">Payable</th>
-                            <th class="px-4 py-3 text-left">Category</th>
-                            <th class="px-4 py-3 text-left">Type</th>
-                            <th class="px-4 py-3 text-right">Due Date</th>
-                            <th class="px-4 py-3 text-right">Amount</th>
-                            <th class="px-4 py-3 text-left">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <template v-for="(entries, month) in billForecast.by_month" :key="month">
-                            <!-- Month group header -->
-                            <tr class="border-t bg-muted/40">
-                                <td colspan="6" class="px-4 py-2 text-xs font-bold text-muted-foreground uppercase tracking-wide">
-                                    {{ monthName(parseInt((month as string).split('-')[1])) }} {{ (month as string).split('-')[0] }}
-                                    <span class="ml-2 font-semibold text-foreground normal-case text-sm">
-                                        {{ fmt((entries as any[]).reduce((s: number, e: any) => s + e.amount, 0)) }}
-                                    </span>
-                                    <span class="ml-1 font-normal normal-case text-muted-foreground">
-                                        ({{ (entries as any[]).length }} item{{ (entries as any[]).length !== 1 ? 's' : '' }})
-                                    </span>
-                                </td>
-                            </tr>
-                            <!-- Entry rows -->
-                            <tr v-for="entry in (entries as any[])" :key="`${entry.bill_id}-${entry.installment_id}`" class="border-t hover:bg-muted/10 transition-colors">
-                                <td class="px-4 py-2.5">
-                                    <p class="font-medium">{{ entry.name }}</p>
-                                    <p v-if="entry.label" class="text-xs text-muted-foreground">{{ entry.label }}</p>
-                                </td>
-                                <td class="px-4 py-2.5 text-sm text-muted-foreground">{{ entry.category ?? '—' }}</td>
-                                <td class="px-4 py-2.5">
+            <template v-if="billForecast">
+                <!-- Mobile forecast cards (< sm) -->
+                <div class="sm:hidden divide-y">
+                    <template v-for="(entries, month) in billForecast.by_month" :key="month">
+                        <!-- Month group header -->
+                        <div class="px-4 py-2 bg-muted/40 flex items-center justify-between">
+                            <p class="text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                                {{ monthName(parseInt((month as string).split('-')[1])) }} {{ (month as string).split('-')[0] }}
+                            </p>
+                            <div class="text-right">
+                                <span class="font-semibold text-foreground text-sm">
+                                    {{ fmt((entries as any[]).reduce((s: number, e: any) => s + e.amount, 0)) }}
+                                </span>
+                                <span class="ml-1 text-xs text-muted-foreground">
+                                    ({{ (entries as any[]).length }} item{{ (entries as any[]).length !== 1 ? 's' : '' }})
+                                </span>
+                            </div>
+                        </div>
+                        <!-- Entry cards -->
+                        <div v-for="entry in (entries as any[])" :key="`m-${entry.bill_id}-${entry.installment_id}`"
+                            class="px-4 py-3 flex items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <p class="font-medium text-sm">{{ entry.name }}</p>
+                                <p v-if="entry.label" class="text-xs text-muted-foreground">{{ entry.label }}</p>
+                                <div class="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted-foreground">
+                                    <span v-if="entry.category">{{ entry.category }}</span>
+                                    <span>Due: {{ entry.due_date }}</span>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5 mt-1.5">
                                     <span :class="['px-2 py-0.5 rounded text-xs font-medium', entry.is_installment ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400']">
                                         {{ entry.is_installment ? 'Installment' : 'Recurring' }}
                                     </span>
-                                </td>
-                                <td class="px-4 py-2.5 text-right text-sm tabular-nums text-muted-foreground">{{ entry.due_date }}</td>
-                                <td class="px-4 py-2.5 text-right font-semibold tabular-nums">{{ fmt(entry.amount) }}</td>
-                                <td class="px-4 py-2.5">
                                     <span :class="['px-2 py-0.5 rounded-full text-xs font-medium', billStatusBadge(entry.status)]">
                                         {{ entry.status.replace(/_/g, ' ') }}
                                     </span>
-                                </td>
+                                </div>
+                            </div>
+                            <span class="font-bold text-sm tabular-nums text-right flex-shrink-0">{{ fmt(entry.amount) }}</span>
+                        </div>
+                    </template>
+                    <!-- Total footer -->
+                    <div class="px-4 py-3 bg-muted/30 flex items-center justify-between">
+                        <span class="text-sm font-bold">Total ({{ forecastMonths }} month{{ forecastMonths !== 1 ? 's' : '' }})</span>
+                        <span class="text-xl font-black text-orange-600 tabular-nums">{{ fmt(billForecast.total_forecast) }}</span>
+                    </div>
+                </div>
+
+                <!-- Desktop forecast table (≥ sm) -->
+                <div class="hidden sm:block overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
+                            <tr>
+                                <th class="px-4 py-3 text-left">Payable</th>
+                                <th class="px-4 py-3 text-left">Category</th>
+                                <th class="px-4 py-3 text-left">Type</th>
+                                <th class="px-4 py-3 text-right">Due Date</th>
+                                <th class="px-4 py-3 text-right">Amount</th>
+                                <th class="px-4 py-3 text-left">Status</th>
                             </tr>
-                        </template>
-                    </tbody>
-                    <tfoot class="border-t-2 bg-muted/30">
-                        <tr>
-                            <td colspan="4" class="px-4 py-3 text-sm font-bold">
-                                Total Forecast ({{ forecastMonths }} month{{ forecastMonths !== 1 ? 's' : '' }})
-                            </td>
-                            <td class="px-4 py-3 text-right text-xl font-black text-orange-600 tabular-nums">
-                                {{ fmt(billForecast.total_forecast) }}
-                            </td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
+                        </thead>
+                        <tbody>
+                            <template v-for="(entries, month) in billForecast.by_month" :key="month">
+                                <!-- Month group header -->
+                                <tr class="border-t bg-muted/40">
+                                    <td colspan="6" class="px-4 py-2 text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                                        {{ monthName(parseInt((month as string).split('-')[1])) }} {{ (month as string).split('-')[0] }}
+                                        <span class="ml-2 font-semibold text-foreground normal-case text-sm">
+                                            {{ fmt((entries as any[]).reduce((s: number, e: any) => s + e.amount, 0)) }}
+                                        </span>
+                                        <span class="ml-1 font-normal normal-case text-muted-foreground">
+                                            ({{ (entries as any[]).length }} item{{ (entries as any[]).length !== 1 ? 's' : '' }})
+                                        </span>
+                                    </td>
+                                </tr>
+                                <!-- Entry rows -->
+                                <tr v-for="entry in (entries as any[])" :key="`${entry.bill_id}-${entry.installment_id}`" class="border-t hover:bg-muted/10 transition-colors">
+                                    <td class="px-4 py-2.5">
+                                        <p class="font-medium">{{ entry.name }}</p>
+                                        <p v-if="entry.label" class="text-xs text-muted-foreground">{{ entry.label }}</p>
+                                    </td>
+                                    <td class="px-4 py-2.5 text-sm text-muted-foreground">{{ entry.category ?? '—' }}</td>
+                                    <td class="px-4 py-2.5">
+                                        <span :class="['px-2 py-0.5 rounded text-xs font-medium', entry.is_installment ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400']">
+                                            {{ entry.is_installment ? 'Installment' : 'Recurring' }}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-2.5 text-right text-sm tabular-nums text-muted-foreground">{{ entry.due_date }}</td>
+                                    <td class="px-4 py-2.5 text-right font-semibold tabular-nums">{{ fmt(entry.amount) }}</td>
+                                    <td class="px-4 py-2.5">
+                                        <span :class="['px-2 py-0.5 rounded-full text-xs font-medium', billStatusBadge(entry.status)]">
+                                            {{ entry.status.replace(/_/g, ' ') }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                        <tfoot class="border-t-2 bg-muted/30">
+                            <tr>
+                                <td colspan="4" class="px-4 py-3 text-sm font-bold">
+                                    Total Forecast ({{ forecastMonths }} month{{ forecastMonths !== 1 ? 's' : '' }})
+                                </td>
+                                <td class="px-4 py-3 text-right text-xl font-black text-orange-600 tabular-nums">
+                                    {{ fmt(billForecast.total_forecast) }}
+                                </td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </template>
         </div>
     </div>
 </template>
