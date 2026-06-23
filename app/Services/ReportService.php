@@ -192,7 +192,25 @@ class ReportService
                 'transacted_at' => $e->transacted_at,
             ]);
 
-        $netProfit           = $grossProfit + $totalIncomeAdj - $totalExpenses - $totalPayroll;
+        // Profit distribution payouts (cash disbursed to shareholders)
+        $payoutShareRows = \App\Models\FinancialTransaction::where('type', 'payout_share')
+            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
+            ->selectRaw('COALESCE(SUM(amount), 0) as total, COUNT(*) as count')
+            ->first();
+
+        $totalPayoutShare = (float) ($payoutShareRows->total ?? 0);
+
+        $payoutShareBreakdown = \App\Models\FinancialTransaction::where('type', 'payout_share')
+            ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
+            ->orderByDesc('transacted_at')
+            ->get(['description', 'amount', 'transacted_at'])
+            ->map(fn ($e) => [
+                'description'   => $e->description,
+                'amount'        => (float) $e->amount,
+                'transacted_at' => $e->transacted_at,
+            ]);
+
+        $netProfit           = $grossProfit + $totalIncomeAdj - $totalExpenses - $totalPayroll - $totalPayoutShare;
         $totalRevenuePlusAdj = $netRevenue + $totalIncomeAdj;
         $netMargin           = $totalRevenuePlusAdj > 0 ? round(($netProfit / $totalRevenuePlusAdj) * 100, 2) : 0;
 
@@ -238,6 +256,11 @@ class ReportService
                 'total'     => $totalPayroll,
                 'count'     => (int) ($payrollRows->count ?? 0),
                 'breakdown' => $payrollBreakdown,
+            ],
+            'payout_share' => [
+                'total'     => $totalPayoutShare,
+                'count'     => (int) ($payoutShareRows->count ?? 0),
+                'breakdown' => $payoutShareBreakdown,
             ],
             'net_profit'   => $netProfit,
             'net_margin'   => $netMargin,

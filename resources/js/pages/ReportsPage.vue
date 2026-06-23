@@ -105,6 +105,7 @@ const ftTypeLabel: Record<string, string> = {
     expense:           'Expense',
     payroll:           'Payroll',
     asset_deduction:   'Asset Deduction',
+    payout_share:      'Profit Distribution Payout',
 }
 const ftTypeColor: Record<string, string> = {
     payment:           'text-green-600',
@@ -112,6 +113,7 @@ const ftTypeColor: Record<string, string> = {
     expense:           'text-red-500',
     payroll:           'text-purple-600',
     asset_deduction:   'text-orange-500',
+    payout_share:      'text-indigo-600',
 }
 
 const loadFtBreakdown = async (startDate: string, endDate: string) => {

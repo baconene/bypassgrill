@@ -975,10 +975,22 @@ const tabs = [
                 </div>
 
                 <!-- Snapshot summary -->
-                <div class="rounded-xl bg-muted/40 p-3 space-y-1 text-sm">
+                <div class="rounded-xl bg-muted/40 p-3 space-y-2 text-sm">
                     <div class="flex justify-between"><span class="text-muted-foreground">Period</span><span class="font-medium">{{ payoutModal.snapshot?.period_start?.slice(0,10) }} → {{ payoutModal.snapshot?.period_end?.slice(0,10) }}</span></div>
-                    <div class="flex justify-between"><span class="text-muted-foreground">Members Total</span><span class="font-bold text-primary">{{ fmt(payoutModal.snapshot?.members_amount) }}</span></div>
-                    <div class="flex justify-between"><span class="text-muted-foreground">Company Retained</span><span class="font-medium text-emerald-600">{{ fmt(payoutModal.snapshot?.company_amount) }}</span></div>
+                    <div class="border-t pt-2 space-y-1.5">
+                        <div class="flex justify-between items-start">
+                            <span class="text-muted-foreground">Members (to be disbursed)</span>
+                            <span class="font-bold text-primary">{{ fmt(payoutModal.snapshot?.members_amount) }}</span>
+                        </div>
+                        <p class="text-xs text-muted-foreground">One cash transaction per shareholder will be recorded.</p>
+                    </div>
+                    <div class="border-t pt-2 space-y-1.5">
+                        <div class="flex justify-between items-start">
+                            <span class="text-muted-foreground">Company (retained in business)</span>
+                            <span class="font-medium text-emerald-600">{{ fmt(payoutModal.snapshot?.company_amount) }}</span>
+                        </div>
+                        <p class="text-xs text-muted-foreground">No cash disbursed — stays as retained earnings.</p>
+                    </div>
                 </div>
 
                 <!-- Tender select -->
@@ -999,8 +1011,6 @@ const tabs = [
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none" />
                 </div>
 
-                <p class="text-xs text-muted-foreground">One <code class="bg-muted px-1 rounded">payout_share</code> financial transaction will be created per recipient and recorded under the selected tender.</p>
-
                 <div class="flex gap-2 pt-1">
                     <button @click="payoutModal.open = false"
                         class="flex-1 rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors">
@@ -1009,8 +1019,8 @@ const tabs = [
                     <button @click="submitPayout" :disabled="payoutModal.loading || !payoutModal.tenderId"
                         class="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
                         <RefreshCw v-if="payoutModal.loading" class="h-3.5 w-3.5 animate-spin" />
-                        <CheckCircle2 v-else class="h-3.5 w-3.5" />
-                        Confirm Payout
+                        <Banknote v-else class="h-3.5 w-3.5" />
+                        Disburse to Members
                     </button>
                 </div>
             </div>
