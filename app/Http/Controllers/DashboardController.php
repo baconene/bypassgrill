@@ -31,6 +31,7 @@ class DashboardController extends Controller
             'stats' => $stats,
             'recentOrders' => $this->recentOrders(),
             'pl' => $pl,
+            'servingTime' => $this->buildServingTime($user),
         ]);
     }
 
@@ -76,6 +77,41 @@ class DashboardController extends Controller
         }
 
         return $stats;
+    }
+
+    private function buildServingTime($user): ?array
+    {
+        if (! $user->hasAnyRole(['admin', 'cashier', 'kitchen'])) {
+            return null;
+        }
+
+        $row = Order::whereDate('created_at', today())
+            ->where('status', 'completed')
+            ->whereNotNull('completed_at')
+            ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as avg_seconds, COUNT(*) as completed_count')
+            ->first();
+
+        $peakHours = Order::whereDate('created_at', today())
+            ->where('status', 'completed')
+            ->whereNotNull('completed_at')
+            ->selectRaw('HOUR(created_at) as hour, COUNT(*) as order_count, AVG(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as avg_seconds')
+            ->groupByRaw('HOUR(created_at)')
+            ->orderByDesc('order_count')
+            ->limit(3)
+            ->get()
+            ->map(fn ($r) => [
+                'hour'        => (int) $r->hour,
+                'order_count' => (int) $r->order_count,
+                'avg_seconds' => (int) round((float) $r->avg_seconds),
+            ])
+            ->values()
+            ->toArray();
+
+        return [
+            'avg_seconds'     => $row->avg_seconds ? (int) round((float) $row->avg_seconds) : null,
+            'completed_today' => (int) ($row->completed_count ?? 0),
+            'peak_hours'      => $peakHours,
+        ];
     }
 
     private function recentOrders(): array

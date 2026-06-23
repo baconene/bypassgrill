@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
-import { ShoppingCart, ChefHat, Package, BarChart3, ClipboardList, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Users } from 'lucide-vue-next'
+import { ShoppingCart, ChefHat, Package, BarChart3, ClipboardList, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, Users, Timer, Flame } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -18,10 +18,17 @@ interface PlSummary {
     net_margin: number
 }
 
+interface ServingTime {
+    avg_seconds: number | null
+    completed_today: number
+    peak_hours: { hour: number; order_count: number; avg_seconds: number }[]
+}
+
 const props = defineProps<{
     stats: Record<string, number>
     recentOrders: any[]
     pl: PlSummary | null
+    servingTime: ServingTime | null
 }>()
 
 const page = usePage()
@@ -47,6 +54,35 @@ const greeting = computed(() => {
     if (h < 17) return 'Good afternoon'
     return 'Good evening'
 })
+
+const fmtSeconds = (s: number | null | undefined): string => {
+    if (s == null) return '—'
+    const m = Math.floor(s / 60)
+    const sec = s % 60
+    return m > 0 ? `${m}m ${sec}s` : `${sec}s`
+}
+
+const fmtHour = (h: number): string => {
+    const d = new Date()
+    d.setHours(h, 0, 0, 0)
+    return d.toLocaleTimeString('en-PH', { hour: 'numeric', hour12: true })
+}
+
+const servingSpeedClass = computed(() => {
+    const s = props.servingTime?.avg_seconds
+    if (s == null) return 'text-muted-foreground'
+    if (s < 300) return 'text-emerald-600'
+    if (s < 600) return 'text-yellow-600'
+    return 'text-red-500'
+})
+
+const servingSpeedLabel = computed(() => {
+    const s = props.servingTime?.avg_seconds
+    if (s == null) return 'No data yet'
+    if (s < 300) return 'Fast'
+    if (s < 600) return 'Moderate'
+    return 'Slow'
+})
 </script>
 
 <template>
@@ -61,6 +97,47 @@ const greeting = computed(() => {
             <p class="text-muted-foreground text-sm capitalize">
                 {{ roles.join(', ') || 'No role assigned' }}
             </p>
+        </div>
+
+        <!-- Serving Time Card -->
+        <div v-if="servingTime" class="rounded-xl border bg-card shadow-sm overflow-hidden">
+            <div class="flex items-center gap-2 px-4 pt-4 pb-2">
+                <Timer class="h-4 w-4 text-primary shrink-0" />
+                <h2 class="font-semibold text-sm">Avg Serving Time — Today</h2>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x">
+                <!-- Main metric -->
+                <div class="px-4 py-3 sm:col-span-1">
+                    <p class="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">Average</p>
+                    <p class="text-3xl font-black" :class="servingSpeedClass">
+                        {{ fmtSeconds(servingTime.avg_seconds) }}
+                    </p>
+                    <p class="text-xs mt-0.5" :class="servingSpeedClass">{{ servingSpeedLabel }}</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">{{ servingTime.completed_today }} orders completed</p>
+                </div>
+
+                <!-- Peak hours -->
+                <div class="px-4 py-3 col-span-2 sm:col-span-2">
+                    <div class="flex items-center gap-1.5 mb-2">
+                        <Flame class="h-3.5 w-3.5 text-orange-500 shrink-0" />
+                        <p class="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">Busiest Hours</p>
+                    </div>
+                    <div v-if="servingTime.peak_hours.length" class="space-y-1.5">
+                        <div v-for="(ph, i) in servingTime.peak_hours" :key="ph.hour"
+                            class="flex items-center justify-between text-sm">
+                            <div class="flex items-center gap-2">
+                                <span class="w-4 text-xs font-bold text-muted-foreground/60">{{ i + 1 }}.</span>
+                                <span class="font-semibold">{{ fmtHour(ph.hour) }}</span>
+                                <span class="rounded-full bg-orange-100 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 text-[10px] font-bold px-1.5 py-0.5">
+                                    {{ ph.order_count }} orders
+                                </span>
+                            </div>
+                            <span class="text-xs text-muted-foreground font-medium">avg {{ fmtSeconds(ph.avg_seconds) }}</span>
+                        </div>
+                    </div>
+                    <p v-else class="text-xs text-muted-foreground italic">No completed orders yet today.</p>
+                </div>
+            </div>
         </div>
 
         <!-- Quick Nav Cards -->
