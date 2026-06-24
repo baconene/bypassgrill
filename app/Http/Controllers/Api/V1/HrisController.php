@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
+use App\Models\HrisSetting;
 use App\Models\PayrollRecord;
 use App\Models\FinancialTransaction;
 use Illuminate\Http\JsonResponse;
@@ -113,6 +114,8 @@ class HrisController extends Controller
         DB::transaction(function () use ($payrollRecord) {
             $payrollRecord->update(['status' => 'approved']);
 
+            $hrisSetting = HrisSetting::getSetting();
+
             $ft = FinancialTransaction::create([
                 'type'              => 'payroll',
                 'amount'            => (float) $payrollRecord->net_pay,
@@ -126,6 +129,7 @@ class HrisController extends Controller
                     number_format((float) $payrollRecord->deductions, 2)
                 ),
                 'payroll_record_id' => $payrollRecord->id,
+                'payment_tender_id' => $hrisSetting->payroll_tender_id,
                 'user_id'           => auth()->id(),
                 'transacted_at'     => now(),
             ]);
