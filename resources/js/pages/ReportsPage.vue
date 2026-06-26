@@ -1177,11 +1177,12 @@ onMounted(async () => {
                                 </button>
                             </div>
                         </div>
-                        <!-- Row 2: date + type + table -->
+                        <!-- Row 2: date + type + table + customer -->
                         <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                             <span>{{ fmtDatetime(order.created_at) }}</span>
                             <span class="rounded-full bg-muted px-2 py-0.5 font-medium">{{ orderTypeBadge(order.order_type) }}</span>
                             <span v-if="order.table_number">Table {{ order.table_number }}</span>
+                            <span v-if="order.customer_name" class="font-medium text-foreground">{{ order.customer_name }}</span>
                             <span>{{ itemCount(order.items) }} item{{ itemCount(order.items) !== 1 ? 's' : '' }}</span>
                         </div>
                         <!-- Row 3: status + payment badges -->

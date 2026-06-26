@@ -303,7 +303,7 @@ const saveEdit = async () => {
                          class="rounded-xl border-l-4 border-yellow-500 bg-card shadow-sm">
                         <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
-                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">{{ order.queue_number ? '#' + order.queue_number : '#' + order.id }}</span>
+                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
                                 <div class="flex items-center gap-1">
                                     <span :class="['text-xs rounded-full px-1.5 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
                                     <button @click="openEdit(order)" class="rounded-full p-0.5 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3 w-3" /></button>
@@ -343,7 +343,7 @@ const saveEdit = async () => {
                          class="rounded-xl border-l-4 border-blue-500 bg-card shadow-sm">
                         <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
-                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">{{ order.queue_number ? '#' + order.queue_number : '#' + order.id }}</span>
+                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
                                 <div class="flex items-center gap-1">
                                     <span :class="['text-xs rounded-full px-1.5 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
                                     <button @click="openEdit(order)" class="rounded-full p-0.5 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3 w-3" /></button>
@@ -383,7 +383,7 @@ const saveEdit = async () => {
                          class="rounded-xl border-l-4 border-green-500 bg-card shadow-sm">
                         <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
-                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">{{ order.queue_number ? '#' + order.queue_number : '#' + order.id }}</span>
+                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
                                 <div class="flex items-center gap-1">
                                     <span :class="['text-xs rounded-full px-1.5 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
                                     <button @click="openEdit(order)" class="rounded-full p-0.5 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3 w-3" /></button>
@@ -439,7 +439,7 @@ const saveEdit = async () => {
                         <!-- Queue / ID -->
                         <div class="shrink-0 w-14 text-center">
                             <p class="text-lg font-black text-muted-foreground leading-tight">
-                                {{ order.queue_number ? '#' + order.queue_number : '#' + order.id }}
+                                #{{ order.id }}
                             </p>
                             <p class="text-[10px] text-muted-foreground/60">{{ fmtTime(order.completed_at) }}</p>
                         </div>
@@ -491,7 +491,7 @@ const saveEdit = async () => {
                     <div class="px-5 py-4 border-b flex items-center justify-between shrink-0">
                         <div>
                             <h3 class="font-bold text-lg">
-                                Edit {{ editOrder.queue_number ? 'Queue #' + editOrder.queue_number : 'Order #' + editOrder.id }}
+                                Edit Order #{{ editOrder.id }}
                             </h3>
                             <p class="text-xs text-muted-foreground capitalize mt-0.5">
                                 {{ editOrder.order_type.replace('_', ' ') }}
