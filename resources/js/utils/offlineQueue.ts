@@ -157,6 +157,14 @@ export async function syncQueue(): Promise<{ synced: number; failed: number }> {
             synced++
         } catch (err) {
             await db.put('pending_orders', { ...order, status: 'failed', error: String(err) })
+            // Linked payments can never be synced without a server order ID — mark them failed
+            // so they don't keep pendingCount > 0 and block the banner from clearing.
+            const linked = await db.getAllFromIndex('pending_payments', 'by_order_local_id', order.localId)
+            for (const p of linked) {
+                if (p.status === 'pending') {
+                    await db.put('pending_payments', { ...p, status: 'failed', error: 'Parent order failed to sync' })
+                }
+            }
             failed++
         }
     }
