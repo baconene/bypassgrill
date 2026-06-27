@@ -192,6 +192,18 @@ export async function syncQueue(): Promise<{ synced: number; failed: number }> {
         }
     }
 
+    // 3. Clean up orphaned pending payments — no serverOrderId and their parent order
+    //    is no longer pending (already failed/synced in a previous session). These can
+    //    never be synced, so mark them failed so pendingCount can reach 0.
+    const orphaned = await db.getAllFromIndex('pending_payments', 'by_status', 'pending')
+    for (const payment of orphaned) {
+        if (payment.serverOrderId) continue
+        const parentOrder = await db.get('pending_orders', payment.orderLocalId)
+        if (!parentOrder || parentOrder.status !== 'pending') {
+            await db.put('pending_payments', { ...payment, status: 'failed', error: 'Parent order failed to sync' })
+        }
+    }
+
     return { synced, failed }
 }
 
