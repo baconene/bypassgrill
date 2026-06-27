@@ -24,6 +24,7 @@ export async function doSync() {
         if (result.synced > 0) toast.success(`${result.synced} offline transaction(s) synced.`)
         if (result.failed > 0) toast.error(`${result.failed} transaction(s) failed to sync — will retry.`)
     } catch {
+        await refreshCount()
         toast.error('Sync error. Will retry when connection stabilises.')
     } finally {
         syncing.value = false
