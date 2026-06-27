@@ -1,4 +1,4 @@
-<script setup lang="ts">
+[Resource from github at repo://baconene/bypassgrill/sha/6d825cd133905129282a0f6c890777d22f45fb02/contents/resources/js/pages/ReportsPage.vue] <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
@@ -50,6 +50,7 @@ interface OrderRow {
     customer_name: string | null; total_amount: number
     items: { data: any[] } | any[]; user?: { data?: any; name?: string }
     created_at: string
+    payments?: { id: number; method: string; amount: number; status: string }[]
 }
 interface InvTransaction {
     id: number; type: string; quantity: number; old_quantity: number; new_quantity: number
@@ -1189,6 +1190,7 @@ onMounted(async () => {
                         <div class="mt-1.5 flex items-center gap-2 flex-wrap">
                             <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusBadge(order.status)]">{{ order.status }}</span>
                             <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payBadge(order.payment_status)]">{{ order.payment_status }}</span>
+                            <span v-if="order.payments?.[0]?.method" class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium">{{ order.payments[0].method }}</span>
                             <span v-if="order.notes" class="text-xs text-muted-foreground truncate max-w-[180px]">{{ order.notes }}</span>
                         </div>
                     </div>
@@ -1238,6 +1240,7 @@ onMounted(async () => {
                                         <ChevronsUpDown v-else class="h-3 w-3 opacity-40" />
                                     </span>
                                 </th>
+                                <th class="px-4 py-3 text-left">Tender</th>
                                 <th class="px-4 py-3 text-right cursor-pointer select-none hover:text-foreground"
                                     @click="sortOrders('total_amount')">
                                     <span class="inline-flex items-center justify-end gap-1">Total
@@ -1265,6 +1268,7 @@ onMounted(async () => {
                                 <td class="px-4 py-3 text-center font-medium">{{ itemCount(order.items) }}</td>
                                 <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusBadge(order.status)]">{{ order.status }}</span></td>
                                 <td class="px-4 py-3"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payBadge(order.payment_status)]">{{ order.payment_status }}</span></td>
+                                <td class="px-4 py-3 text-xs text-muted-foreground">{{ order.payments?.[0]?.method ?? '—' }}</td>
                                 <td class="px-4 py-3 text-right font-bold">{{ fmt(order.total_amount) }}</td>
                                 <td class="px-4 py-3 text-xs text-muted-foreground max-w-[140px] truncate">{{ order.notes ?? '—' }}</td>
                                 <td class="px-4 py-3 text-center" @click.stop>

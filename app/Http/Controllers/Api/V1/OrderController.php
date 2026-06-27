@@ -50,7 +50,7 @@ class OrderController extends Controller
         $sortBy   = in_array($request->sort_by, $allowed) ? $request->sort_by : 'created_at';
         $sortDir  = $request->sort_dir === 'asc' ? 'asc' : 'desc';
 
-        $orders = $applyFilters(Order::with(['items.product', 'user', 'queueNumber']))
+        $orders = $applyFilters(Order::with(['items.product', 'user', 'queueNumber', 'payments']))
             ->orderBy($sortBy, $sortDir)
             ->paginate(min((int) $request->input('per_page', 20), 100));
 
