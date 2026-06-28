@@ -28,7 +28,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $bump = fn () => \App\Services\Distribution\ProfitDistributionService::bumpCacheVersion();
 
-        foreach ([\App\Models\Order::class, \App\Models\OrderItem::class, \App\Models\FinancialTransaction::class, \App\Models\IncentiveRule::class, \App\Models\ProductOwnership::class] as $model) {
+        foreach ([\App\Models\Order::class, \App\Models\OrderItem::class, \App\Models\FinancialTransaction::class, \App\Models\IncentiveRule::class, \App\Models\ProductOwnership::class, \App\Models\Shareholder::class] as $model) {
             $model::saved($bump);
             $model::deleted($bump);
         }
