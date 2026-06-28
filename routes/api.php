@@ -58,6 +58,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/reports/daily-sales', [ReportController::class, 'dailySales']);
         Route::get('/reports/monthly-sales', [ReportController::class, 'monthlySales']);
         Route::get('/reports/product-sales', [ReportController::class, 'productSales']);
+        Route::get('/reports/product-daily-sales', [ReportController::class, 'productDailySales']);
         Route::get('/reports/inventory-valuation', [ReportController::class, 'inventoryValuation']);
         Route::get('/reports/inventory-transactions', [ReportController::class, 'inventoryTransactions']);
         Route::get('/reports/profit-loss', [ReportController::class, 'profitLoss']);
@@ -129,14 +130,10 @@ Route::prefix('v1')->group(function () {
         Route::put('/shareholders/{shareholder}', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'update']);
         Route::delete('/shareholders/{shareholder}', [\App\Http\Controllers\Api\V1\ShareholderController::class, 'destroy']);
 
-        Route::get('/product-ownerships', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'index']);
-        Route::put('/product-ownerships/{productId}', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'update']);
-        Route::delete('/product-ownerships/{productId}', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'destroy']);
-
-        Route::get('/incentive-rules', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'index']);
-        Route::post('/incentive-rules', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'store']);
-        Route::put('/incentive-rules/{incentiveRule}', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'update']);
-        Route::delete('/incentive-rules/{incentiveRule}', [\App\Http\Controllers\Api\V1\IncentiveRuleController::class, 'destroy']);
+        Route::get('/royalty-rules', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'index']);
+        Route::post('/royalty-rules', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'store']);
+        Route::put('/royalty-rules/{royaltyRule}', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'update']);
+        Route::delete('/royalty-rules/{royaltyRule}', [\App\Http\Controllers\Api\V1\RoyaltyRuleController::class, 'destroy']);
 
         Route::get('/product-ownerships', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'index']);
         Route::put('/product-ownerships/{productId}', [\App\Http\Controllers\Api\V1\ProductOwnershipController::class, 'update']);
@@ -156,7 +153,6 @@ Route::prefix('v1')->group(function () {
         Route::post('/distribution/snapshots', [\App\Http\Controllers\Api\V1\DistributionController::class, 'storeSnapshot']);
         Route::post('/distribution/snapshots/{snapshot}/payout', [\App\Http\Controllers\Api\V1\DistributionController::class, 'recordPayout']);
 
-        // Tools — read-only SQL console (admin only — enforced in controller)
         Route::get('/tools/tables', [\App\Http\Controllers\Api\V1\ToolsController::class, 'tables']);
         Route::get('/tools/tables/{table}/columns', [\App\Http\Controllers\Api\V1\ToolsController::class, 'columns'])
             ->where('table', '[A-Za-z0-9_]+');

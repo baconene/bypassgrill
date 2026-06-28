@@ -68,6 +68,41 @@ class ReportController extends Controller
         return response()->json($report);
     }
 
+    public function productDailySales(): JsonResponse
+    {
+        $this->checkPermission();
+
+        $productId = (int) request()->input('product_id');
+        $startDate = request()->input('start_date')
+            ? Carbon::parse(request()->input('start_date'), 'Asia/Manila')->startOfDay()
+            : Carbon::now('Asia/Manila')->subDays(29)->startOfDay();
+        $endDate = request()->input('end_date')
+            ? Carbon::parse(request()->input('end_date'), 'Asia/Manila')->endOfDay()
+            : Carbon::now('Asia/Manila')->endOfDay();
+
+        $rows = \App\Models\OrderItem::where('order_items.product_id', $productId)
+            ->whereBetween('order_items.created_at', [$startDate, $endDate])
+            ->selectRaw('DATE(order_items.created_at) as date, SUM(order_items.quantity) as qty, SUM(order_items.subtotal) as sales')
+            ->groupByRaw('DATE(order_items.created_at)')
+            ->orderByRaw('DATE(order_items.created_at)')
+            ->get()
+            ->keyBy('date');
+
+        $result = [];
+        $cursor = $startDate->copy()->startOfDay();
+        while ($cursor <= $endDate) {
+            $date     = $cursor->toDateString();
+            $result[] = [
+                'date'  => $date,
+                'qty'   => (int) ($rows[$date]?->qty   ?? 0),
+                'sales' => round((float) ($rows[$date]?->sales ?? 0), 2),
+            ];
+            $cursor->addDay();
+        }
+
+        return response()->json($result);
+    }
+
     public function inventoryValuation(): JsonResponse
     {
         $this->checkPermission();

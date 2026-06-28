@@ -1,5 +1,5 @@
-[Resource from github at repo://baconene/bypassgrill/sha/6d825cd133905129282a0f6c890777d22f45fb02/contents/resources/js/pages/ReportsPage.vue] <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+[Resource from github at repo://baconene/theboys/sha/211bce34bbe2d1d9feac064618dd09ac3e2d48cc/contents/resources/js/pages/ReportsPage.vue] <script setup lang="ts">
+import { ref, computed, watch, onMounted } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
@@ -442,12 +442,67 @@ const overdueBills = computed(() => bills.value.filter(b => b.status === 'overdu
 const dueSoonBills = computed(() => bills.value.filter(b => b.status === 'due_today' || b.status === 'upcoming'))
 
 const topProducts = computed(() =>
-    [...productSales.value].sort((a, b) => b.total_sales - a.total_sales).slice(0, 10)
+    [...productSales.value].sort((a, b) => b.total_sales - a.total_sales)
 )
 
 const totalProductSales = computed(() =>
     productSales.value.reduce((s, p) => s + Number(p.total_sales), 0)
 )
+
+// ── Per-product daily chart ────────────────────────────────────────────────────
+const expandedProducts  = ref<Record<number, boolean>>({})
+const productDailyData  = ref<Record<number, { loading: boolean; points: { date: string; qty: number; sales: number }[] }>>({})
+
+const fetchProductChart = async (productId: number) => {
+    if (productDailyData.value[productId]?.points?.length !== undefined && !productDailyData.value[productId]?.loading) return
+    productDailyData.value = { ...productDailyData.value, [productId]: { loading: true, points: [] } }
+    try {
+        const res = await api.get('/api/v1/reports/product-daily-sales', {
+            params: { product_id: productId, start_date: prodDateFrom.value, end_date: prodDateTo.value },
+        })
+        productDailyData.value = { ...productDailyData.value, [productId]: { loading: false, points: res.data } }
+    } catch {
+        productDailyData.value = { ...productDailyData.value, [productId]: { loading: false, points: [] } }
+    }
+}
+
+const toggleProduct = (id: number) => {
+    expandedProducts.value = { ...expandedProducts.value, [id]: !expandedProducts.value[id] }
+    if (expandedProducts.value[id]) fetchProductChart(id)
+}
+
+const setProductRange = async (preset: '7d' | '30d' | '90d' | 'ytd') => {
+    const today = new Date()
+    const fmt = (d: Date) => d.toISOString().slice(0, 10)
+    if (preset === '7d')       { const f = new Date(today); f.setDate(f.getDate() - 6);  prodDateFrom.value = fmt(f); prodDateTo.value = fmt(today) }
+    else if (preset === '30d') { const f = new Date(today); f.setDate(f.getDate() - 29); prodDateFrom.value = fmt(f); prodDateTo.value = fmt(today) }
+    else if (preset === '90d') { const f = new Date(today); f.setDate(f.getDate() - 89); prodDateFrom.value = fmt(f); prodDateTo.value = fmt(today) }
+    else                       { prodDateFrom.value = today.getFullYear() + '-01-01';     prodDateTo.value = fmt(today) }
+    productDailyData.value = {}
+    expandedProducts.value = {}
+    await generateReport()
+}
+
+const makeLinePath = (points: { sales: number }[]) => {
+    const W = 400, H = 72, pad = 8
+    const vals = points.map(p => p.sales)
+    const max = Math.max(...vals, 0.01)
+    const n = points.length
+    if (n < 2) return { path: '', area: '' }
+    const coords = vals.map((v, i) => ({
+        x: (i / (n - 1)) * W,
+        y: pad + (1 - v / max) * (H - pad * 2),
+    }))
+    const segs = coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' L ')
+    const path = `M ${segs}`
+    const area = `${path} L ${W},${H} L 0,${H} Z`
+    return { path, area }
+}
+
+watch([prodDateFrom, prodDateTo], () => {
+    productDailyData.value = {}
+    expandedProducts.value = {}
+})
 
 const chartTotals = computed(() => {
     const income = chartData.value.reduce((s, d) => s + d.income, 0)
@@ -1049,6 +1104,13 @@ onMounted(async () => {
 
                 <!-- Product sales date range -->
                 <template v-if="tab === 'products'">
+                    <div class="flex gap-1 w-full sm:contents">
+                        <button v-for="r in [['7d','7D'],['30d','30D'],['90d','90D'],['ytd','YTD']] as const"
+                            :key="r[0]" @click="setProductRange(r[0])"
+                            class="flex-1 sm:flex-none rounded-lg border px-3 py-2 text-xs font-semibold transition hover:bg-muted">
+                            {{ r[1] }}
+                        </button>
+                    </div>
                     <div class="flex gap-2 w-full sm:contents">
                         <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
                             <input v-model="prodDateFrom" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
@@ -2712,40 +2774,59 @@ onMounted(async () => {
 
                 <!-- Mobile cards -->
                 <div class="md:hidden divide-y">
-                    <div v-for="(item, i) in topProducts" :key="item.product_id"
-                        class="px-4 py-3 hover:bg-muted/20 transition-colors">
-                        <div class="flex items-start gap-3">
-                            <!-- Rank badge -->
-                            <div :class="['shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black',
-                                i === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                                i === 1 ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' :
-                                i === 2 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
-                                'bg-muted text-muted-foreground']">
-                                {{ i + 1 }}
-                            </div>
-                            <!-- Content -->
-                            <div class="flex-1 min-w-0">
-                                <!-- Row 1: name | qty | % -->
-                                <div class="flex items-center justify-between gap-2 mb-1.5">
-                                    <p class="font-semibold text-sm truncate">{{ item.product_name }}</p>
-                                    <div class="flex items-center gap-1.5 shrink-0">
-                                        <span class="text-xs bg-muted rounded-full px-2 py-0.5 font-medium tabular-nums">
-                                            ×{{ item.total_quantity }}
-                                        </span>
-                                        <span class="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5 font-semibold tabular-nums">
-                                            {{ totalProductSales > 0 ? ((Number(item.total_sales) / totalProductSales) * 100).toFixed(1) : '0.0' }}%
-                                        </span>
-                                    </div>
+                    <div v-for="(item, i) in topProducts" :key="item.product_id" class="transition-colors">
+                        <button class="w-full px-4 py-3 hover:bg-muted/20 text-left" @click="toggleProduct(item.product_id)">
+                            <div class="flex items-start gap-3">
+                                <!-- Rank badge -->
+                                <div :class="['shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black',
+                                    i === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                                    i === 1 ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' :
+                                    i === 2 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                                    'bg-muted text-muted-foreground']">
+                                    {{ i + 1 }}
                                 </div>
-                                <!-- Row 2: revenue | bar -->
-                                <div class="flex items-center gap-3">
-                                    <p class="text-sm font-bold text-green-600 tabular-nums shrink-0">{{ fmt(item.total_sales) }}</p>
-                                    <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                        <div class="h-full bg-primary rounded-full transition-all duration-500"
-                                            :style="{ width: topProducts[0]?.total_sales ? ((Number(item.total_sales) / Number(topProducts[0].total_sales)) * 100) + '%' : '0%' }" />
+                                <!-- Content -->
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center justify-between gap-2 mb-1.5">
+                                        <p class="font-semibold text-sm truncate">{{ item.product_name }}</p>
+                                        <div class="flex items-center gap-1.5 shrink-0">
+                                            <span class="text-xs bg-muted rounded-full px-2 py-0.5 font-medium tabular-nums">×{{ item.total_quantity }}</span>
+                                            <span class="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5 font-semibold tabular-nums">
+                                                {{ totalProductSales > 0 ? ((Number(item.total_sales) / totalProductSales) * 100).toFixed(1) : '0.0' }}%
+                                            </span>
+                                            <ChevronDown :class="['h-3.5 w-3.5 text-muted-foreground transition-transform', expandedProducts[item.product_id] ? 'rotate-180' : '']" />
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <p class="text-sm font-bold text-green-600 tabular-nums shrink-0">{{ fmt(item.total_sales) }}</p>
+                                        <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                            <div class="h-full bg-primary rounded-full transition-all duration-500"
+                                                :style="{ width: topProducts[0]?.total_sales ? ((Number(item.total_sales) / Number(topProducts[0].total_sales)) * 100) + '%' : '0%' }" />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                        </button>
+                        <!-- Collapsible chart -->
+                        <div v-if="expandedProducts[item.product_id]" class="px-4 pb-4 bg-muted/20">
+                            <div v-if="productDailyData[item.product_id]?.loading" class="py-4 text-center text-xs text-muted-foreground">Loading…</div>
+                            <template v-else-if="productDailyData[item.product_id]?.points?.length">
+                                <div class="flex justify-between text-[10px] text-muted-foreground mb-1">
+                                    <span>{{ productDailyData[item.product_id].points[0]?.date }}</span>
+                                    <span>{{ productDailyData[item.product_id].points.at(-1)?.date }}</span>
+                                </div>
+                                <svg :viewBox="`0 0 400 72`" class="w-full h-16" preserveAspectRatio="none">
+                                    <defs>
+                                        <linearGradient :id="`pg-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.3"/>
+                                            <stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>
+                                        </linearGradient>
+                                    </defs>
+                                    <path :d="makeLinePath(productDailyData[item.product_id].points).area" :fill="`url(#pg-${item.product_id})`" />
+                                    <path :d="makeLinePath(productDailyData[item.product_id].points).path" fill="none" stroke="hsl(var(--primary))" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                            </template>
+                            <div v-else class="py-4 text-center text-xs text-muted-foreground">No sales in this period</div>
                         </div>
                     </div>
                     <div v-if="topProducts.length === 0" class="px-4 py-8 text-center text-muted-foreground text-sm">
@@ -2758,34 +2839,61 @@ onMounted(async () => {
                     <table class="w-full text-sm">
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
-                                <th class="px-4 py-3 text-left">#</th>
+                                <th class="px-4 py-3 text-left w-8">#</th>
                                 <th class="px-4 py-3 text-left">Product</th>
                                 <th class="px-4 py-3 text-right">Qty Sold</th>
                                 <th class="px-4 py-3 text-right">Revenue</th>
                                 <th class="px-4 py-3 text-right">% of Sales</th>
                                 <th class="px-4 py-3 text-left">Share</th>
+                                <th class="px-2 py-3 w-8"></th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y">
-                            <tr v-for="(item, i) in topProducts" :key="item.product_id" class="hover:bg-muted/20">
-                                <td class="px-4 py-2 text-muted-foreground font-medium">{{ i + 1 }}</td>
-                                <td class="px-4 py-2 font-medium">{{ item.product_name }}</td>
-                                <td class="px-4 py-2 text-right tabular-nums">{{ item.total_quantity }}</td>
-                                <td class="px-4 py-2 text-right font-bold text-green-600 tabular-nums">{{ fmt(item.total_sales) }}</td>
-                                <td class="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                                    {{ totalProductSales > 0 ? ((Number(item.total_sales) / totalProductSales) * 100).toFixed(1) : '0.0' }}%
-                                </td>
-                                <td class="px-4 py-2 w-40">
-                                    <div class="flex items-center gap-2">
+                        <tbody>
+                            <template v-for="(item, i) in topProducts" :key="item.product_id">
+                                <tr class="border-t hover:bg-muted/20 cursor-pointer" @click="toggleProduct(item.product_id)">
+                                    <td class="px-4 py-2 text-muted-foreground font-medium">{{ i + 1 }}</td>
+                                    <td class="px-4 py-2 font-medium">{{ item.product_name }}</td>
+                                    <td class="px-4 py-2 text-right tabular-nums">{{ item.total_quantity }}</td>
+                                    <td class="px-4 py-2 text-right font-bold text-green-600 tabular-nums">{{ fmt(item.total_sales) }}</td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                                        {{ totalProductSales > 0 ? ((Number(item.total_sales) / totalProductSales) * 100).toFixed(1) : '0.0' }}%
+                                    </td>
+                                    <td class="px-4 py-2 w-40">
                                         <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                                             <div class="h-full bg-primary rounded-full"
                                                 :style="{ width: topProducts[0]?.total_sales ? ((Number(item.total_sales) / Number(topProducts[0].total_sales)) * 100) + '%' : '0%' }" />
                                         </div>
-                                    </div>
-                                </td>
-                            </tr>
+                                    </td>
+                                    <td class="px-2 py-2 text-center">
+                                        <ChevronDown :class="['h-4 w-4 text-muted-foreground transition-transform', expandedProducts[item.product_id] ? 'rotate-180' : '']" />
+                                    </td>
+                                </tr>
+                                <!-- Collapsible chart row -->
+                                <tr v-if="expandedProducts[item.product_id]" class="border-t bg-muted/20">
+                                    <td colspan="7" class="px-6 py-3">
+                                        <div v-if="productDailyData[item.product_id]?.loading" class="py-2 text-xs text-muted-foreground text-center">Loading…</div>
+                                        <template v-else-if="productDailyData[item.product_id]?.points?.length">
+                                            <div class="flex justify-between text-[10px] text-muted-foreground mb-1">
+                                                <span>{{ productDailyData[item.product_id].points[0]?.date }}</span>
+                                                <span>{{ productDailyData[item.product_id].points.at(-1)?.date }}</span>
+                                            </div>
+                                            <svg :viewBox="`0 0 400 72`" class="w-full h-20" preserveAspectRatio="none">
+                                                <defs>
+                                                    <linearGradient :id="`pgd-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.3"/>
+                                                        <stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>
+                                                    </linearGradient>
+                                                </defs>
+                                                <path :d="makeLinePath(productDailyData[item.product_id].points).area" :fill="`url(#pgd-${item.product_id})`" />
+                                                <path :d="makeLinePath(productDailyData[item.product_id].points).path" fill="none" stroke="hsl(var(--primary))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                            </svg>
+                                        </template>
+                                        <div v-else class="py-2 text-xs text-muted-foreground text-center">No sales in this period</div>
+                                    </td>
+                                </tr>
+                            </template>
                             <tr v-if="topProducts.length === 0">
-                                <td colspan="6" class="px-4 py-8 text-center text-muted-foreground">No data available for this period.</td>
+                                <td colspan="7" class="px-4 py-8 text-center text-muted-foreground">No data available for this period.</td>
                             </tr>
                         </tbody>
                     </table>
