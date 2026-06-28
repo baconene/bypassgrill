@@ -83,6 +83,8 @@ class OrderService
             $orderItem->calculateSubtotal();
             $orderItem->save();
 
+            $this->inventoryService->deductForOrder($orderItem);
+
             if (isset($itemData['modifiers']) && is_array($itemData['modifiers'])) {
                 foreach ($itemData['modifiers'] as $modifierId) {
                     \App\Models\OrderItemModifier::create([
@@ -107,11 +109,6 @@ class OrderService
             $order->update(['completed_at' => now()]);
 
             if ($previousStatus !== OrderStatus::COMPLETED->value) {
-                $order->load('items');
-                foreach ($order->items as $item) {
-                    $this->inventoryService->deductForOrder($item);
-                }
-
                 // Auto-print via HTTP bridge if configured
                 $printSettings = PrintServiceSetting::getSetting();
                 if ($printSettings->print_enabled && $printSettings->print_auto_print) {
@@ -133,6 +130,11 @@ class OrderService
     public function cancelOrder(Order $order, ?string $reason = null): Order
     {
         return DB::transaction(function () use ($order, $reason) {
+            $order->load('items');
+            foreach ($order->items as $item) {
+                $this->inventoryService->restoreForOrder($item);
+            }
+
             $order->items()->update(['status' => 'cancelled']);
             $order->update([
                 'status' => OrderStatus::CANCELLED->value,
