@@ -50,8 +50,8 @@ class ProfitDistributionService
             $distributable = round(max(0, $base), 2);
             $alloc         = $this->shares->allocate($distributable, $shareholderId);
 
-            // Incentive pool — computed independently, does not affect dividend/company split
-            $incentive = $this->incentive->compute($start, $end, $metrics, $profitBase);
+            // Incentive: sales mode uses direct product-sales attribution; profit mode uses pool rules
+            $incentive = $this->incentive->compute($start, $end, $metrics, $profitBase, $basis);
 
             return [
                 'basis'              => $basis,

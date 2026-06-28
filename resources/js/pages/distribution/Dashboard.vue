@@ -499,33 +499,59 @@ const tabs = [
                         </table>
                     </div>
 
-                    <!-- ── Sales Incentive ── -->
+                    <!-- ── Incentive (label + description differ by basis) ── -->
                     <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                         <div class="p-4 border-b">
                             <div class="flex items-center justify-between mb-0.5">
                                 <div class="flex items-center gap-2">
-                                    <h3 class="font-bold text-sm">Sales Incentive</h3>
+                                    <h3 class="font-bold text-sm">{{ result.basis === 'sales' ? 'Sales Incentive' : 'Product Ownership Incentive' }}</h3>
                                     <span class="rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2 py-0.5 text-xs font-semibold">{{ fmt(result.incentive?.total ?? 0) }}</span>
                                 </div>
                                 <button @click="subTab = 'incentives'" class="text-xs text-muted-foreground hover:text-foreground underline">Manage</button>
                             </div>
-                            <p class="text-xs text-muted-foreground">Product sales attributed to shareholders by ownership %. Unowned product sales go to the company.</p>
+                            <p class="text-xs text-muted-foreground">
+                                <template v-if="result.basis === 'sales'">Product sales attributed to shareholders by ownership %. Unowned product sales go to the company.</template>
+                                <template v-else>Distributed proportionally by product sales, then split by product ownership %.</template>
+                            </p>
                         </div>
 
-                        <!-- No product sales with owners -->
-                        <div v-if="!result.incentive?.by_product?.length" class="p-6 text-center">
+                        <!-- Profit mode: no rules configured -->
+                        <div v-if="result.basis === 'profit' && !result.incentive?.rules?.length" class="p-6 text-center">
+                            <Gift class="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                            <p class="text-sm text-muted-foreground">No active incentive rules.</p>
+                            <button @click="subTab = 'incentives'" class="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">Set up Incentive Rules</button>
+                        </div>
+
+                        <!-- Sales mode: no product sales in period -->
+                        <div v-else-if="result.basis === 'sales' && !result.incentive?.by_product?.length" class="p-6 text-center">
                             <Package class="h-8 w-8 text-muted-foreground mx-auto mb-2" />
                             <p class="text-sm text-muted-foreground">No product sales in this period.</p>
                         </div>
+
                         <template v-else>
+                            <!-- Profit mode: active rules summary -->
+                            <div v-if="result.basis === 'profit'" class="p-3 border-b space-y-1">
+                                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Active Rules</p>
+                                <div v-for="r in result.incentive.rules" :key="r.id" class="flex items-center justify-between text-sm">
+                                    <span class="text-muted-foreground text-xs">{{ r.name }} — {{ r.pool_type === 'fixed_amount' ? '₱' + r.rate : r.rate + '% of ' + poolTypeLabel(r.pool_type).replace('% of ', '') }}</span>
+                                    <span class="font-bold text-amber-600 text-xs">{{ fmt(r.pool_amount) }}</span>
+                                </div>
+                            </div>
+
                             <!-- Incentive pie chart -->
                             <div v-if="incentivePieData" class="p-4 border-b">
                                 <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Incentive Distribution</p>
                                 <apexchart type="pie" height="220" :options="incentivePieOptions" :series="incentivePieSeries" />
                             </div>
 
+                            <!-- No product breakdown when profit mode has rules but no sales -->
+                            <div v-if="!result.incentive.by_product?.length" class="p-6 text-center">
+                                <Package class="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                                <p class="text-sm text-muted-foreground">No product sales in this period.</p>
+                            </div>
+
                             <!-- Product breakdown (mobile) -->
-                            <div class="sm:hidden divide-y max-h-80 overflow-y-auto">
+                            <div v-else class="sm:hidden divide-y max-h-80 overflow-y-auto">
                                 <div v-for="p in result.incentive.by_product" :key="p.product_id" class="p-3 space-y-1.5">
                                     <div class="flex justify-between items-start">
                                         <span class="font-semibold text-sm leading-tight">{{ p.product_name }}</span>
@@ -533,7 +559,7 @@ const tabs = [
                                     </div>
                                     <div class="flex justify-between text-xs text-muted-foreground">
                                         <span>Sales: {{ fmt(p.sales_amount) }}</span>
-                                        <span v-if="p.contribution_pct">{{ p.contribution_pct }}% of owned sales</span>
+                                        <span v-if="p.contribution_pct">{{ p.contribution_pct }}% {{ result.basis === 'sales' ? 'of owned sales' : 'of pool' }}</span>
                                     </div>
                                     <div v-if="p.owners.length" class="space-y-0.5">
                                         <div v-for="o in p.owners" :key="o.shareholder_id" class="flex justify-between text-xs">
@@ -546,12 +572,12 @@ const tabs = [
                             </div>
 
                             <!-- Product breakdown (desktop) -->
-                            <div class="hidden sm:block overflow-x-auto max-h-80 overflow-y-auto">
+                            <div v-if="result.incentive.by_product?.length" class="hidden sm:block overflow-x-auto max-h-80 overflow-y-auto">
                                 <table class="w-full text-sm">
                                     <thead class="bg-muted/50 text-muted-foreground text-xs uppercase sticky top-0"><tr>
                                         <th class="px-3 py-2 text-left">Product</th>
                                         <th class="px-3 py-2 text-right">Sales</th>
-                                        <th class="px-3 py-2 text-right">% of Owned</th>
+                                        <th class="px-3 py-2 text-right">{{ result.basis === 'sales' ? '% of Owned' : 'Contrib %' }}</th>
                                         <th class="px-3 py-2 text-right">Incentive</th>
                                         <th class="px-3 py-2 text-left">Distribution</th>
                                     </tr></thead>
@@ -572,7 +598,7 @@ const tabs = [
 
                             <!-- Shareholder + company summary -->
                             <div v-if="result.incentive.by_shareholder?.length || result.incentive.company_retained > 0" class="border-t p-3 space-y-1.5">
-                                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sales Incentive Summary</p>
+                                <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{{ result.basis === 'sales' ? 'Sales Incentive Summary' : 'Incentive Summary' }}</p>
                                 <div v-for="s in result.incentive.by_shareholder" :key="s.shareholder_id" class="flex justify-between text-sm">
                                     <span class="text-muted-foreground">{{ s.name }}</span>
                                     <span class="font-bold text-blue-600">{{ fmt(s.incentive_amount) }}</span>
