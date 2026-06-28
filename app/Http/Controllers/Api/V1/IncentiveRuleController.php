@@ -41,7 +41,7 @@ class IncentiveRuleController extends Controller
     {
         return $request->validate([
             'name'                => 'required|string|max:160',
-            'pool_type'           => 'required|in:gross_sales_pct,gross_profit_pct,net_profit_pct,fixed_amount',
+            'pool_type'           => 'required|in:gross_sales_pct,gross_profit_pct,net_profit_pct,fixed_amount,product_sales_pct',
             'rate'                => 'required|numeric|min:0',
             'distribution_method' => 'required|in:by_sales,equal',
             'is_active'           => 'boolean',

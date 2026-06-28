@@ -198,8 +198,11 @@ const deleteIncentive = async (r: any) => {
 }
 
 const poolTypeLabel = (t: string) => ({
-    gross_sales_pct: '% of Gross Sales', gross_profit_pct: '% of Gross Profit',
-    net_profit_pct: '% of Net Profit', fixed_amount: 'Fixed ₱ Amount',
+    gross_sales_pct:    '% of Gross Sales',
+    gross_profit_pct:   '% of Gross Profit',
+    net_profit_pct:     '% of Net Profit',
+    fixed_amount:       'Fixed ₱ Amount',
+    product_sales_pct:  '% of Each Product\'s Sales',
 }[t] ?? t)
 
 const poolTypeUnit = (t: string) => t === 'fixed_amount' ? '₱' : '%'
@@ -515,26 +518,29 @@ const tabs = [
                             </p>
                         </div>
 
-                        <!-- Profit mode: no rules configured -->
-                        <div v-if="result.basis === 'profit' && !result.incentive?.rules?.length" class="p-6 text-center">
+                        <!-- No rules configured (both modes) -->
+                        <div v-if="!result.incentive?.rules?.length" class="p-6 text-center">
                             <Gift class="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                            <p class="text-sm text-muted-foreground">No active incentive rules.</p>
-                            <button @click="subTab = 'incentives'" class="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">Set up Incentive Rules</button>
-                        </div>
-
-                        <!-- Sales mode: no product sales in period -->
-                        <div v-else-if="result.basis === 'sales' && !result.incentive?.by_product?.length" class="p-6 text-center">
-                            <Package class="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                            <p class="text-sm text-muted-foreground">No product sales in this period.</p>
+                            <p class="text-sm text-muted-foreground">
+                                <template v-if="result.basis === 'sales'">No sales incentive rate configured.</template>
+                                <template v-else>No active incentive rules.</template>
+                            </p>
+                            <button @click="subTab = 'incentives'" class="mt-3 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">
+                                {{ result.basis === 'sales' ? 'Set up Sales Incentive Rate' : 'Set up Incentive Rules' }}
+                            </button>
                         </div>
 
                         <template v-else>
-                            <!-- Profit mode: active rules summary -->
-                            <div v-if="result.basis === 'profit'" class="p-3 border-b space-y-1">
+                            <!-- Active rules summary -->
+                            <div class="p-3 border-b space-y-1">
                                 <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Active Rules</p>
                                 <div v-for="r in result.incentive.rules" :key="r.id" class="flex items-center justify-between text-sm">
-                                    <span class="text-muted-foreground text-xs">{{ r.name }} — {{ r.pool_type === 'fixed_amount' ? '₱' + r.rate : r.rate + '% of ' + poolTypeLabel(r.pool_type).replace('% of ', '') }}</span>
-                                    <span class="font-bold text-amber-600 text-xs">{{ fmt(r.pool_amount) }}</span>
+                                    <span class="text-muted-foreground text-xs">{{ r.name }}</span>
+                                    <span class="font-bold text-amber-600 text-xs">
+                                        <template v-if="r.pool_type === 'product_sales_pct'">{{ r.rate }}% per product</template>
+                                        <template v-else-if="r.pool_type === 'fixed_amount'">₱{{ r.rate }} → {{ fmt(r.pool_amount) }}</template>
+                                        <template v-else>{{ r.rate }}% → {{ fmt(r.pool_amount) }}</template>
+                                    </span>
                                 </div>
                             </div>
 
@@ -732,10 +738,15 @@ const tabs = [
                     <div class="lg:col-span-2"><label class="text-xs text-muted-foreground block mb-1">Rule Name *</label><input v-model="iForm.name" placeholder="e.g. Monthly Product Incentive" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
                     <div><label class="text-xs text-muted-foreground block mb-1">Pool Type</label>
                         <select v-model="iForm.pool_type" class="w-full rounded-lg border bg-background px-3 py-2 text-sm">
-                            <option value="gross_sales_pct">% of Gross Sales</option>
-                            <option value="gross_profit_pct">% of Gross Profit</option>
-                            <option value="net_profit_pct">% of Net Profit</option>
-                            <option value="fixed_amount">Fixed ₱ Amount</option>
+                            <optgroup label="Sales Mode">
+                                <option value="product_sales_pct">% of Each Product's Sales</option>
+                            </optgroup>
+                            <optgroup label="Profit Mode">
+                                <option value="gross_sales_pct">% of Gross Sales</option>
+                                <option value="gross_profit_pct">% of Gross Profit</option>
+                                <option value="net_profit_pct">% of Net Profit</option>
+                                <option value="fixed_amount">Fixed ₱ Amount</option>
+                            </optgroup>
                         </select></div>
                     <div><label class="text-xs text-muted-foreground block mb-1">Rate ({{ poolTypeUnit(iForm.pool_type) }}) *</label>
                         <input v-model="iForm.rate" type="number" step="0.01" :placeholder="iForm.pool_type === 'fixed_amount' ? '5000' : '2.0'" class="w-full rounded-lg border bg-background px-3 py-2 text-sm" /></div>
