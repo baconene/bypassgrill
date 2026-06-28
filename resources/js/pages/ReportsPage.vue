@@ -461,6 +461,7 @@ const fetchProductChart = async (productId: number) => {
             params: { product_id: productId, start_date: prodDateFrom.value, end_date: prodDateTo.value },
         })
         productDailyData.value = { ...productDailyData.value, [productId]: { loading: false, points: res.data } }
+        productLineData.value = { ...productLineData.value, [productId]: makeLineData(res.data) }
     } catch {
         productDailyData.value = { ...productDailyData.value, [productId]: { loading: false, points: [] } }
     }
@@ -480,28 +481,52 @@ const setProductRange = async (preset: '7d' | '30d' | '90d' | 'ytd') => {
     else                       { prodDateFrom.value = today.getFullYear() + '-01-01';     prodDateTo.value = fmt(today) }
     productDailyData.value = {}
     expandedProducts.value = {}
+    productLineData.value = {}
     await generateReport()
 }
 
-const makeLinePath = (points: { sales: number }[]) => {
-    const W = 400, H = 72, pad = 8
+const makeLineData = (points: { date: string; qty: number; sales: number }[]) => {
+    const W = 400, H = 80, padT = 10, padB = 10
     const vals = points.map(p => p.sales)
     const max = Math.max(...vals, 0.01)
     const n = points.length
-    if (n < 2) return { path: '', area: '' }
-    const coords = vals.map((v, i) => ({
-        x: (i / (n - 1)) * W,
-        y: pad + (1 - v / max) * (H - pad * 2),
+    if (n === 0) return { path: '', area: '', coords: [] as { x: number; y: number }[], max }
+    const coords = points.map((_, i) => ({
+        x: n > 1 ? (i / (n - 1)) * W : W / 2,
+        y: padT + (1 - vals[i] / max) * (H - padT - padB),
     }))
+    if (n < 2) return { path: `M ${coords[0].x.toFixed(1)},${coords[0].y.toFixed(1)}`, area: '', coords, max }
     const segs = coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' L ')
     const path = `M ${segs}`
-    const area = `${path} L ${W},${H} L 0,${H} Z`
-    return { path, area }
+    const area = `${path} L ${W},${H - padB} L 0,${H - padB} Z`
+    return { path, area, coords, max }
+}
+
+const productLineData = ref<Record<number, { path: string; area: string; coords: { x: number; y: number }[]; max: number }>>({})
+
+const prodChartTooltip = ref<{
+    productId: number
+    idx: number
+    point: { date: string; qty: number; sales: number }
+    pct: number
+} | null>(null)
+
+const onProdChartHover = (e: MouseEvent, productId: number) => {
+    const points = productDailyData.value[productId]?.points
+    if (!points?.length) return
+    const rect = (e.currentTarget as SVGElement).getBoundingClientRect()
+    const relX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    const idx = Math.max(0, Math.min(points.length - 1, Math.round(relX * (points.length - 1))))
+    prodChartTooltip.value = {
+        productId, idx, point: points[idx],
+        pct: points.length > 1 ? idx / (points.length - 1) : 0.5,
+    }
 }
 
 watch([prodDateFrom, prodDateTo], () => {
     productDailyData.value = {}
     expandedProducts.value = {}
+    productLineData.value = {}
 })
 
 const chartTotals = computed(() => {
@@ -2815,16 +2840,33 @@ onMounted(async () => {
                                     <span>{{ productDailyData[item.product_id].points[0]?.date }}</span>
                                     <span>{{ productDailyData[item.product_id].points.at(-1)?.date }}</span>
                                 </div>
-                                <svg :viewBox="`0 0 400 72`" class="w-full h-16" preserveAspectRatio="none">
-                                    <defs>
-                                        <linearGradient :id="`pg-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.3"/>
-                                            <stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>
-                                        </linearGradient>
-                                    </defs>
-                                    <path :d="makeLinePath(productDailyData[item.product_id].points).area" :fill="`url(#pg-${item.product_id})`" />
-                                    <path :d="makeLinePath(productDailyData[item.product_id].points).path" fill="none" stroke="hsl(var(--primary))" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-                                </svg>
+                                <div class="relative pt-4" @mouseleave="prodChartTooltip = null">
+                                    <div class="absolute top-0 right-0 text-[9px] text-muted-foreground tabular-nums leading-none">{{ fmtShort(productLineData[item.product_id]?.max ?? 0) }}</div>
+                                    <svg viewBox="0 0 400 80" class="w-full h-20" preserveAspectRatio="none" style="cursor:crosshair"
+                                         @mousemove="onProdChartHover($event, item.product_id)">
+                                        <defs>
+                                            <linearGradient :id="`pg-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.3"/>
+                                                <stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>
+                                            </linearGradient>
+                                        </defs>
+                                        <line x1="0" y1="70" x2="400" y2="70" stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
+                                        <line x1="0" y1="40" x2="400" y2="40" stroke="currentColor" stroke-opacity="0.07" stroke-width="1" stroke-dasharray="4,3"/>
+                                        <path v-if="productLineData[item.product_id]?.area" :d="productLineData[item.product_id].area" :fill="`url(#pg-${item.product_id})`" />
+                                        <path v-if="productLineData[item.product_id]?.path" :d="productLineData[item.product_id].path" fill="none" stroke="hsl(var(--primary))" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                                        <template v-if="prodChartTooltip?.productId === item.product_id && productLineData[item.product_id]?.coords[prodChartTooltip.idx]">
+                                            <line :x1="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y1="0" :x2="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y2="70" stroke="currentColor" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3,2"/>
+                                            <circle :cx="productLineData[item.product_id].coords[prodChartTooltip.idx].x" :cy="productLineData[item.product_id].coords[prodChartTooltip.idx].y" r="3.5" fill="hsl(var(--primary))" stroke="hsl(var(--card))" stroke-width="2"/>
+                                        </template>
+                                    </svg>
+                                    <div v-if="prodChartTooltip?.productId === item.product_id"
+                                         class="absolute bottom-full mb-1 bg-popover text-popover-foreground border rounded-md px-2 py-1 text-xs shadow-md pointer-events-none whitespace-nowrap z-20"
+                                         :style="{ left: `${(prodChartTooltip.pct * 100).toFixed(1)}%`, transform: 'translateX(-50%)' }">
+                                        <div class="font-medium text-muted-foreground">{{ prodChartTooltip.point.date }}</div>
+                                        <div class="font-bold text-primary">{{ fmt(prodChartTooltip.point.sales) }}</div>
+                                        <div class="text-muted-foreground">×{{ prodChartTooltip.point.qty }} sold</div>
+                                    </div>
+                                </div>
                             </template>
                             <div v-else class="py-4 text-center text-xs text-muted-foreground">No sales in this period</div>
                         </div>
@@ -2877,16 +2919,33 @@ onMounted(async () => {
                                                 <span>{{ productDailyData[item.product_id].points[0]?.date }}</span>
                                                 <span>{{ productDailyData[item.product_id].points.at(-1)?.date }}</span>
                                             </div>
-                                            <svg :viewBox="`0 0 400 72`" class="w-full h-20" preserveAspectRatio="none">
-                                                <defs>
-                                                    <linearGradient :id="`pgd-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.3"/>
-                                                        <stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>
-                                                    </linearGradient>
-                                                </defs>
-                                                <path :d="makeLinePath(productDailyData[item.product_id].points).area" :fill="`url(#pgd-${item.product_id})`" />
-                                                <path :d="makeLinePath(productDailyData[item.product_id].points).path" fill="none" stroke="hsl(var(--primary))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                                            </svg>
+                                            <div class="relative pt-4" @mouseleave="prodChartTooltip = null">
+                                                <div class="absolute top-0 right-0 text-[9px] text-muted-foreground tabular-nums leading-none">{{ fmtShort(productLineData[item.product_id]?.max ?? 0) }}</div>
+                                                <svg viewBox="0 0 400 80" class="w-full h-20" preserveAspectRatio="none" style="cursor:crosshair"
+                                                     @mousemove="onProdChartHover($event, item.product_id)">
+                                                    <defs>
+                                                        <linearGradient :id="`pgd-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.3"/>
+                                                            <stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>
+                                                        </linearGradient>
+                                                    </defs>
+                                                    <line x1="0" y1="70" x2="400" y2="70" stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
+                                                    <line x1="0" y1="40" x2="400" y2="40" stroke="currentColor" stroke-opacity="0.07" stroke-width="1" stroke-dasharray="4,3"/>
+                                                    <path v-if="productLineData[item.product_id]?.area" :d="productLineData[item.product_id].area" :fill="`url(#pgd-${item.product_id})`" />
+                                                    <path v-if="productLineData[item.product_id]?.path" :d="productLineData[item.product_id].path" fill="none" stroke="hsl(var(--primary))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                                    <template v-if="prodChartTooltip?.productId === item.product_id && productLineData[item.product_id]?.coords[prodChartTooltip.idx]">
+                                                        <line :x1="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y1="0" :x2="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y2="70" stroke="currentColor" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3,2"/>
+                                                        <circle :cx="productLineData[item.product_id].coords[prodChartTooltip.idx].x" :cy="productLineData[item.product_id].coords[prodChartTooltip.idx].y" r="3.5" fill="hsl(var(--primary))" stroke="hsl(var(--card))" stroke-width="2"/>
+                                                    </template>
+                                                </svg>
+                                                <div v-if="prodChartTooltip?.productId === item.product_id"
+                                                     class="absolute bottom-full mb-1 bg-popover text-popover-foreground border rounded-md px-2 py-1 text-xs shadow-md pointer-events-none whitespace-nowrap z-20"
+                                                     :style="{ left: `${(prodChartTooltip.pct * 100).toFixed(1)}%`, transform: 'translateX(-50%)' }">
+                                                    <div class="font-medium text-muted-foreground">{{ prodChartTooltip.point.date }}</div>
+                                                    <div class="font-bold text-primary">{{ fmt(prodChartTooltip.point.sales) }}</div>
+                                                    <div class="text-muted-foreground">×{{ prodChartTooltip.point.qty }} sold</div>
+                                                </div>
+                                            </div>
                                         </template>
                                         <div v-else class="py-2 text-xs text-muted-foreground text-center">No sales in this period</div>
                                     </td>
