@@ -139,6 +139,43 @@ class InventoryService
         return null;
     }
 
+    /**
+     * Restore ingredients consumed by an order item (called on cancellation).
+     */
+    public function restoreForOrder(OrderItem $orderItem): void
+    {
+        $product = $orderItem->product;
+        $recipes = $product->recipes()->with('ingredient')->get();
+
+        $order = Order::find($orderItem->order_id);
+        $orderTypeLabel = match($order?->order_type) {
+            'dine_in'  => 'Dine In',
+            'takeout'  => 'Takeout',
+            'delivery' => 'Delivery',
+            default    => $order?->order_type ?? 'Order',
+        };
+        $tableInfo = $order?->table_number ? " · Table {$order->table_number}" : '';
+        $notes = "Cancelled Order #{$orderItem->order_id} · {$orderTypeLabel}{$tableInfo} · {$product->name} ×{$orderItem->quantity}";
+
+        foreach ($recipes as $recipe) {
+            $ingredient = $recipe->ingredient;
+
+            if (! $ingredient || ! $ingredient->track_inventory) {
+                continue;
+            }
+
+            $quantity = (float) $recipe->quantity * (int) $orderItem->quantity;
+
+            $this->recordTransaction(
+                $ingredient,
+                $quantity,
+                InventoryTransactionType::STOCK_IN,
+                'order_' . $orderItem->order_id . '_cancel',
+                $notes,
+            );
+        }
+    }
+
     public function getLowStockItems()
     {
         return Ingredient::whereColumn('current_quantity', '<=', 'min_quantity')
