@@ -70,11 +70,11 @@ type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'product
 const tab = ref<Tab>('orders')
 const loading = ref(false)
 
-const tabs: { key: Tab; label: string }[] = [
+const tabs: { key: Tab; label: string; hidden?: boolean }[] = [
     { key: 'orders',    label: 'Orders' },
     { key: 'analytics', label: 'Trend Analytics' },
     { key: 'inventory', label: 'Inventory' },
-    { key: 'financial', label: 'Financial' },
+    { key: 'financial', label: 'Financial', hidden: true },
     { key: 'daily',     label: 'Daily Sales' },
     { key: 'monthly',   label: 'Monthly Sales' },
     { key: 'products',  label: 'Product Sales' },
@@ -1037,7 +1037,7 @@ onMounted(async () => {
         <div class="overflow-x-auto rounded-xl border bg-card shadow-sm scrollbar-none">
             <div class="flex gap-1 p-1.5 w-max">
                 <button
-                    v-for="t in tabs" :key="t.key"
+                    v-for="t in tabs.filter(t => !t.hidden)" :key="t.key"
                     @click="switchTab(t.key)"
                     :class="[
                         'rounded-lg px-4 py-2 text-sm font-medium transition whitespace-nowrap',
@@ -2842,21 +2842,21 @@ onMounted(async () => {
                                 </div>
                                 <div class="relative pt-4" @mouseleave="prodChartTooltip = null">
                                     <div class="absolute top-0 right-0 text-[9px] text-muted-foreground tabular-nums leading-none">{{ fmtShort(productLineData[item.product_id]?.max ?? 0) }}</div>
-                                    <svg viewBox="0 0 400 80" class="w-full h-20" preserveAspectRatio="none" style="cursor:crosshair"
+                                    <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500 dark:text-emerald-400" preserveAspectRatio="none" style="cursor:crosshair"
                                          @mousemove="onProdChartHover($event, item.product_id)">
                                         <defs>
                                             <linearGradient :id="`pg-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.3"/>
-                                                <stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>
+                                                <stop offset="0%" stop-color="currentColor" stop-opacity="0.4"/>
+                                                <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
                                             </linearGradient>
                                         </defs>
-                                        <line x1="0" y1="70" x2="400" y2="70" stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
-                                        <line x1="0" y1="40" x2="400" y2="40" stroke="currentColor" stroke-opacity="0.07" stroke-width="1" stroke-dasharray="4,3"/>
+                                        <line x1="0" y1="70" x2="400" y2="70" stroke="currentColor" stroke-opacity="0.2" stroke-width="1"/>
+                                        <line x1="0" y1="40" x2="400" y2="40" stroke="currentColor" stroke-opacity="0.1" stroke-width="1" stroke-dasharray="4,3"/>
                                         <path v-if="productLineData[item.product_id]?.area" :d="productLineData[item.product_id].area" :fill="`url(#pg-${item.product_id})`" />
-                                        <path v-if="productLineData[item.product_id]?.path" :d="productLineData[item.product_id].path" fill="none" stroke="hsl(var(--primary))" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                                        <path v-if="productLineData[item.product_id]?.path" :d="productLineData[item.product_id].path" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
                                         <template v-if="prodChartTooltip?.productId === item.product_id && productLineData[item.product_id]?.coords[prodChartTooltip.idx]">
-                                            <line :x1="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y1="0" :x2="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y2="70" stroke="currentColor" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3,2"/>
-                                            <circle :cx="productLineData[item.product_id].coords[prodChartTooltip.idx].x" :cy="productLineData[item.product_id].coords[prodChartTooltip.idx].y" r="3.5" fill="hsl(var(--primary))" stroke="hsl(var(--card))" stroke-width="2"/>
+                                            <line :x1="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y1="0" :x2="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y2="70" stroke="currentColor" stroke-opacity="0.3" stroke-width="1" stroke-dasharray="3,2"/>
+                                            <circle :cx="productLineData[item.product_id].coords[prodChartTooltip.idx].x" :cy="productLineData[item.product_id].coords[prodChartTooltip.idx].y" r="3.5" fill="currentColor" stroke="hsl(var(--card))" stroke-width="2"/>
                                         </template>
                                     </svg>
                                     <div v-if="prodChartTooltip?.productId === item.product_id"
@@ -2921,21 +2921,21 @@ onMounted(async () => {
                                             </div>
                                             <div class="relative pt-4" @mouseleave="prodChartTooltip = null">
                                                 <div class="absolute top-0 right-0 text-[9px] text-muted-foreground tabular-nums leading-none">{{ fmtShort(productLineData[item.product_id]?.max ?? 0) }}</div>
-                                                <svg viewBox="0 0 400 80" class="w-full h-20" preserveAspectRatio="none" style="cursor:crosshair"
+                                                <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500 dark:text-emerald-400" preserveAspectRatio="none" style="cursor:crosshair"
                                                      @mousemove="onProdChartHover($event, item.product_id)">
                                                     <defs>
                                                         <linearGradient :id="`pgd-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
-                                                            <stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.3"/>
-                                                            <stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>
+                                                            <stop offset="0%" stop-color="currentColor" stop-opacity="0.4"/>
+                                                            <stop offset="100%" stop-color="currentColor" stop-opacity="0"/>
                                                         </linearGradient>
                                                     </defs>
-                                                    <line x1="0" y1="70" x2="400" y2="70" stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
-                                                    <line x1="0" y1="40" x2="400" y2="40" stroke="currentColor" stroke-opacity="0.07" stroke-width="1" stroke-dasharray="4,3"/>
+                                                    <line x1="0" y1="70" x2="400" y2="70" stroke="currentColor" stroke-opacity="0.2" stroke-width="1"/>
+                                                    <line x1="0" y1="40" x2="400" y2="40" stroke="currentColor" stroke-opacity="0.1" stroke-width="1" stroke-dasharray="4,3"/>
                                                     <path v-if="productLineData[item.product_id]?.area" :d="productLineData[item.product_id].area" :fill="`url(#pgd-${item.product_id})`" />
-                                                    <path v-if="productLineData[item.product_id]?.path" :d="productLineData[item.product_id].path" fill="none" stroke="hsl(var(--primary))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                                    <path v-if="productLineData[item.product_id]?.path" :d="productLineData[item.product_id].path" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                                                     <template v-if="prodChartTooltip?.productId === item.product_id && productLineData[item.product_id]?.coords[prodChartTooltip.idx]">
-                                                        <line :x1="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y1="0" :x2="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y2="70" stroke="currentColor" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3,2"/>
-                                                        <circle :cx="productLineData[item.product_id].coords[prodChartTooltip.idx].x" :cy="productLineData[item.product_id].coords[prodChartTooltip.idx].y" r="3.5" fill="hsl(var(--primary))" stroke="hsl(var(--card))" stroke-width="2"/>
+                                                        <line :x1="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y1="0" :x2="productLineData[item.product_id].coords[prodChartTooltip.idx].x" y2="70" stroke="currentColor" stroke-opacity="0.3" stroke-width="1" stroke-dasharray="3,2"/>
+                                                        <circle :cx="productLineData[item.product_id].coords[prodChartTooltip.idx].x" :cy="productLineData[item.product_id].coords[prodChartTooltip.idx].y" r="3.5" fill="currentColor" stroke="hsl(var(--card))" stroke-width="2"/>
                                                     </template>
                                                 </svg>
                                                 <div v-if="prodChartTooltip?.productId === item.product_id"
