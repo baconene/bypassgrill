@@ -42,8 +42,8 @@ class ProfitDistributionService
                 } catch (\Throwable) {
                     $detail = $zeroDetail;
                 }
-                $base      = $salesBase;
-                $baseLabel = 'Net Sales';
+                $base      = $detail['net_profit'];
+                $baseLabel = $scoped ? 'Gross Profit (scope)' : 'Net Profit';
             }
 
             $profitBase    = $detail['net_profit'];
