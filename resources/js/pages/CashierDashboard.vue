@@ -326,17 +326,28 @@ const skipPayment = () => {
     paymentDone.value = true
 }
 
-// Close the payment modal without finalizing — the order stays as a pending
-// payment (already saved). Cart is cleared; reopen later via Pending Payments → Modify.
+// Go back to the cart so the cashier can add more items before taking payment.
+// Switches the cart into modify/update mode so submitting will PUT to the existing order.
 const holdOrder = () => {
     const o = pendingOrder.value
-    const queueOrId = o?._offlineQueue ?? o?.queue_number ?? o?.id
-    toast.info(`Order #${queueOrId} held — find it under Pending Payments.`)
-    cartStore.clear()
+    if (!o) return
+
+    // Enter modify mode against the already-saved order
+    cartStore.editingOrderId = o.id || cartStore.editingOrderId
+    if (o.order_type) cartStore.orderType = o.order_type
+    if (o.table_number !== undefined) cartStore.tableNumber = o.table_number ?? null
+    if (o.customer_name !== undefined) cartStore.customerName = o.customer_name ?? ''
+    if (o.customer_contact !== undefined) cartStore.customerContact = o.customer_contact ?? ''
+    if (o.customer_address !== undefined) cartStore.customerAddress = o.customer_address ?? ''
+
     paymentOpen.value = false
     pendingOrder.value = null
     paymentDone.value = false
     completedOrder.value = null
+    cartOpen.value = true
+
+    const queueOrId = o._offlineQueue ?? o.queue_number ?? o.id
+    toast.info(`Add items to the cart, then press "Update Order" to continue with #${queueOrId}.`)
 }
 
 // Load a pending order back into the cart so the cashier can add/remove items
