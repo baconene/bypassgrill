@@ -453,9 +453,15 @@ const tabs = [
                 </div>
 
                 <!-- Flow KPIs -->
-                <div class="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">{{ result.base_label }}</p><p class="text-xl font-black mt-1">{{ fmt(result.base_amount) }}</p></div>
-                    <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Distributable</p><p class="text-xl font-black mt-1 text-primary">{{ fmt(result.distributable) }}</p></div>
+                    <template v-if="result.basis === 'sales' && (result.incentive_pool ?? 0) > 0">
+                        <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Incentive Pool</p><p class="text-xl font-black mt-1 text-amber-600">{{ fmt(result.incentive_pool) }}</p></div>
+                        <div class="rounded-xl border bg-card p-4 shadow-sm"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Dividend Base</p><p class="text-xl font-black mt-1 text-primary">{{ fmt(result.distributable) }}</p></div>
+                    </template>
+                    <template v-else>
+                        <div class="rounded-xl border bg-card p-4 shadow-sm col-span-1"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Distributable</p><p class="text-xl font-black mt-1 text-primary">{{ fmt(result.distributable) }}</p></div>
+                    </template>
                     <div class="rounded-xl border bg-card p-4 shadow-sm col-span-2 lg:col-span-1"><p class="text-[10px] uppercase tracking-wide text-muted-foreground">Company ({{ result.company_percentage }}%)</p><p class="text-xl font-black mt-1 text-emerald-600">{{ fmt(result.company_amount) }}</p></div>
                 </div>
 

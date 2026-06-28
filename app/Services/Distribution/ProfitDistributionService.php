@@ -46,12 +46,17 @@ class ProfitDistributionService
                 $baseLabel = $scoped ? 'Gross Profit (scope)' : 'Net Profit';
             }
 
-            $profitBase    = $detail['net_profit'];
-            $distributable = round(max(0, $base), 2);
-            $alloc         = $this->shares->allocate($distributable, $shareholderId);
+            $profitBase = $detail['net_profit'];
 
-            // Incentive: sales mode uses direct product-sales attribution; profit mode uses pool rules
+            // Compute incentive first — in sales mode the incentive pool is carved from net profit,
+            // so the dividend base must be reduced by the incentive total.
             $incentive = $this->incentive->compute($start, $end, $metrics, $profitBase, $basis);
+
+            $dividendBase  = $basis === 'sales'
+                ? round(max(0, $base - $incentive['total']), 2)
+                : round(max(0, $base), 2);
+            $distributable = $dividendBase;
+            $alloc         = $this->shares->allocate($distributable, $shareholderId);
 
             return [
                 'basis'              => $basis,
@@ -59,6 +64,7 @@ class ProfitDistributionService
                 'range'              => ['start' => $start, 'end' => $end],
                 'metrics'            => $metrics,
                 'base_amount'        => $base,
+                'incentive_pool'     => $incentive['total'],
                 'distributable'      => $distributable,
                 'members'            => $alloc['members'],
                 'members_total'      => $alloc['members_total'],

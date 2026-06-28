@@ -15,13 +15,14 @@ class IncentivePoolService
         [$from, $to] = $this->bounds($start, $end);
 
         return $basis === 'sales'
-            ? $this->computeFromProductSales($start, $end, $from, $to)
+            ? $this->computeFromProductSales($start, $end, $netProfit, $from, $to)
             : $this->computeFromPool($start, $end, $metrics, $netProfit, $from, $to);
     }
 
-    // ── Sales mode: rate × each product's sales, split by ownership ───────────
+    // ── Sales mode: pool = rate% × net profit, distributed by product sales × ownership ──
+    // This keeps the total of (dividend + incentive + company) == net profit.
 
-    private function computeFromProductSales(string $start, string $end, $from, $to): array
+    private function computeFromProductSales(string $start, string $end, float $netProfit, $from, $to): array
     {
         $rules = IncentiveRule::effectiveDuring($start, $end)
             ->where('pool_type', 'product_sales_pct')
@@ -32,117 +33,30 @@ class IncentivePoolService
             return ['total' => 0.0, 'rules' => [], 'by_product' => [], 'by_shareholder' => [], 'company_retained' => 0.0];
         }
 
-        $totalRate = (float) $rules->sum('rate');  // e.g. 5.0 for 5%
+        $totalRate  = (float) $rules->sum('rate');
+        $totalPool  = round(max(0, $netProfit) * $totalRate / 100, 2);
 
         $ruleResults = $rules->map(fn ($r) => [
             'id'          => $r->id,
             'name'        => $r->name,
             'pool_type'   => $r->pool_type,
             'rate'        => (float) $r->rate,
-            'pool_amount' => null,
+            'pool_amount' => round(max(0, $netProfit) * $r->rate / 100, 2),
         ])->all();
 
-        $productSalesRows = DB::table('order_items')
-            ->join('orders', 'orders.id', '=', 'order_items.order_id')
-            ->join('products', 'products.id', '=', 'order_items.product_id')
-            ->where('orders.payment_status', 'paid')
-            ->whereBetween('orders.created_at', [$from, $to])
-            ->groupBy('products.id', 'products.name')
-            ->selectRaw('products.id as product_id, products.name as product_name, COALESCE(SUM(order_items.subtotal), 0) as sales_amount')
-            ->get();
-
-        if ($productSalesRows->isEmpty()) {
+        if ($totalPool <= 0) {
             return ['total' => 0.0, 'rules' => $ruleResults, 'by_product' => [], 'by_shareholder' => [], 'company_retained' => 0.0];
         }
 
-        $allOwnerships = ProductOwnership::with('shareholder:id,name')
-            ->whereIn('product_id', $productSalesRows->pluck('product_id'))
-            ->get()
-            ->groupBy('product_id');
-
-        $shareholderTotals = [];
-        $companyRetained   = 0.0;
-        $totalOwnedSales   = 0.0;
-        $byProduct         = [];
-
-        foreach ($productSalesRows as $row) {
-            $sales            = (float) $row->sales_amount;
-            $productId        = (int) $row->product_id;
-            $productIncentiveTotal = round($sales * $totalRate / 100, 2);
-            $ownerships       = $allOwnerships->get($productId);
-
-            if (! $ownerships || $ownerships->isEmpty()) {
-                $companyRetained = round($companyRetained + $productIncentiveTotal, 2);
-                $byProduct[] = [
-                    'product_id'        => $productId,
-                    'product_name'      => $row->product_name,
-                    'sales_amount'      => round($sales, 2),
-                    'contribution_pct'  => 0.0,
-                    'product_incentive' => $productIncentiveTotal,
-                    'company_retained'  => $productIncentiveTotal,
-                    'owners'            => [],
-                ];
-            } else {
-                $owners           = [];
-                $productIncentive = 0.0;
-                foreach ($ownerships as $ownership) {
-                    $amount = round($productIncentiveTotal * $ownership->ownership_percentage / 100, 2);
-                    $sid    = (int) $ownership->shareholder_id;
-                    $shareholderTotals[$sid] = round(($shareholderTotals[$sid] ?? 0.0) + $amount, 2);
-                    $productIncentive        = round($productIncentive + $amount, 2);
-                    $owners[] = [
-                        'shareholder_id' => $sid,
-                        'name'           => $ownership->shareholder->name,
-                        'ownership_pct'  => (float) $ownership->ownership_percentage,
-                        'amount'         => $amount,
-                    ];
-                }
-                $totalOwnedSales = round($totalOwnedSales + $sales, 2);
-                $byProduct[] = [
-                    'product_id'        => $productId,
-                    'product_name'      => $row->product_name,
-                    'sales_amount'      => round($sales, 2),
-                    'contribution_pct'  => 0.0,
-                    'product_incentive' => $productIncentive,
-                    'company_retained'  => 0.0,
-                    'owners'            => $owners,
-                ];
-            }
-        }
-
-        if ($totalOwnedSales > 0) {
-            foreach ($byProduct as &$p) {
-                if ($p['company_retained'] === 0.0) {
-                    $p['contribution_pct'] = round($p['sales_amount'] / $totalOwnedSales * 100, 2);
-                }
-            }
-            unset($p);
-        }
-
-        usort($byProduct, fn ($a, $b) => $b['sales_amount'] <=> $a['sales_amount']);
-
-        $byShareholder = [];
-        if (! empty($shareholderTotals)) {
-            $names = Shareholder::whereIn('id', array_keys($shareholderTotals))
-                ->get(['id', 'name'])
-                ->pluck('name', 'id');
-
-            foreach ($shareholderTotals as $id => $amount) {
-                $byShareholder[] = [
-                    'shareholder_id'   => $id,
-                    'name'             => $names[$id] ?? '—',
-                    'incentive_amount' => $amount,
-                ];
-            }
-            usort($byShareholder, fn ($a, $b) => $b['incentive_amount'] <=> $a['incentive_amount']);
-        }
+        // Distribute the pool proportionally by product sales, then by ownership %
+        $distributed = $this->distributePool($totalPool, $from, $to);
 
         return [
-            'total'            => round((float) array_sum($shareholderTotals), 2),
+            'total'            => $totalPool,
             'rules'            => $ruleResults,
-            'by_product'       => $byProduct,
-            'by_shareholder'   => $byShareholder,
-            'company_retained' => $companyRetained,
+            'by_product'       => $distributed['by_product'],
+            'by_shareholder'   => $distributed['by_shareholder'],
+            'company_retained' => $distributed['company_retained'],
         ];
     }
 
