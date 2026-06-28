@@ -171,6 +171,14 @@ const queueOrderOffline = async (payload: Record<string, unknown>): Promise<bool
 
 const submitOrder = async () => {
     if (cartStore.items.length === 0) return
+    if (!cartStore.orderType) {
+        toast.error('Please select an order type.')
+        return
+    }
+    if (!cartStore.customerName.trim()) {
+        toast.error('Customer name is required.')
+        return
+    }
     submitting.value = true
     try {
         const itemsPayload = cartStore.items.map((item) => ({
@@ -195,7 +203,7 @@ const submitOrder = async () => {
             }
             cartOpen.value = false
             await loadTenders()
-            selectedTenderId.value = tenders.value[0]?.id ?? null
+            selectedTenderId.value = null
             amountTendered.value = (pendingOrder.value?.total_amount ?? 0).toFixed(2)
             reference.value = ''
             paymentOpen.value = true
@@ -237,7 +245,7 @@ const submitOrder = async () => {
 
         cartOpen.value = false
         await loadTenders()
-        selectedTenderId.value = tenders.value[0]?.id ?? null
+        selectedTenderId.value = null
         amountTendered.value = (pendingOrder.value?.total_amount ?? 0).toFixed(2)
         reference.value = ''
         paymentOpen.value = true
@@ -452,7 +460,7 @@ const selectUnpaidOrder = async (order: UnpaidOrder) => {
         })),
         _isExistingOrder: true,
     }
-    selectedTenderId.value = tenders.value[0]?.id ?? null
+    selectedTenderId.value = null
     amountTendered.value = parseFloat(order.total_amount).toFixed(2)
     reference.value = ''
     paymentOpen.value = true
@@ -559,7 +567,9 @@ onMounted(loadTenders)
                         :value="cartStore.orderType"
                         @change="(e) => cartStore.orderType = (e.target as HTMLSelectElement).value"
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        :class="{ 'text-muted-foreground': !cartStore.orderType }"
                     >
+                        <option value="" disabled>Select order type…</option>
                         <option value="dine_in">Dine In</option>
                         <option value="takeout">Takeout</option>
                         <option value="delivery">Delivery</option>
@@ -742,7 +752,9 @@ onMounted(loadTenders)
                             :value="cartStore.orderType"
                             @change="(e) => cartStore.orderType = (e.target as HTMLSelectElement).value"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                            :class="{ 'text-muted-foreground': !cartStore.orderType }"
                         >
+                            <option value="" disabled>Select order type…</option>
                             <option value="dine_in">Dine In</option>
                             <option value="takeout">Takeout</option>
                             <option value="delivery">Delivery</option>
