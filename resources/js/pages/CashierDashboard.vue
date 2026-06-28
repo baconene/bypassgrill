@@ -384,6 +384,7 @@ const cancelPendingOrder = async () => {
         pendingOrder.value = null
         paymentDone.value = false
         completedOrder.value = null
+        loadUnpaidOrders()
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to cancel order')
     } finally {
@@ -402,6 +403,7 @@ const closeAndClear = () => {
     pendingOrder.value = null
     paymentDone.value = false
     completedOrder.value = null
+    loadUnpaidOrders()
 }
 
 const printReceipt = async () => {
@@ -466,9 +468,20 @@ const selectUnpaidOrder = async (order: UnpaidOrder) => {
     paymentOpen.value = true
 }
 
+const cancelUnpaidOrder = async (order: UnpaidOrder) => {
+    if (!confirm(`Cancel order #${order.id}? This cannot be undone.`)) return
+    try {
+        await api.post(`/api/v1/orders/${order.id}/cancel`, { reason: 'Cancelled from pending list' })
+        toast.success(`Order #${order.id} cancelled.`)
+        await loadUnpaidOrders()
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to cancel order')
+    }
+}
+
 const formatPrice = (val: number) => '₱' + val.toFixed(2)
 
-onMounted(loadTenders)
+onMounted(() => { loadTenders(); loadUnpaidOrders() })
 </script>
 
 <template>
@@ -553,6 +566,9 @@ onMounted(loadTenders)
                     >
                         <ClipboardList class="h-3 w-3" />
                         Pending
+                        <span v-if="unpaidOrders.length > 0" class="ml-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 leading-none">
+                            {{ unpaidOrders.length }}
+                        </span>
                     </button>
                     <span v-if="cartStore.items.length > 0" class="text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">
                         {{ cartStore.items.length }}
@@ -736,6 +752,9 @@ onMounted(loadTenders)
                     >
                         <ClipboardList class="h-3 w-3" />
                         Pending
+                        <span v-if="unpaidOrders.length > 0" class="ml-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 leading-none">
+                            {{ unpaidOrders.length }}
+                        </span>
                     </button>
                     <span v-if="cartStore.items.length > 0" class="text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">
                         {{ cartStore.items.length }}
@@ -891,9 +910,9 @@ onMounted(loadTenders)
         <Transition name="fade">
             <div
                 v-if="paymentOpen && pendingOrder"
-                class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+                class="fixed inset-0 z-50 flex flex-col sm:items-center sm:justify-center sm:bg-black/60 bg-background sm:p-4 overflow-y-auto sm:overflow-hidden"
             >
-                <div class="w-full max-w-sm rounded-2xl bg-background shadow-2xl overflow-hidden">
+                <div class="w-full flex-1 sm:flex-none sm:max-w-sm sm:rounded-2xl bg-background sm:shadow-2xl sm:overflow-hidden">
 
                     <!-- ── SUCCESS STATE ────────────────────────────────── -->
                     <template v-if="paymentDone && completedOrder">
@@ -1070,10 +1089,10 @@ onMounted(loadTenders)
         <Transition name="fade">
             <div
                 v-if="unpaidOrdersOpen"
-                class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-4"
+                class="fixed inset-0 z-50 flex flex-col sm:items-center sm:justify-center sm:bg-black/60 bg-background sm:p-4"
                 @click.self="unpaidOrdersOpen = false"
             >
-                <div class="w-full max-w-lg rounded-2xl bg-background shadow-2xl overflow-hidden">
+                <div class="flex flex-col flex-1 sm:flex-none w-full sm:max-w-lg sm:rounded-2xl bg-background sm:shadow-2xl overflow-hidden">
                     <div class="p-4 border-b flex items-center gap-3">
                         <ClipboardList class="h-5 w-5 text-amber-500" />
                         <h3 class="font-bold text-base flex-1">Pending Payments</h3>
@@ -1082,7 +1101,7 @@ onMounted(loadTenders)
                         </button>
                     </div>
 
-                    <div class="overflow-y-auto max-h-[70vh]">
+                    <div class="flex-1 overflow-y-auto">
                         <div v-if="loadingUnpaid" class="text-center py-10 text-sm text-muted-foreground">
                             Loading…
                         </div>
@@ -1113,7 +1132,7 @@ onMounted(loadTenders)
                                 </div>
                                 <div class="text-right shrink-0">
                                     <p class="font-bold text-primary">{{ formatPrice(parseFloat(order.total_amount)) }}</p>
-                                    <div class="mt-1.5 flex items-center gap-1.5 justify-end">
+                                    <div class="mt-1.5 flex items-center gap-1.5 justify-end flex-wrap">
                                         <button
                                             @click="modifyUnpaidOrder(order)"
                                             class="rounded-lg border px-3 py-1.5 text-xs font-bold hover:bg-muted transition"
@@ -1125,6 +1144,12 @@ onMounted(loadTenders)
                                             class="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-700 transition"
                                         >
                                             Pay Now
+                                        </button>
+                                        <button
+                                            @click="cancelUnpaidOrder(order)"
+                                            class="rounded-lg border border-red-200 dark:border-red-900/50 text-red-600 px-3 py-1.5 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-950/20 transition"
+                                        >
+                                            Cancel
                                         </button>
                                     </div>
                                 </div>
