@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { AlertTriangle, Package, RefreshCw, X, Plus, Pencil, ShoppingBag } from 'lucide-vue-next'
+import { AlertTriangle, Package, RefreshCw, X, Plus, Pencil, ShoppingBag, HelpCircle } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -146,6 +146,8 @@ const submitEdit = async () => {
     }
 }
 
+const showHelp = ref(false)
+
 const typeLabel: Record<string, string> = {
     stock_in: 'Stock In', stock_out: 'Stock Out',
     adjustment: 'Adjustment', waste: 'Waste', usage: 'Usage', purchase: 'Purchase',
@@ -206,6 +208,13 @@ const typeColor: Record<string, string> = {
                 class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
             >
                 <Plus class="h-3.5 w-3.5" /> Add Item
+            </button>
+            <button
+                @click="showHelp = true"
+                class="rounded-lg border bg-background px-3 py-2 text-sm hover:bg-muted flex items-center gap-1.5 text-muted-foreground"
+                title="Help & Instructions"
+            >
+                <HelpCircle class="h-3.5 w-3.5" /> Help
             </button>
         </div>
 
@@ -439,6 +448,75 @@ const typeColor: Record<string, string> = {
                         >
                             <RefreshCw v-if="submitting" class="inline h-3 w-3 animate-spin mr-1" />
                             {{ submitting ? 'Saving…' : 'Save Adjustment' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
+
+    <!-- Help Modal -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="showHelp"
+                class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:bg-black/50 sm:p-4"
+                @click.self="showHelp = false">
+                <div class="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl bg-background shadow-2xl max-h-[90vh] overflow-y-auto">
+                    <div class="p-5 border-b flex items-center justify-between sticky top-0 bg-background z-10">
+                        <div class="flex items-center gap-2">
+                            <HelpCircle class="h-5 w-5 text-primary" />
+                            <h3 class="text-lg font-bold">Inventory Help</h3>
+                        </div>
+                        <button @click="showHelp = false" class="rounded-full p-1 hover:bg-muted">
+                            <X class="h-4 w-4" />
+                        </button>
+                    </div>
+                    <div class="p-5 space-y-5 text-sm">
+                        <div>
+                            <p class="font-bold text-base mb-2">📦 Managing Items</p>
+                            <ul class="space-y-1.5 text-muted-foreground">
+                                <li><span class="font-semibold text-foreground">Tap any card</span> — opens the stock adjustment form for that item.</li>
+                                <li><span class="font-semibold text-foreground">Pencil icon</span> — edit the item's name, type, unit, minimum stock, and cost.</li>
+                                <li><span class="font-semibold text-foreground">Add Item</span> — create a new inventory item.</li>
+                                <li><span class="font-semibold text-foreground">Refresh</span> — reload the latest stock levels from the server.</li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <p class="font-bold text-base mb-2">🔄 Adjustment Types</p>
+                            <ul class="space-y-1.5 text-muted-foreground">
+                                <li><span class="font-semibold text-green-600">Stock In</span> — add quantity (e.g. restocking from a supplier).</li>
+                                <li><span class="font-semibold text-red-600">Stock Out</span> — remove quantity (e.g. manual deduction).</li>
+                                <li><span class="font-semibold text-blue-600">Manual Adjustment</span> — set the stock to an exact number (e.g. after a physical count).</li>
+                                <li><span class="font-semibold text-orange-600">Waste</span> — record spoilage or damaged goods.</li>
+                                <li><span class="font-semibold text-purple-600">Purchase</span> — log a purchase (similar to Stock In but tagged as a procurement).</li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <p class="font-bold text-base mb-2">🔴 Low Stock Alert</p>
+                            <p class="text-muted-foreground">An item is flagged <span class="font-semibold text-red-600">Low</span> when its current stock falls below its set minimum. Use <span class="font-semibold">Show only low stock</span> on the alert banner to filter those items quickly.</p>
+                        </div>
+
+                        <div>
+                            <p class="font-bold text-base mb-2">🏷️ Item Types</p>
+                            <ul class="space-y-1.5 text-muted-foreground">
+                                <li><span class="rounded-full px-2 py-0.5 text-xs font-semibold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">Ingredient</span> — used in recipes and deducted automatically when orders are completed.</li>
+                                <li><span class="rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">Tool</span> — equipment tracked for maintenance or reorder purposes.</li>
+                                <li><span class="rounded-full px-2 py-0.5 text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">Equipment</span> — larger assets tracked in inventory.</li>
+                                <li><span class="rounded-full px-2 py-0.5 text-xs font-semibold bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">Supply</span> — consumable supplies not used directly in recipes.</li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <p class="font-bold text-base mb-2">📋 Recent Transactions</p>
+                            <p class="text-muted-foreground">The transaction log at the bottom shows the latest stock changes including automatic deductions from completed orders, manual adjustments, and purchases.</p>
+                        </div>
+                    </div>
+                    <div class="p-5 border-t">
+                        <button @click="showHelp = false"
+                            class="w-full rounded-lg bg-primary py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90">
+                            Got it
                         </button>
                     </div>
                 </div>
