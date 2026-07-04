@@ -180,6 +180,40 @@ const invMeta = ref<any>(null)
 const invPage = ref(1)
 const ingredients = ref<Ingredient[]>([])
 
+// Inventory adjustment modal
+const adjustingTx = ref<InvTransaction | null>(null)
+const adjType = ref('stock_in')
+const adjQty = ref(0)
+const adjNotes = ref('')
+const adjSaving = ref(false)
+
+const openAdjust = (tx: InvTransaction) => {
+    adjustingTx.value = tx
+    adjType.value = 'stock_in'
+    adjQty.value = 0
+    adjNotes.value = ''
+}
+
+const saveAdjust = async () => {
+    if (!adjustingTx.value?.ingredient?.id || adjQty.value <= 0) return
+    adjSaving.value = true
+    try {
+        await api.post('/api/v1/inventory/adjust', {
+            ingredient_id: adjustingTx.value.ingredient.id,
+            type: adjType.value,
+            quantity: adjQty.value,
+            notes: adjNotes.value || null,
+        })
+        toast.success(`${adjustingTx.value.ingredient.name} adjusted successfully`)
+        adjustingTx.value = null
+        await loadInventory(invPage.value)
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to adjust stock.')
+    } finally {
+        adjSaving.value = false
+    }
+}
+
 // ── P&L ───────────────────────────────────────────────────────────────────────
 interface PLBreakdownItem { description: string; amount: number; transacted_at: string }
 interface PL {
@@ -1572,82 +1606,80 @@ onMounted(async () => {
                         Page {{ invMeta.current_page }} of {{ invMeta.last_page }} &nbsp;·&nbsp; {{ invMeta.total }} total
                     </span>
                 </div>
-                <!-- Mobile card list -->
-                <div class="md:hidden divide-y">
-                    <div v-for="tx in invTransactions" :key="tx.id" class="px-4 py-3">
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="min-w-0">
-                                <span class="font-semibold text-sm">{{ tx.ingredient?.name ?? '—' }}</span>
-                                <span v-if="tx.ingredient?.unit" class="ml-1.5 text-xs text-muted-foreground">{{ tx.ingredient.unit }}</span>
+                <!-- Card list (all screen sizes) -->
+                <div class="divide-y">
+                    <div v-for="tx in invTransactions" :key="tx.id"
+                        @click="openAdjust(tx)"
+                        class="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 cursor-pointer transition-colors">
+                        <div class="flex-1 min-w-0">
+                            <p class="font-semibold text-sm truncate">{{ tx.ingredient?.name ?? '—' }}</p>
+                            <div class="mt-1 flex items-center gap-2 flex-wrap">
+                                <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', invTypeBadge(tx.type)]">
+                                    {{ tx.type.replace('_', ' ') }}
+                                </span>
+                                <span class="text-xs text-muted-foreground">{{ tx.ingredient?.unit ?? '' }}</span>
                             </div>
-                            <span class="font-bold text-sm shrink-0 tabular-nums"
-                                :class="['stock_in','purchase'].includes(tx.type) ? 'text-green-600' : 'text-red-600'">
-                                {{ ['stock_in','purchase'].includes(tx.type) ? '+' : '-' }}{{ tx.quantity }}
-                            </span>
                         </div>
-                        <div class="mt-1.5 flex items-center gap-2 flex-wrap">
-                            <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', invTypeBadge(tx.type)]">
-                                {{ tx.type.replace('_', ' ') }}
-                            </span>
-                            <span class="text-xs text-muted-foreground tabular-nums">
-                                {{ tx.old_quantity }} → <strong class="text-foreground">{{ tx.new_quantity }}</strong>
-                            </span>
+                        <div class="text-right shrink-0">
+                            <p class="font-bold text-lg tabular-nums leading-none">{{ tx.new_quantity }}</p>
+                            <p class="text-xs text-muted-foreground mt-0.5">{{ tx.ingredient?.unit }}</p>
                         </div>
-                        <div class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                            <span>{{ tx.created_at?.slice(0, 10) }}</span>
-                            <span v-if="tx.user?.name">by {{ tx.user.name }}</span>
-                            <span v-if="tx.reference">Ref: {{ tx.reference }}</span>
-                        </div>
-                        <p v-if="tx.notes" class="mt-0.5 text-xs text-muted-foreground truncate">{{ tx.notes }}</p>
                     </div>
                     <div v-if="invTransactions.length === 0 && !loading" class="px-4 py-10 text-center text-muted-foreground text-sm">
                         No transactions found. Adjust filters and click Generate.
                     </div>
                 </div>
 
-                <!-- Desktop table -->
-                <div class="hidden md:block overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
-                            <tr>
-                                <th class="px-4 py-3 text-left">Date</th>
-                                <th class="px-4 py-3 text-left">Ingredient</th>
-                                <th class="px-4 py-3 text-left">Type</th>
-                                <th class="px-4 py-3 text-right">Qty</th>
-                                <th class="px-4 py-3 text-right">Before</th>
-                                <th class="px-4 py-3 text-right">After</th>
-                                <th class="px-4 py-3 text-left">Reference</th>
-                                <th class="px-4 py-3 text-left">Notes</th>
-                                <th class="px-4 py-3 text-left">By</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y">
-                            <tr v-for="tx in invTransactions" :key="tx.id" class="hover:bg-muted/20">
-                                <td class="px-4 py-2 text-muted-foreground whitespace-nowrap text-xs">{{ tx.created_at?.slice(0, 10) }}</td>
-                                <td class="px-4 py-2 font-medium">
-                                    {{ tx.ingredient?.name ?? '—' }}
-                                    <span class="text-xs text-muted-foreground ml-1">{{ tx.ingredient?.unit }}</span>
-                                </td>
-                                <td class="px-4 py-2">
-                                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', invTypeBadge(tx.type)]">
-                                        {{ tx.type.replace('_', ' ') }}
-                                    </span>
-                                </td>
-                                <td class="px-4 py-2 text-right font-bold" :class="['stock_in','purchase'].includes(tx.type) ? 'text-green-600' : 'text-red-600'">
-                                    {{ ['stock_in','purchase'].includes(tx.type) ? '+' : '-' }}{{ tx.quantity }}
-                                </td>
-                                <td class="px-4 py-2 text-right text-muted-foreground">{{ tx.old_quantity }}</td>
-                                <td class="px-4 py-2 text-right font-medium">{{ tx.new_quantity }}</td>
-                                <td class="px-4 py-2 text-xs text-muted-foreground">{{ tx.reference ?? '—' }}</td>
-                                <td class="px-4 py-2 text-xs text-muted-foreground max-w-[140px] truncate">{{ tx.notes ?? '—' }}</td>
-                                <td class="px-4 py-2 text-xs text-muted-foreground">{{ tx.user?.name ?? '—' }}</td>
-                            </tr>
-                            <tr v-if="invTransactions.length === 0 && !loading">
-                                <td colspan="9" class="px-4 py-10 text-center text-muted-foreground">No transactions found. Adjust filters and click Generate.</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+                <!-- Adjust stock modal -->
+                <Teleport to="body">
+                    <div v-if="adjustingTx"
+                        class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:bg-black/60"
+                        @click.self="adjustingTx = null">
+                        <div class="w-full sm:max-w-md rounded-t-2xl sm:rounded-xl bg-card border shadow-xl flex flex-col">
+                            <div class="flex items-center justify-between p-4 border-b">
+                                <div>
+                                    <h3 class="font-bold text-base">{{ adjustingTx.ingredient?.name }}</h3>
+                                    <p class="text-xs text-muted-foreground mt-0.5">
+                                        Current stock: <strong>{{ adjustingTx.new_quantity }} {{ adjustingTx.ingredient?.unit }}</strong>
+                                    </p>
+                                </div>
+                                <button @click="adjustingTx = null" class="rounded-full p-1.5 text-muted-foreground hover:bg-muted transition">
+                                    <X class="h-4 w-4" />
+                                </button>
+                            </div>
+                            <div class="p-4 space-y-3">
+                                <div>
+                                    <label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                                    <select v-model="adjType" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                                        <option value="stock_in">Stock In (Add)</option>
+                                        <option value="stock_out">Stock Out (Remove)</option>
+                                        <option value="adjustment">Manual Adjustment (Set to)</option>
+                                        <option value="waste">Waste</option>
+                                        <option value="purchase">Purchase</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-medium text-muted-foreground block mb-1">
+                                        {{ adjType === 'adjustment' ? 'New Quantity' : 'Quantity' }}
+                                    </label>
+                                    <input v-model.number="adjQty" type="number" min="0" step="0.01" placeholder="0"
+                                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                                </div>
+                                <div>
+                                    <label class="text-xs font-medium text-muted-foreground block mb-1">Notes (optional)</label>
+                                    <input v-model="adjNotes" type="text" placeholder="Reason for adjustment…"
+                                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                                </div>
+                            </div>
+                            <div class="px-4 pb-6 sm:pb-4">
+                                <button @click="saveAdjust" :disabled="adjSaving || adjQty <= 0"
+                                    class="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition">
+                                    {{ adjSaving ? 'Saving…' : 'Save Adjustment' }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </Teleport>
                 <div v-if="invMeta && invMeta.last_page > 1" class="flex items-center justify-between px-4 py-3 border-t">
                     <button @click="loadInventory(invPage - 1)" :disabled="invPage <= 1 || loading"
                         class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-40">
