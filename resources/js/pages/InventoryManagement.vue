@@ -483,14 +483,55 @@ const typeColor: Record<string, string> = {
                         </div>
 
                         <div>
-                            <p class="font-bold text-base mb-2">🔄 Adjustment Types</p>
-                            <ul class="space-y-1.5 text-muted-foreground">
-                                <li><span class="font-semibold text-green-600">Stock In</span> — add quantity (e.g. restocking from a supplier).</li>
-                                <li><span class="font-semibold text-red-600">Stock Out</span> — remove quantity (e.g. manual deduction).</li>
-                                <li><span class="font-semibold text-blue-600">Manual Adjustment</span> — set the stock to an exact number (e.g. after a physical count).</li>
-                                <li><span class="font-semibold text-orange-600">Waste</span> — record spoilage or damaged goods.</li>
-                                <li><span class="font-semibold text-purple-600">Purchase</span> — log a purchase (similar to Stock In but tagged as a procurement).</li>
-                            </ul>
+                            <p class="font-bold text-base mb-3">📝 How to Adjust Stock</p>
+                            <ol class="space-y-2.5 text-muted-foreground list-none">
+                                <li class="flex gap-2.5">
+                                    <span class="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center mt-0.5">1</span>
+                                    <span><span class="font-semibold text-foreground">Tap the item card</span> you want to update. The adjustment form will slide up from the bottom.</span>
+                                </li>
+                                <li class="flex gap-2.5">
+                                    <span class="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center mt-0.5">2</span>
+                                    <span><span class="font-semibold text-foreground">Choose the adjustment type</span> that best describes why the stock is changing (see types below).</span>
+                                </li>
+                                <li class="flex gap-2.5">
+                                    <span class="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center mt-0.5">3</span>
+                                    <span><span class="font-semibold text-foreground">Enter the quantity</span> — for Stock In/Out, Waste, and Purchase this is the amount to add or remove. For Manual Adjustment, enter the new total stock count.</span>
+                                </li>
+                                <li class="flex gap-2.5">
+                                    <span class="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center mt-0.5">4</span>
+                                    <span><span class="font-semibold text-foreground">Add a note</span> (optional) — write a short reason such as "Supplier delivery" or "Monthly count". Notes help you trace changes later in the transaction log.</span>
+                                </li>
+                                <li class="flex gap-2.5">
+                                    <span class="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center mt-0.5">5</span>
+                                    <span><span class="font-semibold text-foreground">Tap Save</span> — the stock level updates immediately and the change is recorded in Recent Transactions.</span>
+                                </li>
+                            </ol>
+                        </div>
+
+                        <div>
+                            <p class="font-bold text-base mb-3">🔄 Adjustment Types</p>
+                            <div class="space-y-3">
+                                <div class="rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/30 p-3">
+                                    <p class="font-semibold text-green-700 dark:text-green-400 mb-1">Stock In</p>
+                                    <p class="text-muted-foreground">Use when you receive new stock from any source. The quantity you enter is <span class="font-semibold">added</span> to the current stock. Example: a bag of flour arrives from the supplier — enter the number of bags received.</p>
+                                </div>
+                                <div class="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 p-3">
+                                    <p class="font-semibold text-red-700 dark:text-red-400 mb-1">Stock Out</p>
+                                    <p class="text-muted-foreground">Use when stock leaves for any unplanned reason not covered by other types (e.g. transferred to another branch, given away). The quantity is <span class="font-semibold">deducted</span> from current stock.</p>
+                                </div>
+                                <div class="rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/30 p-3">
+                                    <p class="font-semibold text-blue-700 dark:text-blue-400 mb-1">Manual Adjustment</p>
+                                    <p class="text-muted-foreground">Use after a physical stock count when the actual quantity on hand differs from what the system shows. Enter the <span class="font-semibold">exact new total</span> — the system will set the stock to that number regardless of the previous value.</p>
+                                </div>
+                                <div class="rounded-lg border border-orange-200 dark:border-orange-900 bg-orange-50 dark:bg-orange-950/30 p-3">
+                                    <p class="font-semibold text-orange-700 dark:text-orange-400 mb-1">Waste</p>
+                                    <p class="text-muted-foreground">Use when items are spoiled, expired, dropped, or otherwise unusable. The quantity is <span class="font-semibold">deducted</span> and logged separately so waste can be tracked and reported over time.</p>
+                                </div>
+                                <div class="rounded-lg border border-purple-200 dark:border-purple-900 bg-purple-50 dark:bg-purple-950/30 p-3">
+                                    <p class="font-semibold text-purple-700 dark:text-purple-400 mb-1">Purchase</p>
+                                    <p class="text-muted-foreground">Use when you buy stock specifically as a procurement event. Like Stock In, the quantity is <span class="font-semibold">added</span>, but it is tagged as a purchase so spending can be tracked separately from other stock additions.</p>
+                                </div>
+                            </div>
                         </div>
 
                         <div>
