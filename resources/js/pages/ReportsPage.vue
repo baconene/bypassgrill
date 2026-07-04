@@ -1317,7 +1317,8 @@ onMounted(async () => {
                 <!-- Mobile card list -->
                 <div class="md:hidden divide-y">
                     <div v-for="order in ordersData" :key="order.id"
-                        class="px-4 py-3 hover:bg-muted/20 transition-colors">
+                        @click="editOrder(order)"
+                        class="px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer">
                         <!-- Row 1: Order # + total + actions -->
                         <div class="flex items-start justify-between gap-2">
                             <div>
@@ -1331,7 +1332,7 @@ onMounted(async () => {
                                     title="Edit order">
                                     <Pencil class="h-4 w-4" />
                                 </button>
-                                <button @click="deleteOrder(order)" :disabled="ordDeleting === order.id"
+                                <button @click.stop="deleteOrder(order)" :disabled="ordDeleting === order.id"
                                     class="text-red-500 hover:text-red-700 disabled:opacity-40 transition-colors p-1"
                                     title="Delete order">
                                     <Trash2 class="h-4 w-4" />
