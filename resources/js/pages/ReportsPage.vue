@@ -1572,7 +1572,41 @@ onMounted(async () => {
                         Page {{ invMeta.current_page }} of {{ invMeta.last_page }} &nbsp;·&nbsp; {{ invMeta.total }} total
                     </span>
                 </div>
-                <div class="overflow-x-auto">
+                <!-- Mobile card list -->
+                <div class="md:hidden divide-y">
+                    <div v-for="tx in invTransactions" :key="tx.id" class="px-4 py-3">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <span class="font-semibold text-sm">{{ tx.ingredient?.name ?? '—' }}</span>
+                                <span v-if="tx.ingredient?.unit" class="ml-1.5 text-xs text-muted-foreground">{{ tx.ingredient.unit }}</span>
+                            </div>
+                            <span class="font-bold text-sm shrink-0 tabular-nums"
+                                :class="['stock_in','purchase'].includes(tx.type) ? 'text-green-600' : 'text-red-600'">
+                                {{ ['stock_in','purchase'].includes(tx.type) ? '+' : '-' }}{{ tx.quantity }}
+                            </span>
+                        </div>
+                        <div class="mt-1.5 flex items-center gap-2 flex-wrap">
+                            <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', invTypeBadge(tx.type)]">
+                                {{ tx.type.replace('_', ' ') }}
+                            </span>
+                            <span class="text-xs text-muted-foreground tabular-nums">
+                                {{ tx.old_quantity }} → <strong class="text-foreground">{{ tx.new_quantity }}</strong>
+                            </span>
+                        </div>
+                        <div class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                            <span>{{ tx.created_at?.slice(0, 10) }}</span>
+                            <span v-if="tx.user?.name">by {{ tx.user.name }}</span>
+                            <span v-if="tx.reference">Ref: {{ tx.reference }}</span>
+                        </div>
+                        <p v-if="tx.notes" class="mt-0.5 text-xs text-muted-foreground truncate">{{ tx.notes }}</p>
+                    </div>
+                    <div v-if="invTransactions.length === 0 && !loading" class="px-4 py-10 text-center text-muted-foreground text-sm">
+                        No transactions found. Adjust filters and click Generate.
+                    </div>
+                </div>
+
+                <!-- Desktop table -->
+                <div class="hidden md:block overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                             <tr>
