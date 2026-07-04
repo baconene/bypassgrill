@@ -43,7 +43,13 @@ class OrderController extends Controller
                       ->orWhere('customer_name', 'like', "%{$request->search}%")
                       ->orWhere('notes', 'like', "%{$request->search}%")
                       ->orWhere('table_number', 'like', "%{$request->search}%");
-                }));
+                }))
+                ->when($request->product_ids, function ($q) use ($request) {
+                    $ids = array_values(array_filter(array_map('intval', explode(',', $request->product_ids))));
+                    if ($ids) {
+                        $q->whereHas('items', fn($sq) => $sq->whereIn('product_id', $ids));
+                    }
+                });
         };
 
         $allowed  = ['created_at', 'total_amount', 'customer_name', 'status', 'payment_status'];

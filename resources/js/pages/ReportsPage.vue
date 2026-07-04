@@ -134,6 +134,9 @@ const ordDateFrom = ref(daysAgo(30))
 const ordDateTo = ref(manilaToday())
 const ordStatus = ref('')
 const ordPayment = ref('')
+const ordProductIds = ref<number[]>([])
+const ordProductDropdown = ref(false)
+const allProducts = ref<{ id: number; name: string }[]>([])
 const ordersData = ref<OrderRow[]>([])
 const ordersMeta = ref<any>(null)
 const ordersSummary = ref<{ total_count: number; paid_count: number; unpaid_count: number; paid_revenue: number } | null>(null)
@@ -141,6 +144,21 @@ const ordPage = ref(1)
 const ordSortBy = ref('created_at')
 const ordSortDir = ref<'asc' | 'desc'>('desc')
 const ordDeleting = ref<number | null>(null)
+
+const buildOrdBackUrl = () => {
+    const p = new URLSearchParams()
+    p.set('tab', 'orders')
+    if (ordDateFrom.value) p.set('df', ordDateFrom.value)
+    if (ordDateTo.value) p.set('dt', ordDateTo.value)
+    if (ordStatus.value) p.set('st', ordStatus.value)
+    if (ordPayment.value) p.set('py', ordPayment.value)
+    if (ordSearch.value) p.set('q', ordSearch.value)
+    if (ordProductIds.value.length) p.set('pids', ordProductIds.value.join(','))
+    if (ordPage.value > 1) p.set('pg', String(ordPage.value))
+    if (ordSortBy.value !== 'created_at') p.set('sb', ordSortBy.value)
+    if (ordSortDir.value !== 'desc') p.set('sd', ordSortDir.value)
+    return '/reports?' + p.toString()
+}
 
 const sortOrders = (col: string) => {
     if (ordSortBy.value === col) {
@@ -620,6 +638,7 @@ const loadOrders = async (page = 1) => {
             date_to: ordDateTo.value || undefined,
             status: ordStatus.value || undefined,
             payment_status: ordPayment.value || undefined,
+            product_ids: ordProductIds.value.length ? ordProductIds.value.join(',') : undefined,
             sort_by: ordSortBy.value,
             sort_dir: ordSortDir.value,
         },
@@ -632,7 +651,8 @@ const loadOrders = async (page = 1) => {
     ordersSummary.value = res.data.summary ?? null
 }
 
-const editOrder = (order: OrderRow) => router.visit('/orders/' + order.id)
+const editOrder = (order: OrderRow) =>
+    router.visit(`/orders/${order.id}?back=${encodeURIComponent(buildOrdBackUrl())}`)
 
 const deleteOrder = async (order: OrderRow) => {
     if (!confirm(`Delete Order #${order.id}?\nThis cannot be undone.`)) return
@@ -1020,12 +1040,40 @@ const switchTab = (t: Tab) => {
 }
 
 onMounted(async () => {
+    // Restore filter state when coming back from order detail
+    const urlParams = new URLSearchParams(window.location.search)
+    const restoredTab = urlParams.get('tab') as Tab | null
+    if (restoredTab === 'orders') {
+        tab.value = 'orders'
+        if (urlParams.get('df')) ordDateFrom.value = urlParams.get('df')!
+        if (urlParams.get('dt')) ordDateTo.value = urlParams.get('dt')!
+        if (urlParams.get('st')) ordStatus.value = urlParams.get('st')!
+        if (urlParams.get('py')) ordPayment.value = urlParams.get('py')!
+        if (urlParams.get('q')) ordSearch.value = urlParams.get('q')!
+        if (urlParams.get('pids')) ordProductIds.value = urlParams.get('pids')!.split(',').map(Number).filter(Boolean)
+        if (urlParams.get('pg')) ordPage.value = parseInt(urlParams.get('pg')!)
+        if (urlParams.get('sb')) ordSortBy.value = urlParams.get('sb')!
+        if (urlParams.get('sd')) ordSortDir.value = urlParams.get('sd')! as 'asc' | 'desc'
+    }
+
     // Pre-load ingredient list for the inventory filter dropdown
     try {
         const res = await api.get('/api/v1/inventory')
         ingredients.value = (res.data.data ?? res.data).map((i: any) => ({ id: i.id, name: i.name, unit: i.unit }))
     } catch { /* non-critical */ }
-    await generateReport()
+
+    // Pre-load product list for the orders product filter
+    try {
+        const res = await api.get('/api/v1/products', { params: { per_page: 500 } })
+        allProducts.value = (res.data.data ?? res.data).map((p: any) => ({ id: p.id, name: p.name }))
+    } catch { /* non-critical */ }
+
+    if (restoredTab === 'orders') {
+        loading.value = true
+        try { await loadOrders(ordPage.value) } finally { loading.value = false }
+    } else {
+        await generateReport()
+    }
 })
 </script>
 
@@ -1086,6 +1134,31 @@ onMounted(async () => {
                                 class="rounded-lg border bg-background pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-48"
                                 @keydown.enter="generateReport" />
                         </div></div>
+                    <div class="relative">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Products</label>
+                        <button @click="ordProductDropdown = !ordProductDropdown"
+                            class="rounded-lg border bg-background px-3 py-2 text-sm flex items-center gap-2 min-w-[150px] h-[38px]">
+                            <Package class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span v-if="ordProductIds.length === 0" class="text-muted-foreground">All Products</span>
+                            <span v-else class="font-medium">{{ ordProductIds.length }} selected</span>
+                            <ChevronDown class="h-3.5 w-3.5 ml-auto text-muted-foreground shrink-0" />
+                        </button>
+                        <div v-if="ordProductDropdown" class="fixed inset-0 z-40" @click="ordProductDropdown = false"></div>
+                        <div v-if="ordProductDropdown" class="absolute z-50 top-full mt-1 left-0 w-64 rounded-lg border bg-popover shadow-xl flex flex-col max-h-72 overflow-hidden">
+                            <div class="flex items-center justify-between px-3 py-2 border-b shrink-0">
+                                <span class="text-xs font-semibold text-muted-foreground">Filter by product</span>
+                                <button @click="ordProductIds = []" class="text-xs text-muted-foreground hover:text-foreground transition">Clear all</button>
+                            </div>
+                            <div class="overflow-y-auto flex-1">
+                                <label v-for="p in allProducts" :key="p.id"
+                                    class="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted cursor-pointer">
+                                    <input type="checkbox" :value="p.id" v-model="ordProductIds" class="rounded border-border shrink-0" />
+                                    <span class="truncate">{{ p.name }}</span>
+                                </label>
+                                <div v-if="allProducts.length === 0" class="px-3 py-4 text-xs text-muted-foreground text-center">No products found</div>
+                            </div>
+                        </div>
+                    </div>
                 </template>
 
                 <!-- Inventory filters -->
@@ -1342,7 +1415,7 @@ onMounted(async () => {
                         </thead>
                         <tbody class="divide-y">
                             <tr v-for="order in ordersData" :key="order.id"
-                                @click="router.visit(`/orders/${order.id}?back=/reports`)"
+                                @click="editOrder(order)"
                                 class="hover:bg-muted/30 cursor-pointer transition-colors">
                                 <td class="px-4 py-3">
                                     <p class="font-bold text-primary">#{{ order.id }}</p>
