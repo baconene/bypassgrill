@@ -161,7 +161,7 @@ class PrintJobService
         return match ($settings->receipt_qr_type ?? 'order_url') {
             'none'      => null,
             'facebook'  => $settings->social_facebook ?: null,
-            default     => rtrim(config('app.url'), '/') . '/public/orders/' . $order->id,
+            default     => rtrim(config('app.url'), '/') . '/public/orders/' . $order->public_token,
         };
     }
 

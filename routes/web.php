@@ -17,8 +17,8 @@ use App\Http\Controllers\WelcomeController;
 
 Route::get('/', [WelcomeController::class, 'index'])->name('home');
 
-Route::get('/public/orders/{id}', [\App\Http\Controllers\PublicOrderController::class, 'show'])
-    ->where('id', '[0-9]+')
+Route::get('/public/orders/{token}', [\App\Http\Controllers\PublicOrderController::class, 'show'])
+    ->where('token', '[0-9a-f]{32}')
     ->name('public.orders.show');
 
 Route::inertia('/printing-architecture', 'PrintingArchitecture')

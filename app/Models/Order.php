@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class Order extends Model
 {
     protected $fillable = [
+        'public_token',
         'user_id',
         'queue_number_id',
         'order_type',
@@ -31,6 +32,15 @@ class Order extends Model
         'total_amount' => 'decimal:2',
         'completed_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::created(function (Order $order) {
+            $raw   = $order->id . '|' . ($order->customer_name ?? '') . '|' . $order->created_at;
+            $token = substr(hash_hmac('sha256', $raw, config('app.key')), 0, 32);
+            $order->updateQuietly(['public_token' => $token]);
+        });
+    }
 
     public function user()
     {

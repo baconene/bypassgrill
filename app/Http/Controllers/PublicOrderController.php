@@ -8,10 +8,11 @@ use Inertia\Response;
 
 class PublicOrderController extends Controller
 {
-    public function show(int $id): Response
+    public function show(string $token): Response
     {
         $order = Order::with(['items.product', 'user', 'queueNumber', 'payments.tender'])
-            ->findOrFail($id);
+            ->where('public_token', $token)
+            ->firstOrFail();
 
         $payment        = $order->payments->where('status', 'completed')->first()
                        ?? $order->payments->sortByDesc('created_at')->first();
