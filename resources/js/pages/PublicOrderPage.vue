@@ -25,20 +25,21 @@ const fmt = (v: number) => '₱' + v.toLocaleString('en-PH', { minimumFractionDi
 
 const orderTypeLabel = (t: string) => ({ dine_in: 'Dine In', takeout: 'Takeout', delivery: 'Delivery' }[t] ?? t)
 
-const statusColor = (s: string) => ({
-    pending:   'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    preparing: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    ready:     'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    cancelled: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-}[s] ?? 'bg-muted text-muted-foreground')
+const statusTextColor = (s: string) => ({
+    pending:   'text-yellow-600 dark:text-yellow-400',
+    preparing: 'text-blue-600 dark:text-blue-400',
+    ready:     'text-purple-600 dark:text-purple-400',
+    completed: 'text-green-600 dark:text-green-400',
+    cancelled: 'text-red-600 dark:text-red-400',
+}[s] ?? 'text-foreground')
 
-const payColor = (s: string) => ({
-    paid:     'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    pending:  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    refunded: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    voided:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-}[s] ?? 'bg-muted text-muted-foreground')
+const statusBg = (s: string) => ({
+    pending:   'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800',
+    preparing: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800',
+    ready:     'bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800',
+    completed: 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800',
+    cancelled: 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800',
+}[s] ?? 'bg-muted border-border')
 </script>
 
 <template>
@@ -47,27 +48,34 @@ const payColor = (s: string) => ({
     <div class="min-h-screen bg-background flex justify-center px-3 py-6 sm:py-10">
         <div class="w-full max-w-2xl space-y-4">
 
+            <!-- Brand -->
             <div class="text-center mb-2">
                 <h1 class="text-2xl font-black tracking-tight">{{ brandName.toUpperCase() }}</h1>
             </div>
 
+            <!-- Order header + status hero -->
             <div class="rounded-xl border bg-card shadow-sm p-4">
-                <div class="flex items-center gap-2 flex-wrap">
+                <div class="flex items-center justify-between gap-2 mb-4">
                     <h2 class="text-lg sm:text-xl font-black flex items-center gap-1.5">
                         <ShoppingBag class="h-5 w-5 text-primary shrink-0" />
                         Order #{{ order.id }}
                     </h2>
-                    <span v-if="order.queue_number" class="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold">
+                    <span v-if="order.queue_number" class="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold">
                         Q{{ order.queue_number }}
                     </span>
-                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', statusColor(order.status)]">
-                        {{ order.status }}
-                    </span>
-                    <span :class="['rounded-full px-2 py-0.5 text-xs font-semibold capitalize', payColor(order.payment_status)]">
-                        {{ order.payment_status }}
-                    </span>
                 </div>
-                <p class="text-xs text-muted-foreground mt-1">
+
+                <!-- Centered status display -->
+                <div :class="['rounded-xl border py-5 text-center mb-4', statusBg(order.status)]">
+                    <p :class="['text-4xl font-black uppercase tracking-widest', statusTextColor(order.status)]">
+                        {{ order.status }}
+                    </p>
+                    <p class="text-xs font-bold uppercase tracking-widest text-muted-foreground mt-1.5">
+                        ORDER STATUS
+                    </p>
+                </div>
+
+                <p class="text-xs text-muted-foreground text-center">
                     {{ orderTypeLabel(order.order_type) }}
                     <template v-if="order.table_number"> · Table {{ order.table_number }}</template>
                 </p>
@@ -122,30 +130,23 @@ const payColor = (s: string) => ({
                 </div>
             </div>
 
+            <!-- Items — card list, no table -->
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="p-4 border-b flex items-center gap-2">
                     <Package class="h-4 w-4 text-muted-foreground" />
                     <h2 class="font-bold text-sm">Items ({{ order.items.length }})</h2>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm min-w-[400px]">
-                        <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
-                            <tr>
-                                <th class="px-4 py-3 text-left">Product</th>
-                                <th class="px-4 py-3 text-center">Qty</th>
-                                <th class="px-4 py-3 text-right">Unit Price</th>
-                                <th class="px-4 py-3 text-right">Subtotal</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y">
-                            <tr v-for="(item, idx) in order.items" :key="idx" class="hover:bg-muted/20">
-                                <td class="px-4 py-3 font-semibold">{{ item.name }}</td>
-                                <td class="px-4 py-3 text-center font-bold">× {{ item.quantity }}</td>
-                                <td class="px-4 py-3 text-right">{{ fmt(item.unit_price) }}</td>
-                                <td class="px-4 py-3 text-right font-bold">{{ fmt(item.subtotal) }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div class="divide-y">
+                    <div v-for="(item, idx) in order.items" :key="idx"
+                        class="flex items-center justify-between gap-3 px-4 py-3">
+                        <div class="flex-1 min-w-0">
+                            <p class="font-semibold truncate">{{ item.name }}</p>
+                            <p class="text-xs text-muted-foreground mt-0.5">
+                                × {{ item.quantity }} &nbsp;·&nbsp; {{ fmt(item.unit_price) }} each
+                            </p>
+                        </div>
+                        <span class="font-bold text-sm shrink-0">{{ fmt(item.subtotal) }}</span>
+                    </div>
                 </div>
             </div>
 
