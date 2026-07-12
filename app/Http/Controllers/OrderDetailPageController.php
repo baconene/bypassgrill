@@ -44,6 +44,7 @@ class OrderDetailPageController extends Controller
             'created_at'       => $order->created_at?->toDateTimeString(),
             'completed_at'     => $order->completed_at?->toDateTimeString(),
             'created_by'       => $order->user?->name,
+            'public_token'     => $order->public_token,
             'items'            => $order->items->map(fn ($item) => [
                 'id'                   => $item->id,
                 'product_id'           => $item->product_id,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
-import { ArrowLeft, ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt, Printer, Pencil, X, Plus, Minus, Trash2, Check, Search } from 'lucide-vue-next'
+import { ArrowLeft, ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt, Printer, Pencil, X, Plus, Minus, Trash2, Check, Search, Eye, Copy } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 
@@ -28,6 +28,7 @@ interface Order {
     customer_name: string | null; customer_contact: string | null; customer_address: string | null
     notes: string | null; subtotal: number; discount_amount: number; tax_amount: number; total_amount: number
     created_at: string; completed_at: string | null; created_by: string | null
+    public_token: string | null
     items: OrderItem[]; payments: Payment[]
 }
 interface Product { id: number; name: string; price: number; category?: { name: string } | null }
@@ -36,9 +37,24 @@ interface EditItem { product_id: number; product_name: string; unit_price: numbe
 
 const props = defineProps<{ order: Order }>()
 
-const printing = ref(false)
-const editing  = ref(false)
-const saving   = ref(false)
+const printing    = ref(false)
+const editing     = ref(false)
+const saving      = ref(false)
+const showPublicUrl = ref(false)
+const urlCopied     = ref(false)
+
+const publicUrl = computed(() =>
+    props.order.public_token
+        ? `${window.location.origin}/public/orders/${props.order.public_token}`
+        : null
+)
+
+const copyPublicUrl = async () => {
+    if (!publicUrl.value) return
+    await navigator.clipboard.writeText(publicUrl.value)
+    urlCopied.value = true
+    setTimeout(() => { urlCopied.value = false }, 2000)
+}
 
 const products     = ref<Product[]>([])
 const productSearch = ref('')
@@ -210,6 +226,10 @@ const reprintReceipt = async () => {
                     class="flex items-center gap-2 rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors">
                     <Pencil class="h-4 w-4" /> Edit
                 </button>
+                <button v-if="publicUrl" @click="showPublicUrl = true"
+                    class="flex items-center gap-2 rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted transition-colors">
+                    <Eye class="h-4 w-4" /> Public URL
+                </button>
                 <button @click="reprintReceipt" :disabled="printing"
                     class="flex items-center gap-2 rounded-lg border bg-card px-4 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-50 transition-colors">
                     <Printer class="h-4 w-4" />
@@ -220,6 +240,10 @@ const reprintReceipt = async () => {
                 <button @click="startEdit" v-if="!editing"
                     class="rounded-lg border bg-card p-2 hover:bg-muted transition-colors" title="Edit Order">
                     <Pencil class="h-4 w-4" />
+                </button>
+                <button v-if="publicUrl" @click="showPublicUrl = true"
+                    class="rounded-lg border bg-card p-2 hover:bg-muted transition-colors" title="Public URL">
+                    <Eye class="h-4 w-4" />
                 </button>
                 <button @click="reprintReceipt" :disabled="printing"
                     class="rounded-lg border bg-card p-2 hover:bg-muted disabled:opacity-50 transition-colors"
@@ -550,4 +574,48 @@ const reprintReceipt = async () => {
             </button>
         </div>
     </div>
+
+    <!-- Public URL Modal -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="showPublicUrl"
+                class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:bg-black/50 sm:p-4"
+                @click.self="showPublicUrl = false">
+                <div class="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl bg-background shadow-2xl overflow-hidden">
+                    <div class="p-4 border-b flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <Eye class="h-4 w-4 text-primary" />
+                            <h3 class="font-bold text-sm">Public Order URL</h3>
+                        </div>
+                        <button @click="showPublicUrl = false" class="rounded-full p-1 hover:bg-muted">
+                            <X class="h-4 w-4" />
+                        </button>
+                    </div>
+                    <div class="p-4 space-y-4">
+                        <p class="text-xs text-muted-foreground">
+                            Share this link with the customer so they can track their order status.
+                        </p>
+                        <div class="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2.5">
+                            <span class="flex-1 text-xs break-all font-mono text-foreground select-all">{{ publicUrl }}</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="copyPublicUrl"
+                                :class="['flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-bold transition-colors',
+                                    urlCopied
+                                        ? 'bg-green-600 text-white'
+                                        : 'bg-primary text-primary-foreground hover:bg-primary/90']">
+                                <Check v-if="urlCopied" class="h-4 w-4" />
+                                <Copy v-else class="h-4 w-4" />
+                                {{ urlCopied ? 'Copied!' : 'Copy Link' }}
+                            </button>
+                            <a :href="publicUrl!" target="_blank"
+                                class="flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold hover:bg-muted transition-colors">
+                                <Eye class="h-4 w-4" /> Open
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
 </template>
