@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Head } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { Database, Play, Table2, RefreshCw, ChevronRight, ChevronDown, Search, Download, FileText, KeyRound } from 'lucide-vue-next'
+import { Database, Play, Table2, RefreshCw, ChevronRight, ChevronDown, Search, Download, FileText, Sheet, KeyRound } from 'lucide-vue-next'
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard' }, { title: 'Tools', href: '/tools' }] } })
 
@@ -113,6 +113,31 @@ const exportPdf = () => {
     w.print()
 }
 
+const exportExcel = () => {
+    if (!result.value) return
+    const { columns, rows } = result.value
+    const esc = (v: any) => v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
+
+    const th = columns.map(col => `<th><b>${col}</b></th>`).join('')
+    const tbody = rows.map(r =>
+        `<tr>${columns.map(col => `<td>${esc(r[col])}</td>`).join('')}</tr>`
+    ).join('')
+
+    const xls = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
+        xmlns:x="urn:schemas-microsoft-com:office:excel"
+        xmlns="http://www.w3.org/TR/REC-html40">
+        <head><meta charset="utf-8">
+        <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>
+        <x:ExcelWorksheet><x:Name>Query Result</x:Name>
+        <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+        </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+        </head><body><table>${th}${tbody}</table></body></html>`
+
+    const url = URL.createObjectURL(new Blob([xls], { type: 'application/vnd.ms-excel;charset=utf-8' }))
+    const a = document.createElement('a'); a.href = url; a.download = 'query-result.xls'; a.click()
+    URL.revokeObjectURL(url)
+}
+
 const cell = (v: any) => v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
 
 onMounted(loadTables)
@@ -188,6 +213,7 @@ onMounted(loadTables)
                     <div v-if="result.rows.length" class="flex items-center gap-1.5">
                         <button @click="exportCsv" class="flex items-center gap-1 rounded-lg border px-2 py-1 font-medium hover:bg-muted"><Download class="h-3 w-3" /> CSV</button>
                         <button @click="exportPdf" class="flex items-center gap-1 rounded-lg border px-2 py-1 font-medium hover:bg-muted"><FileText class="h-3 w-3" /> PDF</button>
+                        <button @click="exportExcel" class="flex items-center gap-1 rounded-lg border px-2 py-1 font-medium hover:bg-muted text-green-700 dark:text-green-400 border-green-200 dark:border-green-800 hover:bg-green-50 dark:hover:bg-green-950/30"><Sheet class="h-3 w-3" /> Excel</button>
                     </div>
                 </div>
                 <div class="flex-1 overflow-auto">
