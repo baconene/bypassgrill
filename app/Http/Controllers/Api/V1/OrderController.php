@@ -134,6 +134,11 @@ class OrderController extends Controller
             }
 
             $order->calculateTotals();
+
+            // Keep the 'order' FT in sync with the updated total
+            \App\Models\FinancialTransaction::where('order_id', $order->id)
+                ->where('type', 'order')
+                ->update(['amount' => $order->fresh()->total_amount]);
         });
 
         $fresh = $order->fresh(['items.product', 'queueNumber']);
