@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { AlertTriangle, Package, RefreshCw, X, Plus, Pencil, ShoppingBag, HelpCircle } from 'lucide-vue-next'
+import { AlertTriangle, Package, RefreshCw, X, Plus, Pencil, ShoppingBag, HelpCircle, Trash2 } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -146,6 +146,32 @@ const submitEdit = async () => {
     }
 }
 
+// ─── Delete Ingredient ────────────────────────────────────────────────────────
+const deletingIngredient = ref<Ingredient | null>(null)
+const confirmingDelete = ref(false)
+const deleteSaving = ref(false)
+
+const openDelete = (item: Ingredient) => {
+    deletingIngredient.value = item
+    confirmingDelete.value = true
+}
+
+const confirmDelete = async () => {
+    if (!deletingIngredient.value) return
+    deleteSaving.value = true
+    try {
+        await api.delete(`/api/v1/inventory/${deletingIngredient.value.id}`)
+        toast.success(`${deletingIngredient.value.name} deleted`)
+        confirmingDelete.value = false
+        deletingIngredient.value = null
+        router.reload({ only: ['ingredients', 'recentTransactions'] })
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to delete item')
+    } finally {
+        deleteSaving.value = false
+    }
+}
+
 const showHelp = ref(false)
 
 const typeLabel: Record<string, string> = {
@@ -257,6 +283,11 @@ const typeColor: Record<string, string> = {
                             class="rounded-full p-1.5 text-muted-foreground hover:bg-muted transition shrink-0"
                             title="Edit item">
                             <Pencil class="h-3.5 w-3.5" />
+                        </button>
+                        <button @click.stop="openDelete(item)"
+                            class="rounded-full p-1.5 text-muted-foreground hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400 transition shrink-0"
+                            title="Delete item">
+                            <Trash2 class="h-3.5 w-3.5" />
                         </button>
                     </div>
                 </div>
@@ -455,6 +486,44 @@ const typeColor: Record<string, string> = {
         </Transition>
     </Teleport>
 
+    <!-- Confirm Delete Modal -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div v-if="confirmingDelete"
+                class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:bg-black/50 sm:p-4"
+                @click.self="confirmingDelete = false">
+                <div class="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl bg-background shadow-2xl overflow-hidden">
+                    <div class="p-5">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="rounded-full bg-red-100 dark:bg-red-950/40 p-2.5 shrink-0">
+                                <Trash2 class="h-5 w-5 text-red-600 dark:text-red-400" />
+                            </div>
+                            <div>
+                                <h3 class="text-base font-bold">Delete Item</h3>
+                                <p class="text-sm text-muted-foreground">This cannot be undone.</p>
+                            </div>
+                        </div>
+                        <p class="text-sm text-muted-foreground mb-5">
+                            Are you sure you want to delete
+                            <span class="font-semibold text-foreground">{{ deletingIngredient?.name }}</span>?
+                            All transaction history for this item will also be removed.
+                        </p>
+                        <div class="flex gap-2">
+                            <button @click="confirmingDelete = false"
+                                class="flex-1 rounded-lg border py-2.5 text-sm font-semibold hover:bg-muted transition">
+                                Cancel
+                            </button>
+                            <button @click="confirmDelete" :disabled="deleteSaving"
+                                class="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60 transition">
+                                {{ deleteSaving ? 'Deleting…' : 'Delete' }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
+
     <!-- Help Modal -->
     <Teleport to="body">
         <Transition name="fade">
@@ -477,6 +546,7 @@ const typeColor: Record<string, string> = {
                             <ul class="space-y-1.5 text-muted-foreground">
                                 <li><span class="font-semibold text-foreground">Tap any card</span> — opens the stock adjustment form for that item.</li>
                                 <li><span class="font-semibold text-foreground">Pencil icon</span> — edit the item's name, type, unit, minimum stock, and cost.</li>
+                                <li><span class="font-semibold text-red-600">Trash icon</span> — permanently delete the item and all its transaction history.</li>
                                 <li><span class="font-semibold text-foreground">Add Item</span> — create a new inventory item.</li>
                                 <li><span class="font-semibold text-foreground">Refresh</span> — reload the latest stock levels from the server.</li>
                             </ul>

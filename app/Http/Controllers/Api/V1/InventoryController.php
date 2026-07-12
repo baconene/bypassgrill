@@ -116,4 +116,15 @@ class InventoryController extends Controller
 
         return response()->json($transactions);
     }
+
+    public function destroy(Ingredient $ingredient): \Illuminate\Http\Response
+    {
+        if (! auth()->user()?->hasAnyRole('admin', 'auditor')) {
+            abort(403, 'Unauthorized');
+        }
+
+        $ingredient->delete();
+
+        return response()->noContent();
+    }
 }

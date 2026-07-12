@@ -53,6 +53,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/inventory/low-stock', [InventoryController::class, 'lowStock']);
         Route::post('/inventory/adjust', [InventoryController::class, 'adjust']);
         Route::patch('/inventory/{ingredient}', [InventoryController::class, 'update']);
+        Route::delete('/inventory/{ingredient}', [InventoryController::class, 'destroy']);
         Route::get('/inventory/{ingredient}/transactions', [InventoryController::class, 'transactions']);
 
         Route::get('/reports/daily-sales', [ReportController::class, 'dailySales']);
