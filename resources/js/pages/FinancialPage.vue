@@ -40,6 +40,7 @@ interface FtTransaction {
     transacted_at: string; financial_balance: number | null
     payment_tender_id: number | null
     user?: { name: string }; tender?: { id: number; name: string }
+    order?: { customer_name: string | null; id: number } | null
 }
 interface BillsSummary {
     total_due: number; overdue: number; upcoming: number; count: number
@@ -846,6 +847,7 @@ onMounted(async () => {
                             <p class="text-sm font-medium leading-snug">{{ tx.description }}</p>
                             <div class="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
                                 <span v-if="tx.tender?.name">{{ tx.tender.name }}</span>
+                                <span v-if="tx.order?.customer_name" class="font-medium text-foreground/80">{{ tx.order.customer_name }}</span>
                                 <span v-if="tx.user?.name" class="opacity-60">{{ tx.user.name }}</span>
                             </div>
                         </div>
@@ -895,6 +897,7 @@ onMounted(async () => {
                                     <span v-else class="opacity-30">↕</span>
                                 </span>
                             </th>
+                            <th class="px-4 py-3 text-left">Customer</th>
                             <th class="px-4 py-3 text-left">Tender</th>
                             <th class="px-4 py-3 text-right cursor-pointer select-none hover:text-foreground whitespace-nowrap" @click="toggleSort('amount')">
                                 <span class="flex items-center justify-end gap-1">Amount
@@ -917,6 +920,7 @@ onMounted(async () => {
                                 </span>
                             </td>
                             <td class="px-4 py-3 text-sm font-medium">{{ tx.description }}</td>
+                            <td class="px-4 py-3 text-sm text-muted-foreground">{{ tx.order?.customer_name ?? '—' }}</td>
                             <td class="px-4 py-3 text-sm text-muted-foreground">{{ tx.tender?.name ?? '—' }}</td>
                             <td :class="['px-4 py-3 text-right font-semibold tabular-nums', isCredit(tx.type) ? 'text-green-600' : 'text-red-600']">
                                 {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
