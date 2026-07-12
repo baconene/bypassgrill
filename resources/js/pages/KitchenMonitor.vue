@@ -303,7 +303,10 @@ const saveEdit = async () => {
                          class="rounded-xl border-l-4 border-yellow-500 bg-card shadow-sm">
                         <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
-                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
+                                <div>
+                                    <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
+                                    <p v-if="order.customer_name" :class="['text-muted-foreground truncate', portraitMode ? 'text-xs' : 'text-xs mt-0.5']">{{ order.customer_name }}</p>
+                                </div>
                                 <div class="flex items-center gap-1">
                                     <span :class="['text-xs rounded-full px-1.5 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
                                     <button @click="openEdit(order)" class="rounded-full p-0.5 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3 w-3" /></button>
@@ -343,7 +346,10 @@ const saveEdit = async () => {
                          class="rounded-xl border-l-4 border-blue-500 bg-card shadow-sm">
                         <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
-                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
+                                <div>
+                                    <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
+                                    <p v-if="order.customer_name" :class="['text-muted-foreground truncate', portraitMode ? 'text-xs' : 'text-xs mt-0.5']">{{ order.customer_name }}</p>
+                                </div>
                                 <div class="flex items-center gap-1">
                                     <span :class="['text-xs rounded-full px-1.5 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
                                     <button @click="openEdit(order)" class="rounded-full p-0.5 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3 w-3" /></button>
@@ -383,7 +389,10 @@ const saveEdit = async () => {
                          class="rounded-xl border-l-4 border-green-500 bg-card shadow-sm">
                         <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
-                                <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
+                                <div>
+                                    <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
+                                    <p v-if="order.customer_name" :class="['text-muted-foreground truncate', portraitMode ? 'text-xs' : 'text-xs mt-0.5']">{{ order.customer_name }}</p>
+                                </div>
                                 <div class="flex items-center gap-1">
                                     <span :class="['text-xs rounded-full px-1.5 py-0.5 font-medium', ageClass(order.created_at)]">{{ ageMinutes(order.created_at) }}m</span>
                                     <button @click="openEdit(order)" class="rounded-full p-0.5 hover:bg-muted text-muted-foreground" title="Edit"><Pencil class="h-3 w-3" /></button>
