@@ -4,6 +4,7 @@ import { Head } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import { Database, Play, Table2, RefreshCw, ChevronRight, ChevronDown, Search, Download, FileText, Sheet, KeyRound } from 'lucide-vue-next'
+import * as XLSX from 'xlsx'
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard' }, { title: 'Tools', href: '/tools' }] } })
 
@@ -116,26 +117,14 @@ const exportPdf = () => {
 const exportExcel = () => {
     if (!result.value) return
     const { columns, rows } = result.value
-    const esc = (v: any) => v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
-
-    const th = columns.map(col => `<th><b>${col}</b></th>`).join('')
-    const tbody = rows.map(r =>
-        `<tr>${columns.map(col => `<td>${esc(r[col])}</td>`).join('')}</tr>`
-    ).join('')
-
-    const xls = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
-        xmlns:x="urn:schemas-microsoft-com:office:excel"
-        xmlns="http://www.w3.org/TR/REC-html40">
-        <head><meta charset="utf-8">
-        <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>
-        <x:ExcelWorksheet><x:Name>Query Result</x:Name>
-        <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
-        </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
-        </head><body><table>${th}${tbody}</table></body></html>`
-
-    const url = URL.createObjectURL(new Blob([xls], { type: 'application/vnd.ms-excel;charset=utf-8' }))
-    const a = document.createElement('a'); a.href = url; a.download = 'query-result.xls'; a.click()
-    URL.revokeObjectURL(url)
+    const data = [
+        columns,
+        ...rows.map(r => columns.map(c => r[c] === null ? '' : typeof r[c] === 'object' ? JSON.stringify(r[c]) : r[c])),
+    ]
+    const ws = XLSX.utils.aoa_to_sheet(data)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Query Result')
+    XLSX.writeFile(wb, 'query-result.xlsx')
 }
 
 const cell = (v: any) => v === null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v)
