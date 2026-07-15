@@ -614,6 +614,8 @@ onMounted(async () => {
                             <option value="expense">Expense</option>
                             <option value="income_adjustment">Income Adjustment</option>
                             <option value="payroll">Payroll</option>
+                            <option value="asset_deduction">Asset Deduction</option>
+                            <option value="payout_share">Payout Share</option>
                         </select>
                     </div>
                     <div class="flex-1 sm:flex-none">
