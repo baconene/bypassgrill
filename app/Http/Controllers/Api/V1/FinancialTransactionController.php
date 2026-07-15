@@ -44,9 +44,10 @@ class FinancialTransactionController extends Controller {
             ->orderByDesc('transacted_at')
             ->orderByDesc('id');
 
-        if ($request->type)       $q->where('type', $request->type);
-        if ($request->start_date) $q->whereDate('transacted_at', '>=', $request->start_date);
-        if ($request->end_date)   $q->whereDate('transacted_at', '<=', $request->end_date);
+        if ($request->type)               $q->where('type', $request->type);
+        if ($request->start_date)         $q->whereDate('transacted_at', '>=', $request->start_date);
+        if ($request->end_date)           $q->whereDate('transacted_at', '<=', $request->end_date);
+        if ($request->payment_tender_id)  $q->where('payment_tender_id', $request->payment_tender_id);
 
         $paginated = $q->paginate(20);
         $paginated->getCollection()->transform(function ($tx) use ($balMap) {

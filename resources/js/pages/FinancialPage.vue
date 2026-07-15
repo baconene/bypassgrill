@@ -57,6 +57,7 @@ const today = new Date().toISOString().split('T')[0]
 const ftStartDate = ref(today)
 const ftEndDate = ref(today)
 const ftTypeFilter = ref('')
+const ftTenderFilter = ref<number | ''>('')
 const loading = ref(false)
 const ftSummary = ref<FtSummary | null>(null)
 const billsSummary = ref<BillsSummary | null>(null)
@@ -225,6 +226,7 @@ const loadFinancial = async (page = 1) => {
                     start_date: ftStartDate.value || undefined,
                     end_date: ftEndDate.value || undefined,
                     type: ftTypeFilter.value || undefined,
+                    payment_tender_id: ftTenderFilter.value || undefined,
                     include_asset_deductions: includeAssetDeductions.value,
                 },
             }),
@@ -616,6 +618,14 @@ onMounted(async () => {
                             <option value="payroll">Payroll</option>
                             <option value="asset_deduction">Asset Deduction</option>
                             <option value="payout_share">Payout Share</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 sm:flex-none">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Tender</label>
+                        <select v-model="ftTenderFilter" @change="loadFinancial()"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="">All Tenders</option>
+                            <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
                         </select>
                     </div>
                     <div class="flex-1 sm:flex-none">
