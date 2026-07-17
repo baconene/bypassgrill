@@ -35,10 +35,10 @@ class Order extends Model
 
     protected static function booted(): void
     {
-        static::created(function (Order $order) {
-            $raw   = $order->id . '|' . ($order->customer_name ?? '') . '|' . $order->created_at;
-            $token = substr(hash_hmac('sha256', $raw, config('app.key')), 0, 32);
-            $order->updateQuietly(['public_token' => $token]);
+        static::creating(function (Order $order) {
+            if (empty($order->public_token)) {
+                $order->public_token = bin2hex(random_bytes(16));
+            }
         });
     }
 
