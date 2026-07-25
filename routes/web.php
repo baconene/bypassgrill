@@ -76,6 +76,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('tools.index')
         ->middleware('role:admin');
 
+    // System documentation
+    Route::inertia('documentation', 'Documentation')
+        ->name('documentation.index')
+        ->middleware('role:admin');
+
     // Parcel Tracking
     Route::get('parcels', [ParcelPageController::class, 'index'])
         ->name('parcels.index');
