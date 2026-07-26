@@ -36,7 +36,7 @@ const daysAgo = (n: number) => toManilaDate(new Date(Date.now() - n * 864e5))
 const dateFrom = ref(daysAgo(29))
 const dateTo   = ref(manilaToday())
 const data     = ref<ServingData | null>(null)
-const loading  = ref(false)
+const loading  = ref(true)
 const error    = ref<string | null>(null)
 const hoverIdx = ref<number | null>(null)
 
@@ -188,6 +188,7 @@ const exportCSV = () => {
 </script>
 
 <template>
+<div class="space-y-5">
     <!-- Filter bar -->
     <div class="rounded-xl border bg-card shadow-sm p-4">
         <div class="flex flex-wrap gap-3 items-end">
@@ -242,7 +243,7 @@ const exportCSV = () => {
     </div>
 
     <!-- Content -->
-    <template v-else-if="data">
+    <div v-else-if="data" class="space-y-5">
 
         <!-- KPI cards -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -430,5 +431,6 @@ const exportCSV = () => {
 
         </div>
 
-    </template>
+    </div>
+</div>
 </template>
