@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
     RefreshCw, BarChart3, Timer, TrendingUp, TrendingDown, Clock,
     Download, Pencil, Check, X as XIcon, ChevronUp, ChevronDown,
-    ChevronLeft, ChevronRight, List,
+    ChevronLeft, ChevronRight, List, AlertCircle,
 } from 'lucide-vue-next'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -63,17 +63,19 @@ const error    = ref<string | null>(null)
 const hoverIdx = ref<number | null>(null)
 
 // Orders table state
-const orders          = ref<OrderPage | null>(null)
-const ordersLoading   = ref(false)
-const ordersPage      = ref(1)
-const sortBy          = ref<'serving_seconds' | 'created_at' | 'order_type' | 'total_amount'>('serving_seconds')
-const sortDir         = ref<'asc' | 'desc'>('desc')
-const selectedBucket  = ref<string | null>(null)
+const orders         = ref<OrderPage | null>(null)
+const ordersLoading  = ref(false)
+const ordersPage     = ref(1)
+const sortBy         = ref<'serving_seconds' | 'created_at' | 'order_type' | 'total_amount'>('serving_seconds')
+const sortDir        = ref<'asc' | 'desc'>('desc')
+const selectedBucket = ref<string | null>(null)
 
-// Inline edit state
-const editingId      = ref<number | null>(null)
-const editingMinutes = ref('')
-const editSaving     = ref(false)
+// Modal state
+const modalOpen    = ref(false)
+const modalRow     = ref<OrderRow | null>(null)
+const modalMinutes = ref('')
+const modalSaving  = ref(false)
+const modalInput   = ref<HTMLInputElement | null>(null)
 
 // Range presets
 const presets = [
@@ -138,13 +140,11 @@ const selectBucket = (bucket: string) => {
     ordersPage.value = 1
     loadOrders()
 }
-
 const clearBucket = () => {
     selectedBucket.value = null
     ordersPage.value = 1
     loadOrders()
 }
-
 const toggleSort = (col: typeof sortBy.value) => {
     if (sortBy.value === col) {
         sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
@@ -155,45 +155,57 @@ const toggleSort = (col: typeof sortBy.value) => {
     ordersPage.value = 1
     loadOrders()
 }
-
-const prevPage = () => {
-    if (ordersPage.value > 1) { ordersPage.value--; loadOrders() }
-}
+const prevPage = () => { if (ordersPage.value > 1) { ordersPage.value--; loadOrders() } }
 const nextPage = () => {
     if (orders.value && ordersPage.value < orders.value.last_page) { ordersPage.value++; loadOrders() }
 }
 
-// ── Inline edit ───────────────────────────────────────────────────────────────
-const startEdit = (row: OrderRow) => {
-    editingId.value      = row.id
-    editingMinutes.value = row.serving_minutes.toFixed(1)
+// ── Modal ─────────────────────────────────────────────────────────────────────
+const openModal = async (row: OrderRow) => {
+    modalRow.value     = row
+    modalMinutes.value = row.serving_minutes.toFixed(1)
+    modalOpen.value    = true
+    await nextTick()
+    modalInput.value?.focus()
+    modalInput.value?.select()
 }
-const cancelEdit = () => { editingId.value = null }
 
-const saveEdit = async (row: OrderRow) => {
-    const mins = parseFloat(editingMinutes.value)
+const closeModal = () => {
+    if (modalSaving.value) return
+    modalOpen.value = false
+    modalRow.value  = null
+}
+
+const saveModal = async () => {
+    if (!modalRow.value) return
+    const mins = parseFloat(modalMinutes.value)
     if (isNaN(mins) || mins <= 0) { toast.error('Enter a valid number of minutes'); return }
-    editSaving.value = true
+    modalSaving.value = true
     try {
-        const res = await api.patch(`/api/v1/reports/serving-time-orders/${row.id}`, {
+        const res = await api.patch(`/api/v1/reports/serving-time-orders/${modalRow.value.id}`, {
             serving_minutes: mins,
         })
         if (orders.value) {
-            const idx = orders.value.data.findIndex(r => r.id === row.id)
+            const idx = orders.value.data.findIndex(r => r.id === modalRow.value!.id)
             if (idx !== -1) {
                 orders.value.data[idx].serving_minutes = res.data.serving_minutes
                 orders.value.data[idx].serving_seconds = res.data.serving_seconds
                 orders.value.data[idx].completed_at    = res.data.completed_at
             }
         }
-        editingId.value = null
-        toast.success('Serving time updated')
+        toast.success(`Serving time updated to ${formatMinutes(res.data.serving_minutes)}`)
+        closeModal()
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to update serving time')
     } finally {
-        editSaving.value = false
+        modalSaving.value = false
     }
 }
+
+// Escape key closes modal
+const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeModal() }
+onMounted(() => document.addEventListener('keydown', onKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 // ── Chart geometry ────────────────────────────────────────────────────────────
 interface ChartBar {
@@ -221,7 +233,6 @@ const chart = computed<ChartData | null>(() => {
     const validVals = daily
         .filter(d => d.avg_minutes !== null && d.count > 0)
         .map(d => d.avg_minutes as number)
-
     if (!validVals.length) return null
 
     const maxVal = Math.max(...validVals, 5)
@@ -247,8 +258,7 @@ const chart = computed<ChartData | null>(() => {
         return {
             cx, barW,
             barY: baselineY - h, barH: h,
-            rangeY1: baselineY - maxH,
-            rangeY2: baselineY - minH,
+            rangeY1: baselineY - maxH, rangeY2: baselineY - minH,
             hasData: has, count: d.count,
             avg: d.avg_minutes, min: d.min_minutes, max: d.max_minutes,
             date: d.date,
@@ -259,7 +269,6 @@ const chart = computed<ChartData | null>(() => {
     })
 
     const activeBars = bars.filter(b => b.hasData)
-
     const linePath = activeBars.length >= 2
         ? activeBars.map((b, i) => `${i === 0 ? 'M' : 'L'} ${b.cx.toFixed(1)},${b.barY.toFixed(1)}`).join(' ')
         : ''
@@ -274,6 +283,27 @@ const typeMax = computed(() =>
 const distMax = computed(() =>
     data.value?.distribution.reduce((m, d) => Math.max(m, d.count), 1) ?? 1
 )
+
+// ── Modal computed ─────────────────────────────────────────────────────────────
+const modalTimeBreakdown = computed(() => {
+    const mins = parseFloat(modalMinutes.value)
+    if (isNaN(mins) || mins <= 0) return null
+    const totalSec = Math.round(mins * 60)
+    const h = Math.floor(totalSec / 3600)
+    const m = Math.floor((totalSec % 3600) / 60)
+    const s = totalSec % 60
+    const parts: string[] = []
+    if (h > 0) parts.push(`${h}h`)
+    if (m > 0) parts.push(`${m}m`)
+    if (s > 0 || parts.length === 0) parts.push(`${s}s`)
+    return parts.join(' ')
+})
+
+const modalTimeColor = computed(() => {
+    const mins = parseFloat(modalMinutes.value)
+    if (isNaN(mins)) return 'text-muted-foreground'
+    return mins < 5 ? 'text-green-500' : mins > 30 ? 'text-red-500' : mins > 15 ? 'text-orange-500' : 'text-foreground'
+})
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const formatMinutes = (m: number) => {
@@ -321,6 +351,12 @@ const fmtDate = (iso: string) =>
     new Date(iso).toLocaleString('en-PH', {
         timeZone: 'Asia/Manila', month: 'short', day: 'numeric',
         hour: '2-digit', minute: '2-digit',
+    })
+
+const fmtDateFull = (iso: string) =>
+    new Date(iso).toLocaleString('en-PH', {
+        timeZone: 'Asia/Manila', weekday: 'short', month: 'short',
+        day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
     })
 
 // ── Export ────────────────────────────────────────────────────────────────────
@@ -457,7 +493,6 @@ const exportCSV = () => {
             <div v-if="chart" class="relative" @mouseleave="hoverIdx = null">
                 <svg :viewBox="`0 0 ${chart.W} ${chart.H}`"
                     class="w-full" style="height:220px; overflow:visible">
-
                     <line v-for="t in chart.ticks" :key="t.y"
                         :x1="chart.padL" :y1="t.y" :x2="chart.W - 16" :y2="t.y"
                         stroke="currentColor" stroke-opacity="0.07" />
@@ -466,31 +501,24 @@ const exportCSV = () => {
                         text-anchor="end" class="fill-current text-muted-foreground" font-size="10">
                         {{ t.label }}
                     </text>
-
                     <rect v-for="bar in chart.activeBars" :key="'rng-' + bar.date"
                         :x="bar.cx - bar.barW / 2" :width="bar.barW"
                         :y="bar.rangeY1" :height="Math.max(0, bar.rangeY2 - bar.rangeY1)"
                         fill="rgb(249,115,22)" fill-opacity="0.18" rx="2" />
-
                     <rect v-for="(bar, i) in chart.activeBars" :key="'bar-' + bar.date"
                         :x="bar.cx - bar.barW / 2" :width="bar.barW"
                         :y="bar.barY" :height="bar.barH"
-                        rx="2"
-                        :fill-opacity="hoverIdx === i ? '1' : '0.85'"
-                        fill="rgb(249,115,22)"
-                        style="cursor:pointer"
+                        rx="2" :fill-opacity="hoverIdx === i ? '1' : '0.85'"
+                        fill="rgb(249,115,22)" style="cursor:pointer"
                         @mouseover="hoverIdx = i" />
-
                     <path v-if="chart.linePath" :d="chart.linePath"
                         fill="none" stroke="rgb(234,88,12)" stroke-width="2"
                         stroke-linejoin="round" stroke-linecap="round" stroke-opacity="0.7" />
-
                     <text v-for="bar in chart.bars.filter(b => b.showLabel)" :key="'xl-' + bar.date"
                         :x="bar.labelX" :y="bar.labelY"
                         text-anchor="middle" class="fill-current text-muted-foreground" font-size="9">
                         {{ bar.label }}
                     </text>
-
                     <line :x1="chart.padL" :y1="chart.baselineY"
                         :x2="chart.W - 16" :y2="chart.baselineY"
                         stroke="currentColor" stroke-opacity="0.15" />
@@ -543,7 +571,7 @@ const exportCSV = () => {
                 <div v-else class="py-10 text-center text-sm text-muted-foreground">No data for this period.</div>
             </div>
 
-            <!-- Distribution histogram — click bars to filter orders table -->
+            <!-- Distribution histogram — click bars to filter table -->
             <div class="rounded-xl border bg-card shadow-sm p-4">
                 <h3 class="font-bold text-sm mb-1 flex items-center gap-2">
                     <BarChart3 class="h-4 w-4 text-muted-foreground" /> Time Distribution
@@ -572,11 +600,9 @@ const exportCSV = () => {
                             </div>
                         </div>
                         <span class="font-semibold w-10 text-right shrink-0">{{ d.count.toLocaleString() }}</span>
-                        <!-- Selected indicator -->
                         <span v-if="selectedBucket === d.bucket" class="ml-2 shrink-0 text-[10px] font-bold text-primary">▼</span>
                     </div>
 
-                    <!-- Legend -->
                     <div class="pt-2 border-t flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                         <span class="flex items-center gap-1.5">
                             <span class="inline-block w-2.5 h-2.5 rounded-sm bg-green-500"></span> Fast (&lt;5 min)
@@ -597,38 +623,40 @@ const exportCSV = () => {
         <!-- ── Orders table ──────────────────────────────────────────────────── -->
         <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
 
-            <!-- Table header -->
+            <!-- Header -->
             <div class="px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2 bg-muted/20">
                 <div class="flex items-center gap-2 flex-wrap">
                     <h3 class="font-bold text-sm flex items-center gap-2">
-                        <List class="h-4 w-4 text-muted-foreground" />
-                        Orders
+                        <List class="h-4 w-4 text-muted-foreground" /> Orders
                     </h3>
-                    <!-- Active bucket filter badge -->
                     <span v-if="selectedBucket"
                         class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
                         {{ selectedBucket }}
-                        <button @click="clearBucket"
-                            class="ml-0.5 rounded-full hover:bg-primary/20 p-0.5 transition-colors">
+                        <button @click="clearBucket" class="ml-0.5 rounded-full hover:bg-primary/20 p-0.5 transition-colors">
                             <XIcon class="h-2.5 w-2.5" />
                         </button>
                     </span>
                     <span v-else class="text-xs text-muted-foreground">All buckets</span>
                 </div>
-                <span v-if="orders" class="text-xs text-muted-foreground tabular-nums">
-                    {{ orders.total.toLocaleString() }} order{{ orders.total !== 1 ? 's' : '' }}
-                </span>
+                <div class="flex items-center gap-3">
+                    <span v-if="orders" class="text-xs text-muted-foreground tabular-nums">
+                        {{ orders.total.toLocaleString() }} order{{ orders.total !== 1 ? 's' : '' }}
+                    </span>
+                    <span class="text-xs text-muted-foreground hidden sm:flex items-center gap-1">
+                        <Pencil class="h-3 w-3" /> Click a row to edit
+                    </span>
+                </div>
             </div>
 
-            <!-- Loading skeleton -->
+            <!-- Loading -->
             <div v-if="ordersLoading" class="py-10 text-center">
                 <RefreshCw class="h-4 w-4 animate-spin mx-auto text-muted-foreground" />
                 <p class="text-xs text-muted-foreground mt-2">Loading orders…</p>
             </div>
 
-            <!-- Empty state -->
+            <!-- Empty -->
             <div v-else-if="orders && orders.data.length === 0" class="py-10 text-center">
-                <p class="text-sm text-muted-foreground">No orders found in this time range.</p>
+                <p class="text-sm text-muted-foreground">No orders found in this range.</p>
             </div>
 
             <!-- Table -->
@@ -637,11 +665,8 @@ const exportCSV = () => {
                     <thead>
                         <tr class="border-b text-xs text-muted-foreground bg-muted/10">
                             <th class="px-4 py-2.5 text-left font-medium">#</th>
-
-                            <!-- Type — sortable -->
                             <th class="px-4 py-2.5 text-left font-medium">
-                                <button @click="toggleSort('order_type')"
-                                    class="flex items-center gap-1 hover:text-foreground transition-colors">
+                                <button @click="toggleSort('order_type')" class="flex items-center gap-1 hover:text-foreground transition-colors">
                                     Type
                                     <span class="inline-flex flex-col leading-none">
                                         <ChevronUp class="h-2.5 w-2.5" :class="sortIcon('order_type', 'asc')" />
@@ -649,13 +674,9 @@ const exportCSV = () => {
                                     </span>
                                 </button>
                             </th>
-
                             <th class="px-4 py-2.5 text-left font-medium">Customer / Table</th>
-
-                            <!-- Created — sortable -->
                             <th class="px-4 py-2.5 text-left font-medium">
-                                <button @click="toggleSort('created_at')"
-                                    class="flex items-center gap-1 hover:text-foreground transition-colors">
+                                <button @click="toggleSort('created_at')" class="flex items-center gap-1 hover:text-foreground transition-colors">
                                     Created
                                     <span class="inline-flex flex-col leading-none">
                                         <ChevronUp class="h-2.5 w-2.5" :class="sortIcon('created_at', 'asc')" />
@@ -663,11 +684,8 @@ const exportCSV = () => {
                                     </span>
                                 </button>
                             </th>
-
-                            <!-- Serving Time — sortable + editable -->
                             <th class="px-4 py-2.5 text-right font-medium">
-                                <button @click="toggleSort('serving_seconds')"
-                                    class="flex items-center gap-1 ml-auto hover:text-foreground transition-colors">
+                                <button @click="toggleSort('serving_seconds')" class="flex items-center gap-1 ml-auto hover:text-foreground transition-colors">
                                     Serving Time
                                     <span class="inline-flex flex-col leading-none">
                                         <ChevronUp class="h-2.5 w-2.5" :class="sortIcon('serving_seconds', 'asc')" />
@@ -675,11 +693,8 @@ const exportCSV = () => {
                                     </span>
                                 </button>
                             </th>
-
-                            <!-- Total — sortable -->
                             <th class="px-4 py-2.5 text-right font-medium">
-                                <button @click="toggleSort('total_amount')"
-                                    class="flex items-center gap-1 ml-auto hover:text-foreground transition-colors">
+                                <button @click="toggleSort('total_amount')" class="flex items-center gap-1 ml-auto hover:text-foreground transition-colors">
                                     Total
                                     <span class="inline-flex flex-col leading-none">
                                         <ChevronUp class="h-2.5 w-2.5" :class="sortIcon('total_amount', 'asc')" />
@@ -691,14 +706,13 @@ const exportCSV = () => {
                     </thead>
                     <tbody class="divide-y divide-border">
                         <tr v-for="row in orders.data" :key="row.id"
-                            class="hover:bg-muted/20 group transition-colors">
+                            @click="openModal(row)"
+                            class="hover:bg-primary/5 cursor-pointer group transition-colors">
 
-                            <!-- ID -->
                             <td class="px-4 py-3 text-muted-foreground font-mono text-xs whitespace-nowrap">
                                 #{{ row.id }}
                             </td>
 
-                            <!-- Type badge -->
                             <td class="px-4 py-3 whitespace-nowrap">
                                 <span class="inline-block rounded-full px-2 py-0.5 text-xs font-semibold"
                                     :class="typeBadge(row.order_type)">
@@ -706,53 +720,23 @@ const exportCSV = () => {
                                 </span>
                             </td>
 
-                            <!-- Customer / Table -->
                             <td class="px-4 py-3 text-muted-foreground max-w-[160px] truncate">
                                 {{ row.customer_name ?? (row.table_number ? `Table ${row.table_number}` : '—') }}
                             </td>
 
-                            <!-- Created at -->
                             <td class="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
                                 {{ fmtDate(row.created_at) }}
                             </td>
 
-                            <!-- Serving time — inline editable -->
                             <td class="px-4 py-3 text-right">
-                                <!-- Edit mode -->
-                                <div v-if="editingId === row.id" class="flex items-center justify-end gap-1">
-                                    <input
-                                        v-model="editingMinutes"
-                                        type="number" step="0.1" min="0.1" max="1440"
-                                        class="w-20 rounded border bg-background px-2 py-1 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-primary"
-                                        @keyup.enter="saveEdit(row)"
-                                        @keyup.escape="cancelEdit"
-                                        autofocus />
-                                    <span class="text-xs text-muted-foreground shrink-0">min</span>
-                                    <button @click="saveEdit(row)" :disabled="editSaving"
-                                        class="rounded p-1 bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 transition-colors">
-                                        <Check class="h-3 w-3" />
-                                    </button>
-                                    <button @click="cancelEdit"
-                                        class="rounded p-1 bg-muted hover:bg-muted/80 text-muted-foreground transition-colors">
-                                        <XIcon class="h-3 w-3" />
-                                    </button>
-                                </div>
-
-                                <!-- View mode -->
-                                <div v-else class="flex items-center justify-end gap-1.5">
-                                    <span :class="servingTimeColor(row.serving_minutes)"
-                                        class="font-semibold tabular-nums">
+                                <div class="flex items-center justify-end gap-1.5">
+                                    <span :class="servingTimeColor(row.serving_minutes)" class="font-semibold tabular-nums">
                                         {{ formatMinutes(row.serving_minutes) }}
                                     </span>
-                                    <button @click="startEdit(row)"
-                                        title="Edit serving time"
-                                        class="opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 hover:bg-muted text-muted-foreground hover:text-foreground">
-                                        <Pencil class="h-3 w-3" />
-                                    </button>
+                                    <Pencil class="h-3 w-3 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                                 </div>
                             </td>
 
-                            <!-- Total amount -->
                             <td class="px-4 py-3 text-right font-medium tabular-nums whitespace-nowrap">
                                 ₱{{ row.total_amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
                             </td>
@@ -787,4 +771,135 @@ const exportCSV = () => {
 
     </div>
 </div>
+
+<!-- ── Edit Serving Time Modal ──────────────────────────────────────────────── -->
+<Teleport to="body">
+    <Transition
+        enter-active-class="transition duration-200 ease-out"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition duration-150 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0">
+        <div v-if="modalOpen && modalRow"
+            class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            @click.self="closeModal">
+
+            <Transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0 scale-95 translate-y-2"
+                enter-to-class="opacity-100 scale-100 translate-y-0"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100 scale-100 translate-y-0"
+                leave-to-class="opacity-0 scale-95 translate-y-2">
+                <div v-if="modalOpen"
+                    class="w-full max-w-md rounded-2xl bg-card border shadow-2xl overflow-hidden"
+                    @click.stop>
+
+                    <!-- Modal header -->
+                    <div class="flex items-start justify-between px-5 pt-5 pb-4 border-b">
+                        <div>
+                            <div class="flex items-center gap-2 mb-1">
+                                <h2 class="font-bold text-base">Order #{{ modalRow.id }}</h2>
+                                <span class="inline-block rounded-full px-2 py-0.5 text-xs font-semibold"
+                                    :class="typeBadge(modalRow.order_type)">
+                                    {{ typeLabel(modalRow.order_type) }}
+                                </span>
+                            </div>
+                            <p class="text-xs text-muted-foreground">
+                                {{ modalRow.customer_name ?? (modalRow.table_number ? `Table ${modalRow.table_number}` : 'No customer info') }}
+                            </p>
+                        </div>
+                        <button @click="closeModal"
+                            class="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors -mt-0.5 -mr-0.5">
+                            <XIcon class="h-4 w-4" />
+                        </button>
+                    </div>
+
+                    <!-- Order details -->
+                    <div class="px-5 py-4 space-y-3">
+
+                        <!-- Timestamps -->
+                        <div class="grid grid-cols-2 gap-3 text-xs">
+                            <div class="rounded-lg bg-muted/40 p-3">
+                                <p class="text-muted-foreground mb-0.5 font-medium">Created</p>
+                                <p class="font-semibold leading-snug">{{ fmtDateFull(modalRow.created_at) }}</p>
+                            </div>
+                            <div class="rounded-lg bg-muted/40 p-3">
+                                <p class="text-muted-foreground mb-0.5 font-medium">Completed</p>
+                                <p class="font-semibold leading-snug">{{ fmtDateFull(modalRow.completed_at) }}</p>
+                            </div>
+                        </div>
+
+                        <!-- Current serving time display -->
+                        <div class="rounded-xl border bg-muted/20 px-4 py-3 flex items-center justify-between">
+                            <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Timer class="h-4 w-4" />
+                                <span>Current serving time</span>
+                            </div>
+                            <span :class="servingTimeColor(modalRow.serving_minutes)" class="text-2xl font-black tabular-nums">
+                                {{ formatMinutes(modalRow.serving_minutes) }}
+                            </span>
+                        </div>
+
+                        <!-- Edit field -->
+                        <div class="space-y-1.5">
+                            <label class="text-xs font-semibold text-foreground block">
+                                Adjust Serving Time
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <div class="relative flex-1">
+                                    <input
+                                        ref="modalInput"
+                                        v-model="modalMinutes"
+                                        type="number"
+                                        step="0.1"
+                                        min="0.1"
+                                        max="1440"
+                                        placeholder="e.g. 12.5"
+                                        class="w-full rounded-lg border bg-background px-3 py-2.5 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary pr-12"
+                                        @keyup.enter="saveModal"
+                                        @keyup.escape="closeModal" />
+                                    <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-medium pointer-events-none">
+                                        min
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Live preview -->
+                            <p v-if="modalTimeBreakdown" class="text-xs text-muted-foreground flex items-center gap-1.5 pl-1">
+                                <span class="text-muted-foreground/60">=</span>
+                                <span :class="modalTimeColor" class="font-semibold">{{ modalTimeBreakdown }}</span>
+                            </p>
+                            <p v-else class="text-xs text-red-400 pl-1">Enter a valid duration in minutes</p>
+                        </div>
+
+                        <!-- Info note -->
+                        <div class="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-2.5 flex gap-2">
+                            <AlertCircle class="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                            <p class="text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+                                This updates the <strong>completed_at</strong> timestamp of the order. The new time will be reflected in all serving time charts.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Modal footer -->
+                    <div class="px-5 py-4 border-t bg-muted/10 flex items-center justify-end gap-2">
+                        <button @click="closeModal" :disabled="modalSaving"
+                            class="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50 transition-colors">
+                            Cancel
+                        </button>
+                        <button @click="saveModal" :disabled="modalSaving || !modalTimeBreakdown"
+                            class="rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-2">
+                            <RefreshCw v-if="modalSaving" class="h-3.5 w-3.5 animate-spin" />
+                            <Check v-else class="h-3.5 w-3.5" />
+                            Save Changes
+                        </button>
+                    </div>
+
+                </div>
+            </Transition>
+        </div>
+    </Transition>
+</Teleport>
 </template>
