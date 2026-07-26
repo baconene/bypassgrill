@@ -286,27 +286,29 @@ onMounted(() => {
     <!-- Page header -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+            <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
                 <Map class="w-4 h-4 text-primary" />
             </div>
             <div>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1.5 flex-wrap">
                     <h1 class="text-lg font-bold text-foreground leading-tight">Stall Mapping</h1>
                     <button
+                        type="button"
                         @click="landViewOpen = true"
-                        class="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border"
+                        class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border touch-manipulation"
                         title="View land plot"
                     >
                         <Eye class="w-3.5 h-3.5" />
-                        <span class="hidden sm:inline">Plot</span>
+                        <span>Plot</span>
                     </button>
                     <button
+                        type="button"
                         @click="plotSettingsOpen = true"
-                        class="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border"
+                        class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border touch-manipulation"
                         title="Plot settings"
                     >
                         <Settings2 class="w-3.5 h-3.5" />
-                        <span class="hidden sm:inline">Settings</span>
+                        <span>Settings</span>
                     </button>
                 </div>
                 <p class="text-xs text-muted-foreground">Food stall rental scheduler</p>
@@ -315,19 +317,19 @@ onMounted(() => {
 
         <div class="flex items-center gap-2 flex-wrap">
             <!-- View toggle -->
-            <div class="flex rounded-lg border overflow-hidden text-sm">
-                <button @click="view = 'map'"
-                    :class="['px-3 py-1.5 transition-colors flex items-center gap-1.5',
+            <div class="flex rounded-xl border overflow-hidden text-sm touch-manipulation">
+                <button type="button" @click="view = 'map'"
+                    :class="['px-3 py-2 transition-colors flex items-center gap-1.5 touch-manipulation',
                         view === 'map' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent text-foreground']">
                     <LayoutGrid class="w-3.5 h-3.5" /> Map
                 </button>
-                <button @click="view = 'calendar'"
-                    :class="['px-3 py-1.5 transition-colors flex items-center gap-1.5 border-l',
+                <button type="button" @click="view = 'calendar'"
+                    :class="['px-3 py-2 transition-colors flex items-center gap-1.5 border-l touch-manipulation',
                         view === 'calendar' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent text-foreground']">
                     <CalendarDays class="w-3.5 h-3.5" /> Calendar
                 </button>
-                <button @click="view = 'timeline'"
-                    :class="['px-3 py-1.5 transition-colors flex items-center gap-1.5 border-l',
+                <button type="button" @click="view = 'timeline'"
+                    :class="['px-3 py-2 transition-colors flex items-center gap-1.5 border-l touch-manipulation',
                         view === 'timeline' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent text-foreground']">
                     <AlignLeft class="w-3.5 h-3.5" /> Timeline
                 </button>
@@ -335,8 +337,9 @@ onMounted(() => {
 
             <!-- Tenants panel toggle -->
             <button
+                type="button"
                 @click="showTenantsPanel = !showTenantsPanel"
-                :class="['flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors',
+                :class="['flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm transition-colors touch-manipulation',
                     showTenantsPanel ? 'bg-primary text-primary-foreground' : 'hover:bg-accent']"
             >
                 <Users class="w-3.5 h-3.5" />
@@ -344,8 +347,9 @@ onMounted(() => {
             </button>
 
             <button
+                type="button"
                 @click="refreshAll"
-                class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+                class="flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm hover:bg-accent transition-colors touch-manipulation"
             >
                 <RefreshCw class="w-3.5 h-3.5" />
                 Refresh
@@ -436,11 +440,11 @@ onMounted(() => {
     <!-- ── TIMELINE VIEW ─────────────────────────────────────────────────────── -->
     <div v-else-if="view === 'timeline'" class="space-y-3">
         <div class="flex items-center gap-2">
-            <button @click="tlShift(-7)" class="rounded-lg border p-1.5 hover:bg-accent transition-colors">
+            <button type="button" @click="tlShift(-7)" class="rounded-xl border p-2.5 hover:bg-accent transition-colors touch-manipulation">
                 <ChevronLeft class="w-4 h-4" />
             </button>
             <span class="text-sm text-muted-foreground font-medium">{{ tlDateFrom }} – {{ tlDateTo }}</span>
-            <button @click="tlShift(7)" class="rounded-lg border p-1.5 hover:bg-accent transition-colors">
+            <button type="button" @click="tlShift(7)" class="rounded-xl border p-2.5 hover:bg-accent transition-colors touch-manipulation">
                 <ChevronRight class="w-4 h-4" />
             </button>
         </div>

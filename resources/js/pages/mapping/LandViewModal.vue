@@ -12,10 +12,10 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 
 // ─── Internal state ───────────────────────────────────────────────────────────
-const viewDate     = ref(props.initialDate)
-const viewStalls   = ref<StallDay[]>([])
-const loadingDay   = ref(false)
-const calDays      = ref<Record<string, CalendarDay>>({})  // accumulated across months
+const viewDate   = ref(props.initialDate)
+const viewStalls = ref<StallDay[]>([])
+const loadingDay = ref(false)
+const calDays    = ref<Record<string, CalendarDay>>({})
 
 const TODAY = () => new Date().toISOString().slice(0, 10)
 
@@ -40,9 +40,7 @@ const loadDay = async () => {
 
 const loadCalendarMonth = async (year: number, month: number) => {
     const key = `${year}-${String(month).padStart(2, '0')}`
-    // skip if already cached (we already have some data for this month)
-    const firstDay = `${key}-01`
-    if (calDays.value[firstDay] !== undefined) return
+    if (calDays.value[`${key}-01`] !== undefined) return
     try {
         const data = await apiFetch(`/api/v1/rental/schedules/calendar?year=${year}&month=${month}`)
         Object.assign(calDays.value, data)
@@ -53,17 +51,16 @@ const loadCalendarMonth = async (year: number, month: number) => {
 watch(() => props.open, (v) => {
     if (!v) return
     viewDate.value = props.initialDate
-    calDays.value  = {}  // reset cache on fresh open
+    calDays.value  = {}
     loadDay()
     const d = new Date(props.initialDate + 'T00:00:00')
     loadCalendarMonth(d.getFullYear(), d.getMonth() + 1)
-})
+}, { immediate: false })
 
 watch(viewDate, (date) => {
     loadDay()
     const d = new Date(date + 'T00:00:00')
     loadCalendarMonth(d.getFullYear(), d.getMonth() + 1)
-    // Also prefetch adjacent months for the strip
     const prev = new Date(d); prev.setDate(0)
     const next = new Date(d); next.setDate(1); next.setMonth(next.getMonth() + 1)
     loadCalendarMonth(prev.getFullYear(), prev.getMonth() + 1)
@@ -79,17 +76,15 @@ const shiftDate = (n: number) => {
 
 const goToday = () => { viewDate.value = TODAY() }
 
-// ─── 7-day strip: viewDate ± 3 days ──────────────────────────────────────────
-const stripDates = computed(() => {
-    return Array.from({ length: 7 }, (_, i) => {
+// ─── 7-day strip ─────────────────────────────────────────────────────────────
+const stripDates = computed(() =>
+    Array.from({ length: 7 }, (_, i) => {
         const d = new Date(viewDate.value + 'T00:00:00')
         d.setDate(d.getDate() + (i - 3))
         return d.toISOString().slice(0, 10)
     })
-})
+)
 
-// Build 5 colored dots for a given calendar day summary
-// Order: occupied (blue), reserved (amber), maintenance (red), available (green)
 const stripDots = (date: string): string[] => {
     const day = calDays.value[date]
     if (!day) return Array(5).fill('unknown')
@@ -111,33 +106,34 @@ const dotColor = (status: string) => {
     }
 }
 
-const stripDayLabel = (date: string) => {
-    const d = new Date(date + 'T00:00:00')
-    return d.toLocaleDateString('en-PH', { weekday: 'short' })
-}
+const stripDayLabel = (date: string) =>
+    new Date(date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short' })
 
 const stripDayNum = (date: string) => parseInt(date.slice(8))
 
 // ─── Display helpers ──────────────────────────────────────────────────────────
 const fmtViewDate = computed(() => {
-    const d = new Date(viewDate.value + 'T00:00:00')
-    const today = TODAY()
-    const tomorrow = (() => { const t = new Date(today + 'T00:00:00'); t.setDate(t.getDate() + 1); return t.toISOString().slice(0, 10) })()
-    const yesterday = (() => { const t = new Date(today + 'T00:00:00'); t.setDate(t.getDate() - 1); return t.toISOString().slice(0, 10) })()
+    const today     = TODAY()
+    const d         = new Date(today + 'T00:00:00')
+    const tomorrow  = new Date(d); tomorrow.setDate(d.getDate() + 1)
+    const yesterday = new Date(d); yesterday.setDate(d.getDate() - 1)
     if (viewDate.value === today)     return 'Today'
-    if (viewDate.value === tomorrow)  return 'Tomorrow'
-    if (viewDate.value === yesterday) return 'Yesterday'
-    return d.toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    if (viewDate.value === tomorrow.toISOString().slice(0, 10))  return 'Tomorrow'
+    if (viewDate.value === yesterday.toISOString().slice(0, 10)) return 'Yesterday'
+    return new Date(viewDate.value + 'T00:00:00').toLocaleDateString('en-PH', {
+        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+    })
 })
 
 const isPast   = computed(() => viewDate.value < TODAY())
 const isFuture = computed(() => viewDate.value > TODAY())
+const isToday  = computed(() => viewDate.value === TODAY())
 
-// ─── SVG layout constants ─────────────────────────────────────────────────────
+// ─── SVG layout ──────────────────────────────────────────────────────────────
 const PX      = 50
-const LAND_W  = 11 * PX   // 550
-const LAND_H  = 3  * PX   // 150
-const STALL_W = LAND_W / 5 // 110
+const LAND_W  = 11 * PX
+const LAND_H  = 3  * PX
+const STALL_W = LAND_W / 5
 const PAD_L   = 50
 const PAD_T   = 30
 const PAD_B   = 44
@@ -160,7 +156,6 @@ const tenantLine = (stall: StallDay) => {
     return (t.business_name || t.name || '').slice(0, 13)
 }
 
-// stall number text color: amber stalls need dark text
 const badgeTextColor = (status: DisplayStatus) =>
     status === 'reserved' ? '#78350f' : status === 'inactive' ? '#9ca3af' : '#ffffff'
 </script>
@@ -175,72 +170,89 @@ const badgeTextColor = (status: DisplayStatus) =>
     >
         <div
             v-if="open"
-            class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm"
             @click.self="emit('close')"
         >
             <Transition
-                enter-from-class="opacity-0 scale-95 translate-y-2"
-                enter-to-class="opacity-100 scale-100 translate-y-0"
-                leave-from-class="opacity-100 scale-100"
-                leave-to-class="opacity-0 scale-95"
+                enter-from-class="opacity-0 translate-y-4 sm:scale-95 sm:translate-y-0"
+                enter-to-class="opacity-100 translate-y-0 sm:scale-100"
+                leave-from-class="opacity-100 translate-y-0 sm:scale-100"
+                leave-to-class="opacity-0 translate-y-4 sm:scale-95 sm:translate-y-0"
                 enter-active-class="transition-all duration-200"
                 leave-active-class="transition-all duration-150"
             >
-                <div v-if="open" class="w-full max-w-2xl rounded-2xl bg-card border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-
+                <div v-if="open"
+                    class="w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl bg-card border-t sm:border shadow-2xl flex flex-col"
+                    style="max-height: 92dvh;"
+                >
                     <!-- ── Header ──────────────────────────────────────────── -->
-                    <div class="flex items-center justify-between px-5 py-3.5 border-b flex-shrink-0">
+                    <div class="flex items-center justify-between px-4 sm:px-5 py-3.5 border-b flex-shrink-0">
                         <div>
                             <p class="font-semibold text-foreground">Land Overview</p>
                             <p class="text-xs text-muted-foreground">11 × 3 metres · 5 stalls</p>
                         </div>
-                        <button @click="emit('close')" class="p-1.5 rounded-lg hover:bg-accent transition-colors">
+                        <button type="button" @click="emit('close')"
+                            class="p-2 rounded-lg hover:bg-accent transition-colors touch-manipulation">
                             <X class="w-4 h-4" />
                         </button>
                     </div>
 
                     <div class="flex-1 overflow-y-auto">
-                        <div class="p-5 space-y-4">
+                        <div class="px-4 sm:px-5 py-4 space-y-4">
 
                             <!-- ── Date controller ─────────────────────────── -->
-                            <div class="flex items-center gap-2">
-                                <button @click="shiftDate(-1)"
-                                    class="rounded-lg border p-1.5 hover:bg-accent transition-colors flex-shrink-0">
-                                    <ChevronLeft class="w-4 h-4" />
-                                </button>
+                            <div class="space-y-2">
+                                <!-- Prev / label / Next -->
+                                <div class="flex items-center gap-2">
+                                    <button type="button" @click="shiftDate(-1)"
+                                        class="rounded-xl border p-2.5 hover:bg-accent active:scale-95 transition-all touch-manipulation flex-shrink-0"
+                                        aria-label="Previous day">
+                                        <ChevronLeft class="w-4 h-4" />
+                                    </button>
 
-                                <div class="flex-1 text-center">
-                                    <div class="flex items-center justify-center gap-2">
-                                        <span :class="[
-                                            'text-sm font-semibold',
+                                    <button type="button" @click="goToday"
+                                        class="flex-1 text-center min-w-0 py-1 rounded-xl hover:bg-accent/50 active:bg-accent transition-colors touch-manipulation"
+                                        :title="isToday ? 'Viewing today' : 'Jump to today'"
+                                    >
+                                        <p class="text-sm font-semibold leading-tight" :class="[
                                             isPast ? 'text-muted-foreground' : isFuture ? 'text-blue-600 dark:text-blue-400' : 'text-foreground'
-                                        ]">{{ fmtViewDate }}</span>
-                                        <span v-if="isPast"   class="text-[10px] rounded-full bg-muted px-1.5 py-0.5 text-muted-foreground">past</span>
-                                        <span v-if="isFuture" class="text-[10px] rounded-full bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 text-blue-600 dark:text-blue-400">upcoming</span>
-                                    </div>
-                                    <p class="text-xs text-muted-foreground">{{ viewDate }}</p>
+                                        ]">{{ fmtViewDate }}</p>
+                                        <p class="text-[11px] text-muted-foreground mt-0.5">{{ viewDate }}</p>
+                                    </button>
+
+                                    <button type="button" @click="shiftDate(1)"
+                                        class="rounded-xl border p-2.5 hover:bg-accent active:scale-95 transition-all touch-manipulation flex-shrink-0"
+                                        aria-label="Next day">
+                                        <ChevronRight class="w-4 h-4" />
+                                    </button>
                                 </div>
 
-                                <button @click="shiftDate(1)"
-                                    class="rounded-lg border p-1.5 hover:bg-accent transition-colors flex-shrink-0">
-                                    <ChevronRight class="w-4 h-4" />
-                                </button>
-
-                                <button
-                                    v-if="viewDate !== TODAY()"
-                                    @click="goToday"
-                                    class="rounded-lg border px-2.5 py-1.5 text-xs hover:bg-accent transition-colors flex-shrink-0"
-                                >Today</button>
+                                <!-- Badge row -->
+                                <div v-if="!isToday" class="flex items-center justify-center gap-2">
+                                    <span v-if="isPast"
+                                        class="text-[10px] rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground font-medium">
+                                        past
+                                    </span>
+                                    <span v-if="isFuture"
+                                        class="text-[10px] rounded-full bg-blue-100 dark:bg-blue-900/40 px-2.5 py-0.5 text-blue-600 dark:text-blue-400 font-medium">
+                                        upcoming
+                                    </span>
+                                    <button type="button" @click="goToday"
+                                        class="text-[11px] rounded-full border px-3 py-0.5 hover:bg-accent transition-colors touch-manipulation font-medium">
+                                        Back to Today
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- ── 7-day strip ─────────────────────────────── -->
-                            <div class="flex gap-1 overflow-x-auto pb-0.5">
+                            <div class="flex gap-1.5 overflow-x-auto pb-0.5 -mx-1 px-1">
                                 <button
                                     v-for="date in stripDates"
                                     :key="date"
+                                    type="button"
                                     @click="viewDate = date"
+                                    class="flex-1 min-w-[44px] flex flex-col items-center gap-1 rounded-xl px-1 py-2.5 transition-all border touch-manipulation"
                                     :class="[
-                                        'flex-1 min-w-[46px] flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[10px] transition-all border',
                                         date === viewDate
                                             ? 'bg-primary text-primary-foreground border-primary shadow-sm'
                                             : date === TODAY()
@@ -248,13 +260,14 @@ const badgeTextColor = (status: DisplayStatus) =>
                                                 : 'border-transparent hover:bg-accent',
                                     ]"
                                 >
-                                    <span :class="['font-medium text-[10px]', date === viewDate ? 'text-primary-foreground' : 'text-muted-foreground']">
+                                    <span class="font-medium text-[10px] leading-none"
+                                        :class="date === viewDate ? 'text-primary-foreground' : 'text-muted-foreground'">
                                         {{ stripDayLabel(date) }}
                                     </span>
-                                    <span :class="['font-bold text-xs leading-none', date === viewDate ? 'text-primary-foreground' : 'text-foreground']">
+                                    <span class="font-bold text-xs leading-none"
+                                        :class="date === viewDate ? 'text-primary-foreground' : 'text-foreground'">
                                         {{ stripDayNum(date) }}
                                     </span>
-                                    <!-- 5 mini status dots -->
                                     <div class="flex gap-0.5 mt-0.5">
                                         <span
                                             v-for="(dot, di) in stripDots(date)"
@@ -263,21 +276,22 @@ const badgeTextColor = (status: DisplayStatus) =>
                                             :style="{
                                                 backgroundColor: date === viewDate ? 'rgba(255,255,255,0.7)' : dotColor(dot)
                                             }"
-                                        ></span>
+                                        />
                                     </div>
                                 </button>
                             </div>
 
                             <!-- ── SVG plot ─────────────────────────────────── -->
                             <div class="relative">
-                                <div v-if="loadingDay" class="absolute inset-0 flex items-center justify-center bg-card/70 rounded-xl z-10">
+                                <div v-if="loadingDay"
+                                    class="absolute inset-0 flex items-center justify-center bg-card/80 rounded-xl z-10">
                                     <Loader2 class="w-6 h-6 animate-spin text-primary" />
                                 </div>
-                                <div class="w-full overflow-x-auto" :class="{ 'opacity-50': loadingDay }">
+                                <div class="w-full overflow-x-auto rounded-xl" :class="{ 'opacity-40': loadingDay }">
                                     <svg
                                         :viewBox="`0 0 ${SVG_W} ${SVG_H}`"
                                         class="w-full"
-                                        style="min-width: 360px; font-family: system-ui, sans-serif;"
+                                        style="min-width: 320px; font-family: system-ui, sans-serif;"
                                     >
                                         <defs>
                                             <marker id="lv-ah"  viewBox="0 0 8 8" refX="4" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,1 L7,4 L0,7 Z" fill="#9ca3af"/></marker>
@@ -375,39 +389,13 @@ const badgeTextColor = (status: DisplayStatus) =>
                             </div>
 
                             <!-- ── Legend ─────────────────────────────────── -->
-                            <div class="flex flex-wrap gap-x-4 gap-y-1.5">
+                            <div class="flex flex-wrap gap-x-4 gap-y-1.5 pb-2">
                                 <span v-for="(palette, key) in STATUS_PALETTE" :key="key"
                                     class="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                    <span class="inline-block w-3 h-3 rounded-sm border"
+                                    <span class="inline-block w-3 h-3 rounded-sm border flex-shrink-0"
                                         :style="{ backgroundColor: palette.fill, borderColor: palette.stroke }"></span>
                                     {{ palette.label }}
                                 </span>
-                            </div>
-
-                            <!-- ── Per-stall summary cards ─────────────────── -->
-                            <div class="grid grid-cols-5 gap-1.5">
-                                <div v-for="stall in viewStalls" :key="stall.id"
-                                    class="rounded-lg border p-2 text-center space-y-0.5 transition-colors"
-                                    :style="{ borderColor: STATUS_PALETTE[stall.display_status].stroke, backgroundColor: STATUS_PALETTE[stall.display_status].fill + 'cc' }"
-                                >
-                                    <p class="text-xs font-bold truncate" :style="{ color: STATUS_PALETTE[stall.display_status].text }">
-                                        {{ stall.label }}
-                                    </p>
-                                    <p class="text-[10px] font-medium" :style="{ color: STATUS_PALETTE[stall.display_status].text }">
-                                        {{ STATUS_PALETTE[stall.display_status].label }}
-                                    </p>
-                                    <p v-if="stall.schedule?.tenant" class="text-[10px] truncate leading-tight"
-                                        :style="{ color: STATUS_PALETTE[stall.display_status].text }">
-                                        {{ stall.schedule.tenant.business_name || stall.schedule.tenant.name }}
-                                    </p>
-                                    <p v-if="stall.schedule?.price && stall.schedule.price > 0"
-                                        class="text-[10px] font-medium"
-                                        :style="{ color: STATUS_PALETTE[stall.display_status].text }">
-                                        ₱{{ Number(stall.schedule.price).toLocaleString() }}
-                                    </p>
-                                    <p v-if="!stall.schedule?.tenant" class="text-[10px]"
-                                        :style="{ color: STATUS_PALETTE[stall.display_status].text + '80' }">—</p>
-                                </div>
                             </div>
 
                         </div>
