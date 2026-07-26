@@ -13,6 +13,17 @@ defineOptions({
 
 const activeSection = ref('overview')
 
+const recommendations = [
+    { priority: 'HIGH', cls: 'bg-red-900/50 text-red-300', title: 'Cashier Shift Sessions', desc: 'No concept of opening or closing a cash drawer. Cashiers collect across an entire day with no session boundary, making it impossible to isolate who is accountable for a discrepancy.', build: 'A CashierSession model with opening_amount, cashier_id, and opened_at. Closing records expected vs. declared cash and variance. Pair with Start/End Shift flow in POS.' },
+    { priority: 'HIGH', cls: 'bg-red-900/50 text-red-300', title: 'Till Count & Closing Report', desc: 'No mechanism for cashiers to declare the cash being handed over at end of shift. Without a till count, shortages and overages go undetected.', build: 'A closing screen where the cashier enters counted cash per denomination. System compares against expected and shows variance. Admin alert when variance exceeds threshold.' },
+    { priority: 'HIGH', cls: 'bg-red-900/50 text-red-300', title: 'Cash Deposit Tracking', desc: 'No event in the system for cash deposited to the bank. Collected cash sits in the payment ledger indefinitely with no way to track when it left the premises.', build: 'A deposit transaction type recording: amount, date, bank/reference, and who prepared it. Summary shows Cash on Hand = payments minus deposits.' },
+    { priority: 'HIGH', cls: 'bg-red-900/50 text-red-300', title: 'GCash Settlement Reconciliation', desc: 'GCash payments are treated as equivalent to cash, but GCash funds settle to bank on a separate cycle. The running balance overstates accessible cash.', build: 'A GCash Settlement event that marks when GCash funds were received at the bank. Report the pending-settlement amount separately from collected cash.' },
+    { priority: 'MED', cls: 'bg-yellow-900/50 text-yellow-300', title: 'Approval Workflow for Manual Entries', desc: 'Any auditor can create an expense or income adjustment of any amount without a second sign-off. Large manual entries have no oversight.', build: 'A configurable threshold (e.g. P500). Entries above it create a pending record for admin approval before appearing in the balance.' },
+    { priority: 'MED', cls: 'bg-yellow-900/50 text-yellow-300', title: 'Income Adjustment Sub-categories', desc: 'income_adjustment is a catch-all. Entries for extras collected, refund recovered, and cash advance returned all look the same in reports.', build: 'Add a sub_type column for manual entries. Define: cash_advance_return, overpayment, other_income. Group in the summary report.' },
+    { priority: 'MED', cls: 'bg-yellow-900/50 text-yellow-300', title: 'Collections by Cashier Report', desc: 'No report shows how much each cashier collected per shift. If cash is short, there is no fast way to determine which cashier is accountable.', build: 'A report tab showing payments grouped by user_id and date range: total collected, tender breakdown, count. Ties into Shift Sessions.' },
+    { priority: 'LOW', cls: 'bg-green-900/50 text-green-300', title: 'Daily Variance Alert', desc: 'The only way to detect a cash discrepancy today is a manual comparison. There is no automated alert when the system total and actual count diverge.', build: 'After till count submission, send admin notification when variance exceeds threshold. Log each variance in shift_variances for trend analysis.' },
+]
+
 const sections = [
     { id: 'overview',      label: 'Overview' },
     { id: 'pos',           label: 'POS & Orders' },
@@ -221,7 +232,7 @@ onUnmounted(() => observer?.disconnect())
                         'Inline item editing on active orders',
                         'Cancel with reason (logged)',
                         'On completion: sets completed_at; auto-triggers receipt print if enabled',
-                        'Today\'s completed orders shown below active queue',
+                        'Completed orders shown below the active queue',
                     ]" :key="f" class="flex items-start gap-2 text-muted-foreground">
                         <span class="text-orange-500 mt-0.5 shrink-0">→</span> {{ f }}
                     </li>
@@ -610,16 +621,7 @@ onUnmounted(() => observer?.disconnect())
                     <p class="text-sm text-slate-400 mb-6 leading-relaxed max-w-lg">The system records sales and payments accurately but lacks controls to hold individual cashiers accountable and to reconcile physical cash with the bank — the root cause of observed daily variances.</p>
 
                     <div class="grid sm:grid-cols-2 gap-4">
-                        <div v-for="rec in [
-                            { priority:'HIGH', cls:'bg-red-900/50 text-red-300', title:'Cashier Shift Sessions', desc:'No concept of opening or closing a cash drawer. Cashiers collect across an entire day with no session boundary, making it impossible to isolate who is accountable for a discrepancy.', build:'A CashierSession model with opening_amount, cashier_id, and opened_at. Closing records expected vs. declared cash and variance. Pair with Start/End Shift flow in POS.' },
-                            { priority:'HIGH', cls:'bg-red-900/50 text-red-300', title:'Till Count & Closing Report', desc:'No mechanism for cashiers to declare the cash they\'re handing over at end of shift. Without a till count, shortages and overages go undetected.', build:'A closing screen where the cashier enters counted cash per denomination. System compares against expected and shows variance. Admin alert when variance exceeds threshold.' },
-                            { priority:'HIGH', cls:'bg-red-900/50 text-red-300', title:'Cash Deposit Tracking', desc:'No event in the system for "cash was deposited to the bank." Collected cash sits in the payment ledger indefinitely with no way to track when it left the premises.', build:'A deposit transaction type recording: amount, date, bank/reference, and who prepared it. Summary shows Cash on Hand = payments − deposits.' },
-                            { priority:'HIGH', cls:'bg-red-900/50 text-red-300', title:'GCash Settlement Reconciliation', desc:'GCash payments are treated as equivalent to cash, but GCash funds settle to bank on a separate cycle. The running balance overstates accessible cash.', build:'A GCash Settlement event that marks when GCash funds were received at the bank. Report the pending-settlement amount separately from collected cash.' },
-                            { priority:'MED', cls:'bg-yellow-900/50 text-yellow-300', title:'Approval Workflow for Manual Entries', desc:'Any auditor can create an expense or income adjustment of any amount without a second sign-off. Large manual entries have no oversight.', build:'A configurable threshold (e.g. ₱500). Entries above it create a pending record for admin approval before appearing in the balance.' },
-                            { priority:'MED', cls:'bg-yellow-900/50 text-yellow-300', title:'Income Adjustment Sub-categories', desc:'income_adjustment is a catch-all. Entries for "extras collected," "refund recovered," and "cash advance returned" all look the same in reports.', build:'Add a sub_type column for manual entries. Define: cash_advance_return, overpayment, other_income. Group in the summary report.' },
-                            { priority:'MED', cls:'bg-yellow-900/50 text-yellow-300', title:'Collections by Cashier Report', desc:'No report shows how much each cashier collected per shift. If cash is short, there is no fast way to determine which cashier is accountable.', build:'A report tab showing payments grouped by user_id and date range: total collected, tender breakdown, count. Ties into Shift Sessions.' },
-                            { priority:'LOW', cls:'bg-green-900/50 text-green-300', title:'Daily Variance Alert', desc:'The only way to detect a cash discrepancy today is a manual comparison. There is no automated alert when the system total and actual count diverge.', build:'After till count submission, send admin notification when variance exceeds threshold. Log each variance in shift_variances for trend analysis.' },
-                        ]" :key="rec.title" class="bg-slate-800/60 border border-slate-700/50 rounded-lg p-5">
+                        <div v-for="rec in recommendations" :key="rec.title" class="bg-slate-800/60 border border-slate-700/50 rounded-lg p-5">
                             <div class="flex items-start gap-2 mb-2">
                                 <span :class="['text-[10px] font-bold px-2 py-0.5 rounded tracking-wider', rec.cls]">{{ rec.priority }}</span>
                                 <h3 class="text-sm font-bold text-slate-200 leading-snug">{{ rec.title }}</h3>
