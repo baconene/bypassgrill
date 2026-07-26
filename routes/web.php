@@ -77,7 +77,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('role:admin');
 
     // System documentation
-    Route::inertia('documentation', 'Documentation')
+    Route::get('documentation', fn () => \Inertia\Inertia::render('Documentation'))
         ->name('documentation.index')
         ->middleware('role:admin');
 
