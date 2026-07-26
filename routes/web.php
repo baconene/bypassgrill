@@ -90,6 +90,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('parcels.index');
     Route::get('parcels/{parcel}', [ParcelPageController::class, 'show'])
         ->name('parcels.show');
+
+    // Stall Mapping
+    Route::get('mapping', fn () => \Inertia\Inertia::render('Mapping'))
+        ->name('mapping')
+        ->middleware('role:admin');
 });
 
 require __DIR__.'/settings.php';

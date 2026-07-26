@@ -157,6 +157,21 @@ Route::prefix('v1')->group(function () {
         Route::post('/distribution/snapshots', [\App\Http\Controllers\Api\V1\DistributionController::class, 'storeSnapshot']);
         Route::post('/distribution/snapshots/{snapshot}/payout', [\App\Http\Controllers\Api\V1\DistributionController::class, 'recordPayout']);
 
+        // Stall Rental (isolated, no FK to POS)
+        Route::get('/rental/stalls', [\App\Http\Controllers\Api\V1\RentalController::class, 'stallsIndex']);
+        Route::patch('/rental/stalls/{stall}', [\App\Http\Controllers\Api\V1\RentalController::class, 'stallUpdate']);
+        Route::get('/rental/tenants', [\App\Http\Controllers\Api\V1\RentalController::class, 'tenantsIndex']);
+        Route::post('/rental/tenants', [\App\Http\Controllers\Api\V1\RentalController::class, 'tenantStore']);
+        Route::put('/rental/tenants/{tenant}', [\App\Http\Controllers\Api\V1\RentalController::class, 'tenantUpdate']);
+        Route::delete('/rental/tenants/{tenant}', [\App\Http\Controllers\Api\V1\RentalController::class, 'tenantDestroy']);
+        Route::get('/rental/schedules/day', [\App\Http\Controllers\Api\V1\RentalController::class, 'schedulesDay']);
+        Route::get('/rental/schedules/calendar', [\App\Http\Controllers\Api\V1\RentalController::class, 'schedulesCalendar']);
+        Route::get('/rental/schedules/timeline', [\App\Http\Controllers\Api\V1\RentalController::class, 'schedulesTimeline']);
+        Route::post('/rental/schedules', [\App\Http\Controllers\Api\V1\RentalController::class, 'scheduleStore']);
+        Route::put('/rental/schedules/{schedule}', [\App\Http\Controllers\Api\V1\RentalController::class, 'scheduleUpdate']);
+        Route::delete('/rental/schedules/{schedule}', [\App\Http\Controllers\Api\V1\RentalController::class, 'scheduleDestroy']);
+        Route::get('/rental/stats', [\App\Http\Controllers\Api\V1\RentalController::class, 'stats']);
+
         Route::get('/tools/tables', [\App\Http\Controllers\Api\V1\ToolsController::class, 'tables']);
         Route::get('/tools/tables/{table}/columns', [\App\Http\Controllers\Api\V1\ToolsController::class, 'columns'])
             ->where('table', '[A-Za-z0-9_]+');
