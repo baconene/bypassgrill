@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { Map, RefreshCw, Users, ChevronLeft, ChevronRight, LayoutGrid, CalendarDays, AlignLeft, Eye } from 'lucide-vue-next'
+import { Map, RefreshCw, Users, ChevronLeft, ChevronRight, LayoutGrid, CalendarDays, AlignLeft, Eye, Settings2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import StatCards from './mapping/StatCards.vue'
 import Legend from './mapping/Legend.vue'
@@ -12,6 +12,8 @@ import ScheduleDrawer from './mapping/ScheduleDrawer.vue'
 import ScheduleModal from './mapping/ScheduleModal.vue'
 import TenantModal from './mapping/TenantModal.vue'
 import LandViewModal from './mapping/LandViewModal.vue'
+import PlotSettingsModal from './mapping/PlotSettingsModal.vue'
+import type { PlotSettings } from './mapping/PlotSettingsModal.vue'
 import type { StallDay, RentalTenant, RentalSchedule, Stats } from './mapping/types'
 
 defineOptions({
@@ -65,6 +67,22 @@ const showTenantsPanel = ref(false)
 
 // Land view modal
 const landViewOpen = ref(false)
+
+// Plot settings
+const SETTINGS_KEY = 'mapping_plot_settings'
+const defaultSettings: PlotSettings = { showDimensions: true, showTenantNames: true, showStallNumbers: true, showStatusLabel: true }
+const loadStoredSettings = (): PlotSettings => {
+    try {
+        const raw = localStorage.getItem(SETTINGS_KEY)
+        return raw ? { ...defaultSettings, ...JSON.parse(raw) } : { ...defaultSettings }
+    } catch { return { ...defaultSettings } }
+}
+const plotSettings     = ref<PlotSettings>(loadStoredSettings())
+const plotSettingsOpen = ref(false)
+
+watch(plotSettings, (v) => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(v)) } catch {}
+}, { deep: true })
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 const apiFetch = async (url: string, options?: RequestInit) => {
@@ -282,6 +300,14 @@ onMounted(() => {
                         <Eye class="w-3.5 h-3.5" />
                         <span class="hidden sm:inline">Plot</span>
                     </button>
+                    <button
+                        @click="plotSettingsOpen = true"
+                        class="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border"
+                        title="Plot settings"
+                    >
+                        <Settings2 class="w-3.5 h-3.5" />
+                        <span class="hidden sm:inline">Settings</span>
+                    </button>
                 </div>
                 <p class="text-xs text-muted-foreground">Food stall rental scheduler</p>
             </div>
@@ -461,9 +487,17 @@ onMounted(() => {
 
 <LandViewModal
     :open="landViewOpen"
-    :stalls="stalls"
-    :date="selectedDate"
+    :initial-date="selectedDate"
+    :settings="plotSettings"
     @close="landViewOpen = false"
+/>
+
+<PlotSettingsModal
+    :open="plotSettingsOpen"
+    :settings="plotSettings"
+    @close="plotSettingsOpen = false"
+    @update:settings="plotSettings = $event"
+    @stalls-updated="refreshAll"
 />
 
 </template>
