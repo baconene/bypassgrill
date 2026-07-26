@@ -69,6 +69,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/reports/analytics', [ReportController::class, 'analytics']);
         Route::get('/reports/ft-breakdown', [ReportController::class, 'ftBreakdown']);
         Route::get('/reports/serving-time', [ReportController::class, 'servingTime']);
+        Route::get('/reports/serving-time-orders', [ReportController::class, 'servingTimeOrders']);
+        Route::patch('/reports/serving-time-orders/{order}', [ReportController::class, 'updateOrderServingTime']);
 
         Route::get('/payment-tenders/all', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'all']);
         Route::post('/payment-tenders', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'store']);

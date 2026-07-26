@@ -441,6 +441,88 @@ class ReportController extends Controller
         ]);
     }
 
+    public function servingTimeOrders(): JsonResponse
+    {
+        $this->checkPermission();
+
+        $dateFrom = request()->input('date_from', Carbon::today()->subDays(29)->toDateString());
+        $dateTo   = request()->input('date_to',   Carbon::today()->toDateString());
+        $bucket   = request()->input('bucket');
+        $sortBy   = request()->input('sort_by', 'serving_seconds');
+        $sortDir  = request()->input('sort_dir', 'desc') === 'asc' ? 'ASC' : 'DESC';
+        $perPage  = min(100, max(10, (int) request()->input('per_page', 50)));
+
+        $start = Carbon::parse($dateFrom)->startOfDay();
+        $end   = Carbon::parse($dateTo)->endOfDay();
+
+        $query = \App\Models\Order::where('status', 'completed')
+            ->whereNotNull('completed_at')
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw('id, order_type, customer_name, table_number, created_at, completed_at, total_amount,
+                TIMESTAMPDIFF(SECOND, created_at, completed_at) as serving_seconds');
+
+        $bucketRanges = [
+            '0-5 min'   => [0,    300],
+            '5-10 min'  => [300,  600],
+            '10-15 min' => [600,  900],
+            '15-20 min' => [900,  1200],
+            '20-30 min' => [1200, 1800],
+            '30+ min'   => [1800, null],
+        ];
+
+        if ($bucket && isset($bucketRanges[$bucket])) {
+            [$minS, $maxS] = $bucketRanges[$bucket];
+            $query->whereRaw('TIMESTAMPDIFF(SECOND, created_at, completed_at) >= ?', [$minS]);
+            if ($maxS !== null) {
+                $query->whereRaw('TIMESTAMPDIFF(SECOND, created_at, completed_at) < ?', [$maxS]);
+            }
+        }
+
+        $allowed = ['serving_seconds', 'created_at', 'order_type', 'total_amount'];
+        $sortBy  = in_array($sortBy, $allowed) ? $sortBy : 'serving_seconds';
+
+        if ($sortBy === 'serving_seconds') {
+            $query->orderByRaw("TIMESTAMPDIFF(SECOND, created_at, completed_at) $sortDir");
+        } else {
+            $query->orderBy($sortBy, $sortDir);
+        }
+
+        $paginated = $query->paginate($perPage)->through(fn ($r) => [
+            'id'              => $r->id,
+            'order_type'      => $r->order_type ?? 'unknown',
+            'customer_name'   => $r->customer_name,
+            'table_number'    => $r->table_number,
+            'created_at'      => $r->created_at->toIso8601String(),
+            'completed_at'    => $r->completed_at->toIso8601String(),
+            'serving_seconds' => (int) $r->serving_seconds,
+            'serving_minutes' => round((float) $r->serving_seconds / 60, 2),
+            'total_amount'    => (float) $r->total_amount,
+        ]);
+
+        return response()->json($paginated);
+    }
+
+    public function updateOrderServingTime(\App\Models\Order $order): JsonResponse
+    {
+        $this->checkPermission();
+
+        abort_if($order->status !== 'completed', 422, 'Only completed orders can have their serving time edited.');
+
+        $minutes = (float) request()->input('serving_minutes');
+        abort_if($minutes <= 0 || $minutes > 1440, 422, 'Serving time must be between 1 second and 24 hours.');
+
+        $seconds     = (int) round($minutes * 60);
+        $completedAt = $order->created_at->copy()->addSeconds($seconds);
+        $order->update(['completed_at' => $completedAt]);
+
+        return response()->json([
+            'id'              => $order->id,
+            'completed_at'    => $completedAt->toIso8601String(),
+            'serving_seconds' => $seconds,
+            'serving_minutes' => round($seconds / 60, 2),
+        ]);
+    }
+
     private function checkPermission(): void
     {
         if (! auth()->user()?->hasAnyRole('admin') && ! auth()->user()?->hasPermissionTo('view reports')) {
