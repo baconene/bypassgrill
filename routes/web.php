@@ -80,6 +80,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('documentation', fn () => \Inertia\Inertia::render('Documentation'))
         ->name('documentation.index')
         ->middleware('role:admin');
+    Route::get('documentation/{module}', fn (string $module) => \Inertia\Inertia::render('Documentation/Detail', ['module' => $module]))
+        ->name('documentation.detail')
+        ->middleware('role:admin')
+        ->where('module', '[a-z-]+');
 
     // Parcel Tracking
     Route::get('parcels', [ParcelPageController::class, 'index'])
