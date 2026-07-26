@@ -10,6 +10,7 @@ import {
     ArrowUp, ArrowDown, ChevronsUpDown,
 } from 'lucide-vue-next'
 import AnalyticsTab from '@/pages/reports/AnalyticsTab.vue'
+import ServingTimeTab from '@/pages/reports/ServingTimeTab.vue'
 
 defineOptions({
     layout: {
@@ -66,7 +67,7 @@ const props = defineProps<{
 }>()
 
 // ── Active tab ─────────────────────────────────────────────────────────────────
-type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'heatmap' | 'analytics'
+type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'heatmap' | 'analytics' | 'serving'
 const tab = ref<Tab>('orders')
 const loading = ref(false)
 
@@ -81,6 +82,7 @@ const tabs: { key: Tab; label: string; hidden?: boolean }[] = [
     { key: 'pl',        label: 'P&L' },
     { key: 'bills',     label: 'Bills' },
     { key: 'heatmap',   label: '🔥 Peak Hours' },
+    { key: 'serving',   label: '⏱ Serving Time' },
 ]
 
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
@@ -792,8 +794,8 @@ const loadMonthlyChartData = async () => {
 }
 
 const generateReport = async () => {
-    // The Trend Analytics tab is a self-contained component with its own loading.
-    if (tab.value === 'analytics') return
+    // Self-contained tabs handle their own loading
+    if (tab.value === 'analytics' || tab.value === 'serving') return
     loading.value = true
     try {
         if (tab.value === 'orders') {
@@ -1131,11 +1133,12 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- Trend Analytics (self-contained tab with its own filters) -->
+        <!-- Self-contained tabs -->
         <AnalyticsTab v-if="tab === 'analytics'" />
+        <ServingTimeTab v-if="tab === 'serving'" />
 
         <!-- Filters bar -->
-        <div v-if="tab !== 'analytics'" class="rounded-xl border bg-card shadow-sm p-4">
+        <div v-if="tab !== 'analytics' && tab !== 'serving'" class="rounded-xl border bg-card shadow-sm p-4">
             <div class="flex flex-wrap gap-3 items-end">
 
                 <!-- Orders filters -->

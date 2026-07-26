@@ -339,6 +339,108 @@ class ReportController extends Controller
         ]);
     }
 
+    public function servingTime(): JsonResponse
+    {
+        $this->checkPermission();
+
+        $dateFrom = request()->input('date_from', Carbon::today()->subDays(29)->toDateString());
+        $dateTo   = request()->input('date_to',   Carbon::today()->toDateString());
+
+        $start = Carbon::parse($dateFrom)->startOfDay();
+        $end   = Carbon::parse($dateTo)->endOfDay();
+
+        $base = \App\Models\Order::where('status', 'completed')
+            ->whereNotNull('completed_at')
+            ->whereBetween('created_at', [$start, $end]);
+
+        // Daily breakdown — fill every day in range even if zero orders
+        $daily = (clone $base)
+            ->selectRaw("DATE(created_at) as date,
+                AVG(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as avg_seconds,
+                MIN(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as min_seconds,
+                MAX(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as max_seconds,
+                COUNT(*) as order_count")
+            ->groupByRaw('DATE(created_at)')
+            ->orderByRaw('DATE(created_at)')
+            ->get()
+            ->keyBy('date');
+
+        $days = [];
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            $date = $d->toDateString();
+            $row  = $daily[$date] ?? null;
+            $days[] = [
+                'date'        => $date,
+                'avg_minutes' => $row ? round((float) $row->avg_seconds / 60, 2) : null,
+                'min_minutes' => $row ? round((float) $row->min_seconds / 60, 2) : null,
+                'max_minutes' => $row ? round((float) $row->max_seconds / 60, 2) : null,
+                'count'       => $row ? (int) $row->order_count : 0,
+            ];
+        }
+
+        // Breakdown by order type
+        $byType = (clone $base)
+            ->selectRaw("order_type,
+                AVG(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as avg_seconds,
+                MIN(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as min_seconds,
+                MAX(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as max_seconds,
+                COUNT(*) as order_count")
+            ->groupBy('order_type')
+            ->get()
+            ->map(fn ($r) => [
+                'type'        => $r->order_type,
+                'avg_minutes' => round((float) $r->avg_seconds / 60, 2),
+                'min_minutes' => round((float) $r->min_seconds / 60, 2),
+                'max_minutes' => round((float) $r->max_seconds / 60, 2),
+                'count'       => (int) $r->order_count,
+            ])
+            ->values();
+
+        // Distribution buckets
+        $distRaw = (clone $base)
+            ->selectRaw("
+                CASE
+                    WHEN TIMESTAMPDIFF(SECOND, created_at, completed_at) <  300  THEN '0-5 min'
+                    WHEN TIMESTAMPDIFF(SECOND, created_at, completed_at) <  600  THEN '5-10 min'
+                    WHEN TIMESTAMPDIFF(SECOND, created_at, completed_at) <  900  THEN '10-15 min'
+                    WHEN TIMESTAMPDIFF(SECOND, created_at, completed_at) < 1200  THEN '15-20 min'
+                    WHEN TIMESTAMPDIFF(SECOND, created_at, completed_at) < 1800  THEN '20-30 min'
+                    ELSE '30+ min'
+                END as bucket,
+                COUNT(*) as count")
+            ->groupBy('bucket')
+            ->get()
+            ->keyBy('bucket');
+
+        $buckets = ['0-5 min', '5-10 min', '10-15 min', '15-20 min', '20-30 min', '30+ min'];
+        $distribution = array_map(fn ($b) => [
+            'bucket' => $b,
+            'count'  => (int) ($distRaw[$b]?->count ?? 0),
+        ], $buckets);
+
+        // Overall summary
+        $s = (clone $base)
+            ->selectRaw("
+                AVG(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as avg_seconds,
+                MIN(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as min_seconds,
+                MAX(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as max_seconds,
+                COUNT(*) as total_orders")
+            ->first();
+
+        return response()->json([
+            'period'        => ['start' => $start->toDateString(), 'end' => $end->toDateString()],
+            'summary'       => [
+                'avg_minutes'  => $s?->avg_seconds ? round((float) $s->avg_seconds / 60, 2) : null,
+                'min_minutes'  => $s?->min_seconds ? round((float) $s->min_seconds / 60, 2) : null,
+                'max_minutes'  => $s?->max_seconds ? round((float) $s->max_seconds / 60, 2) : null,
+                'total_orders' => (int) ($s?->total_orders ?? 0),
+            ],
+            'daily'         => $days,
+            'by_order_type' => $byType,
+            'distribution'  => $distribution,
+        ]);
+    }
+
     private function checkPermission(): void
     {
         if (! auth()->user()?->hasAnyRole('admin') && ! auth()->user()?->hasPermissionTo('view reports')) {

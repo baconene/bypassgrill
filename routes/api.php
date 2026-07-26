@@ -68,6 +68,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/reports/heatmap', [ReportController::class, 'heatmap']);
         Route::get('/reports/analytics', [ReportController::class, 'analytics']);
         Route::get('/reports/ft-breakdown', [ReportController::class, 'ftBreakdown']);
+        Route::get('/reports/serving-time', [ReportController::class, 'servingTime']);
 
         Route::get('/payment-tenders/all', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'all']);
         Route::post('/payment-tenders', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'store']);
