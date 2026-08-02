@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Head } from '@inertiajs/vue3'
+import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import { RefreshCw, Pencil, X, Plus, Minus, Search, ShoppingCart, Smartphone, Monitor, ChevronDown, CheckCircle2 } from 'lucide-vue-next'
@@ -237,6 +237,9 @@ const addProduct = (product: Product) => {
     editItems.value.push({ product_id: product.id, name: product.name, price: product.price, quantity: 1 })
 }
 
+const goToDetail = (id: number) =>
+    router.visit(`/orders/${id}?back=${encodeURIComponent('/kitchen')}`)
+
 const saveEdit = async () => {
     if (!editOrder.value || editItems.value.length === 0) return
     editSaving.value = true
@@ -304,7 +307,10 @@ const saveEdit = async () => {
                         <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
                                 <div>
-                                    <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
+                                    <button type="button" @click="goToDetail(order.id)"
+                                        :class="['hover:text-primary transition-colors cursor-pointer text-left leading-tight', portraitMode ? 'text-base font-black' : 'text-2xl font-black']">
+                                        #{{ order.id }}
+                                    </button>
                                     <p v-if="order.customer_name" :class="['text-muted-foreground truncate', portraitMode ? 'text-xs' : 'text-xs mt-0.5']">{{ order.customer_name }}</p>
                                 </div>
                                 <div class="flex items-center gap-1">
@@ -347,7 +353,10 @@ const saveEdit = async () => {
                         <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
                                 <div>
-                                    <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
+                                    <button type="button" @click="goToDetail(order.id)"
+                                        :class="['hover:text-primary transition-colors cursor-pointer text-left leading-tight', portraitMode ? 'text-base font-black' : 'text-2xl font-black']">
+                                        #{{ order.id }}
+                                    </button>
                                     <p v-if="order.customer_name" :class="['text-muted-foreground truncate', portraitMode ? 'text-xs' : 'text-xs mt-0.5']">{{ order.customer_name }}</p>
                                 </div>
                                 <div class="flex items-center gap-1">
@@ -390,7 +399,10 @@ const saveEdit = async () => {
                         <div :class="portraitMode ? 'p-2' : 'p-4'">
                             <div class="flex items-start justify-between mb-1">
                                 <div>
-                                    <span :class="portraitMode ? 'text-base font-black leading-tight' : 'text-2xl font-black'">#{{ order.id }}</span>
+                                    <button type="button" @click="goToDetail(order.id)"
+                                        :class="['hover:text-primary transition-colors cursor-pointer text-left leading-tight', portraitMode ? 'text-base font-black' : 'text-2xl font-black']">
+                                        #{{ order.id }}
+                                    </button>
                                     <p v-if="order.customer_name" :class="['text-muted-foreground truncate', portraitMode ? 'text-xs' : 'text-xs mt-0.5']">{{ order.customer_name }}</p>
                                 </div>
                                 <div class="flex items-center gap-1">
@@ -444,10 +456,11 @@ const saveEdit = async () => {
                 </div>
                 <div v-else class="divide-y">
                     <div v-for="order in completedOrders" :key="order.id"
-                        class="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+                        class="flex items-start gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer group"
+                        @click="goToDetail(order.id)">
                         <!-- Queue / ID -->
                         <div class="shrink-0 w-14 text-center">
-                            <p class="text-lg font-black text-muted-foreground leading-tight">
+                            <p class="text-lg font-black text-muted-foreground group-hover:text-primary leading-tight transition-colors">
                                 #{{ order.id }}
                             </p>
                             <p class="text-[10px] text-muted-foreground/60">{{ fmtTime(order.completed_at) }}</p>
@@ -475,7 +488,7 @@ const saveEdit = async () => {
                                 <span class="font-medium">{{ fmtElapsed(order.created_at, order.completed_at) }}</span>
                                 <span class="text-muted-foreground/60"> served</span>
                             </p>
-                            <button @click="updateStatus(order.id, 'ready')" :disabled="updatingId === order.id"
+                            <button @click.stop="updateStatus(order.id, 'ready')" :disabled="updatingId === order.id"
                                 class="text-[10px] font-semibold rounded-full border px-2 py-0.5 hover:bg-muted text-muted-foreground disabled:opacity-40 transition-colors">
                                 Reopen
                             </button>
