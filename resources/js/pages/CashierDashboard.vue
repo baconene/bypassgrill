@@ -4,7 +4,7 @@ import { Head, usePage } from '@inertiajs/vue3'
 import { useCartStore } from '@/stores/cartStore'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { ShoppingCart, X, Plus, Minus, Search, CreditCard, Banknote, CheckCircle2, Printer, ClipboardList } from 'lucide-vue-next'
+import { ShoppingCart, X, Plus, Minus, Search, CreditCard, Banknote, CheckCircle2, Printer, ClipboardList, ChevronDown, Link, Copy, Check } from 'lucide-vue-next'
 import { printReceipt as doPrint } from '@/utils/printReceipt'
 import { queueOrder, queuePayment } from '@/utils/offlineQueue'
 import { refreshCount } from '@/utils/offlineSync'
@@ -42,6 +42,7 @@ interface PendingOrderState {
     _offlineQueue?: string
     _existingItems?: { name: string; quantity: number; unit_price: number }[]
     _isExistingOrder?: boolean
+    public_token?: string | null
 }
 
 interface UnpaidOrder {
@@ -68,6 +69,7 @@ interface CompletedOrder {
     items: { name: string; quantity: number; unit_price: number }[]
     subtotal: number; discount: number; total: number
     tenderName: string; amountTendered: number; change: number; paid: boolean
+    publicToken: string | null
 }
 
 const props = defineProps<{ categories: Category[]; products: Product[] }>()
@@ -95,6 +97,32 @@ const reference = ref('')
 const paymentSubmitting = ref(false)
 const paymentDone = ref(false)
 const completedOrder = ref<CompletedOrder | null>(null)
+
+// Copy link state
+const linkCopied = ref(false)
+const copyPublicLink = async () => {
+    if (!completedOrder.value?.publicToken) return
+    const url = `${window.location.origin}/public/orders/${completedOrder.value.publicToken}`
+    try {
+        await navigator.clipboard.writeText(url)
+        linkCopied.value = true
+        setTimeout(() => { linkCopied.value = false }, 2000)
+    } catch {
+        toast.error('Could not copy link')
+    }
+}
+
+// Cart order-type section collapse
+const orderTypeOpen = ref(true)
+const orderTypeSummary = computed(() => {
+    const type = cartStore.orderType
+    if (!type) return ''
+    const label = type === 'dine_in' ? 'Dine In' : type === 'takeout' ? 'Takeout' : 'Delivery'
+    const parts = [label]
+    if (cartStore.tableNumber)  parts.push(cartStore.tableNumber)
+    if (cartStore.customerName) parts.push(cartStore.customerName)
+    return parts.join(' · ')
+})
 
 // Unpaid orders panel
 const unpaidOrdersOpen = ref(false)
@@ -277,6 +305,7 @@ const captureOrder = (paid: boolean): CompletedOrder => {
         amountTendered: tendered,
         change: paid ? Math.max(0, tendered - o.total_amount) : 0,
         paid,
+        publicToken: o.public_token ?? null,
     }
 }
 
@@ -587,80 +616,91 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
                 </div>
             </div>
 
-            <div class="p-4 border-b space-y-3">
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Order Type</label>
-                    <select
-                        :value="cartStore.orderType"
-                        @change="(e) => cartStore.orderType = (e.target as HTMLSelectElement).value"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                        :class="{ 'text-muted-foreground': !cartStore.orderType }"
-                    >
-                        <option value="" disabled>Select order type…</option>
-                        <option value="dine_in">Dine In</option>
-                        <option value="takeout">Takeout</option>
-                        <option value="delivery">Delivery</option>
-                    </select>
-                </div>
-                <div v-if="cartStore.orderType === 'dine_in'">
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Table Number</label>
-                    <input
-                        :value="cartStore.tableNumber"
-                        @input="(e) => cartStore.tableNumber = (e.target as HTMLInputElement).value"
-                        type="text"
-                        placeholder="e.g. Table 5"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                </div>
-                <div v-if="cartStore.orderType === 'dine_in'">
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name</label>
-                    <input
-                        v-model="cartStore.customerName"
-                        type="text"
-                        placeholder="e.g. Juan"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                </div>
-                <!-- Takeout: customer name -->
-                <div v-if="cartStore.orderType === 'takeout'">
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name / Alias</label>
-                    <input
-                        v-model="cartStore.customerName"
-                        type="text"
-                        placeholder="e.g. Juan, Table 2"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    />
-                </div>
-                <!-- Delivery: name, contact, address -->
-                <template v-if="cartStore.orderType === 'delivery'">
+            <!-- Order type collapsible -->
+            <div class="border-b">
+                <button type="button" @click="orderTypeOpen = !orderTypeOpen"
+                    class="w-full flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors text-left">
+                    <div class="min-w-0">
+                        <span class="text-xs font-semibold text-foreground">Order Details</span>
+                        <span v-if="!orderTypeOpen && orderTypeSummary"
+                            class="ml-2 text-xs text-muted-foreground truncate">{{ orderTypeSummary }}</span>
+                    </div>
+                    <ChevronDown class="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 transition-transform duration-200"
+                        :class="orderTypeOpen ? 'rotate-180' : ''" />
+                </button>
+                <div v-show="orderTypeOpen" class="px-4 pb-4 space-y-3">
                     <div>
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Order Type</label>
+                        <select
+                            :value="cartStore.orderType"
+                            @change="(e) => cartStore.orderType = (e.target as HTMLSelectElement).value"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                            :class="{ 'text-muted-foreground': !cartStore.orderType }"
+                        >
+                            <option value="" disabled>Select order type…</option>
+                            <option value="dine_in">Dine In</option>
+                            <option value="takeout">Takeout</option>
+                            <option value="delivery">Delivery</option>
+                        </select>
+                    </div>
+                    <div v-if="cartStore.orderType === 'dine_in'">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Table Number</label>
+                        <input
+                            :value="cartStore.tableNumber"
+                            @input="(e) => cartStore.tableNumber = (e.target as HTMLInputElement).value"
+                            type="text"
+                            placeholder="e.g. Table 5"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                    </div>
+                    <div v-if="cartStore.orderType === 'dine_in'">
+                        <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name</label>
+                        <input
+                            v-model="cartStore.customerName"
+                            type="text"
+                            placeholder="e.g. Juan"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                    </div>
+                    <div v-if="cartStore.orderType === 'takeout'">
                         <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name / Alias</label>
                         <input
                             v-model="cartStore.customerName"
                             type="text"
-                            placeholder="Full name or alias"
+                            placeholder="e.g. Juan, Table 2"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                     </div>
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Contact Number</label>
-                        <input
-                            v-model="cartStore.customerContact"
-                            type="text"
-                            placeholder="e.g. 09XX XXX XXXX"
-                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                        />
-                    </div>
-                    <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Delivery Address</label>
-                        <textarea
-                            v-model="cartStore.customerAddress"
-                            rows="2"
-                            placeholder="Street, barangay, city…"
-                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                        />
-                    </div>
-                </template>
+                    <template v-if="cartStore.orderType === 'delivery'">
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name / Alias</label>
+                            <input
+                                v-model="cartStore.customerName"
+                                type="text"
+                                placeholder="Full name or alias"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Contact Number</label>
+                            <input
+                                v-model="cartStore.customerContact"
+                                type="text"
+                                placeholder="e.g. 09XX XXX XXXX"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Delivery Address</label>
+                            <textarea
+                                v-model="cartStore.customerAddress"
+                                rows="2"
+                                placeholder="Street, barangay, city…"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                            />
+                        </div>
+                    </template>
+                </div>
             </div>
 
             <!-- Cart Items -->
@@ -775,7 +815,19 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
                     </button>
                 </div>
 
-                <div class="p-4 border-b space-y-3">
+                <!-- Order type collapsible (mobile) -->
+                <div class="border-b">
+                    <button type="button" @click="orderTypeOpen = !orderTypeOpen"
+                        class="w-full flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors text-left">
+                        <div class="min-w-0">
+                            <span class="text-xs font-semibold text-foreground">Order Details</span>
+                            <span v-if="!orderTypeOpen && orderTypeSummary"
+                                class="ml-2 text-xs text-muted-foreground truncate">{{ orderTypeSummary }}</span>
+                        </div>
+                        <ChevronDown class="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 transition-transform duration-200"
+                            :class="orderTypeOpen ? 'rotate-180' : ''" />
+                    </button>
+                    <div v-show="orderTypeOpen" class="px-4 pb-4 space-y-3">
                     <div>
                         <label class="text-xs font-medium text-muted-foreground block mb-1">Order Type</label>
                         <select
@@ -808,7 +860,6 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                     </div>
-                    <!-- Takeout: customer name -->
                     <div v-if="cartStore.orderType === 'takeout'">
                         <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name / Alias</label>
                         <input
@@ -818,7 +869,6 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         />
                     </div>
-                    <!-- Delivery: name, contact, address -->
                     <template v-if="cartStore.orderType === 'delivery'">
                         <div>
                             <label class="text-xs font-medium text-muted-foreground block mb-1">Customer Name / Alias</label>
@@ -848,7 +898,8 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
                             />
                         </div>
                     </template>
-                </div>
+                    </div><!-- /v-show orderTypeOpen -->
+                </div><!-- /collapsible border-b -->
 
                 <div class="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
                     <div v-if="cartStore.items.length === 0" class="text-center text-muted-foreground text-sm py-10">
@@ -966,6 +1017,16 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
                                 class="w-full rounded-lg bg-primary py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition flex items-center justify-center gap-2"
                             >
                                 <Printer class="h-4 w-4" /> Print Receipt
+                            </button>
+                            <button
+                                v-if="completedOrder?.publicToken"
+                                @click="copyPublicLink"
+                                class="w-full rounded-lg border py-2.5 text-sm font-medium hover:bg-muted transition flex items-center justify-center gap-2"
+                                :class="linkCopied ? 'text-green-600 border-green-400 bg-green-50 dark:bg-green-950/20' : ''"
+                            >
+                                <Check v-if="linkCopied" class="h-4 w-4" />
+                                <Copy v-else class="h-4 w-4" />
+                                {{ linkCopied ? 'Link Copied!' : 'Copy Receipt Link' }}
                             </button>
                             <button
                                 @click="closeAndClear"
