@@ -24,6 +24,9 @@ Route::get('/public/orders/{token}', [\App\Http\Controllers\PublicOrderControlle
 Route::inertia('/printing-architecture', 'PrintingArchitecture')
     ->name('printing.architecture');
 
+Route::inertia('/gumroadDescription', 'GumroadDescription')
+    ->name('gumroad.description');
+
 Route::get('menu/{id}', [MenuController::class, 'show'])
     ->where('id', '[0-9]+')
     ->name('menu.show');
