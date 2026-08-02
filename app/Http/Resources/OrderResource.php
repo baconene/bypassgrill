@@ -24,6 +24,7 @@ class OrderResource extends JsonResource
             'total_amount' => $this->total_amount,
             'payment_status' => $this->payment_status,
             'notes' => $this->notes,
+            'public_token' => $this->public_token,
             'items' => OrderItemResource::collection($this->items),
             'user' => new UserResource($this->user),
             'payments' => PaymentResource::collection($this->whenLoaded('payments')),
