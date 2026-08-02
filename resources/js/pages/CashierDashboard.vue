@@ -58,6 +58,7 @@ interface UnpaidOrder {
     discount_amount: string
     total_amount: string
     payment_status: string
+    public_token: string | null
     items: { id: number; product: { id: number; name: string }; quantity: number; unit_price: string }[]
     created_at: string
 }
@@ -495,6 +496,7 @@ const selectUnpaidOrder = async (order: UnpaidOrder) => {
         notes: order.notes,
         subtotal: parseFloat(order.subtotal),
         discount_amount: parseFloat(order.discount_amount),
+        public_token: order.public_token,
         _existingItems: order.items.map(i => ({
             name: i.product.name,
             quantity: i.quantity,
