@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, usePage } from '@inertiajs/vue3'
 import { computed } from 'vue'
-import { ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt } from 'lucide-vue-next'
+import { ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt, Smartphone, QrCode } from 'lucide-vue-next'
 
 defineOptions({ layout: null })
 
@@ -19,7 +19,7 @@ interface Order {
     items: OrderItem[]; payment: OrderPayment | null
 }
 
-const props = defineProps<{ order: Order }>()
+const props = defineProps<{ order: Order; gcashQrUrl: string | null }>()
 
 const fmt = (v: number) => '₱' + v.toLocaleString('en-PH', { minimumFractionDigits: 2 })
 
@@ -130,7 +130,7 @@ const statusBg = (s: string) => ({
                 </div>
             </div>
 
-            <!-- Items — card list, no table -->
+            <!-- Items -->
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="p-4 border-b flex items-center gap-2">
                     <Package class="h-4 w-4 text-muted-foreground" />
@@ -200,6 +200,66 @@ const statusBg = (s: string) => ({
             <div v-if="order.notes" class="rounded-xl border bg-card shadow-sm p-4">
                 <p class="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Notes</p>
                 <p class="text-sm">{{ order.notes }}</p>
+            </div>
+
+            <!-- GCash payment section — visible only when order is unpaid and QR is configured -->
+            <div
+                v-if="order.payment_status === 'pending' && gcashQrUrl"
+                class="rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 overflow-hidden"
+            >
+                <div class="px-4 pt-4 pb-3 border-b border-blue-200 dark:border-blue-800 flex items-center gap-2">
+                    <Smartphone class="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <h3 class="font-bold text-sm text-blue-700 dark:text-blue-300">Pay with GCash</h3>
+                    <span class="ml-auto rounded-full bg-yellow-400 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-yellow-900">
+                        Payment Pending
+                    </span>
+                </div>
+
+                <div class="p-5 flex flex-col sm:flex-row items-center gap-6">
+                    <!-- QR Code -->
+                    <div class="flex flex-col items-center gap-2 shrink-0">
+                        <div class="rounded-xl border-2 border-blue-200 dark:border-blue-700 bg-white p-3 shadow-sm">
+                            <img
+                                :src="gcashQrUrl"
+                                alt="GCash QR Code"
+                                class="h-48 w-48 object-contain"
+                            />
+                        </div>
+                        <p class="text-[10px] font-semibold uppercase tracking-wide text-blue-500 dark:text-blue-400 flex items-center gap-1">
+                            <QrCode class="h-3 w-3" /> Scan to pay
+                        </p>
+                    </div>
+
+                    <!-- Instructions -->
+                    <div class="space-y-3 text-sm text-center sm:text-left">
+                        <p class="font-black text-2xl text-blue-700 dark:text-blue-300">
+                            {{ fmt(order.total_amount) }}
+                        </p>
+                        <p class="text-muted-foreground leading-relaxed">
+                            Open your <strong class="text-foreground">GCash app</strong>, tap
+                            <strong class="text-foreground">Pay QR</strong>, and point your camera
+                            at the code to send the exact amount above.
+                        </p>
+                        <ol class="space-y-1.5 text-muted-foreground text-left">
+                            <li class="flex items-start gap-2">
+                                <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-200 dark:bg-blue-800 text-[10px] font-black text-blue-700 dark:text-blue-300">1</span>
+                                Open GCash and tap <strong class="text-foreground">Pay QR</strong>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-200 dark:bg-blue-800 text-[10px] font-black text-blue-700 dark:text-blue-300">2</span>
+                                Scan the QR code shown here
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-200 dark:bg-blue-800 text-[10px] font-black text-blue-700 dark:text-blue-300">3</span>
+                                Enter <strong class="text-foreground">{{ fmt(order.total_amount) }}</strong> and confirm
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-blue-200 dark:bg-blue-800 text-[10px] font-black text-blue-700 dark:text-blue-300">4</span>
+                                Show the cashier your GCash confirmation
+                            </li>
+                        </ol>
+                    </div>
+                </div>
             </div>
 
             <p class="text-center text-xs text-muted-foreground pt-2 pb-4">

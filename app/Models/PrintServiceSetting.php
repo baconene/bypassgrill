@@ -21,6 +21,7 @@ class PrintServiceSetting extends Model
         'social_facebook',
         'social_instagram',
         'receipt_qr_type',
+        'gcash_qr_path',
     ];
 
     protected $casts = [
@@ -44,6 +45,7 @@ class PrintServiceSetting extends Model
             'social_facebook'     => null,
             'social_instagram'    => null,
             'receipt_qr_type'     => 'order_url',
+            'gcash_qr_path'       => null,
         ]);
     }
 }

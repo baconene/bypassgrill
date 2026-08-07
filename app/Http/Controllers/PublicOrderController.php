@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
+use App\Models\PrintServiceSetting;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -19,8 +21,14 @@ class PublicOrderController extends Controller
         $amountTendered = (float) ($payment?->amount ?? $order->total_amount);
         $change         = max(0.0, $amountTendered - (float) $order->total_amount);
 
+        $setting    = PrintServiceSetting::getSetting();
+        $gcashQrUrl = $setting->gcash_qr_path && Storage::disk('public')->exists($setting->gcash_qr_path)
+            ? Storage::disk('public')->url($setting->gcash_qr_path)
+            : null;
+
         return Inertia::render('PublicOrderPage', [
-            'order' => [
+            'gcashQrUrl' => $gcashQrUrl,
+            'order'      => [
                 'id'               => $order->id,
                 'queue_number'     => $order->queueNumber?->number,
                 'order_type'       => $order->order_type,
@@ -44,10 +52,10 @@ class PublicOrderController extends Controller
                     'subtotal'   => (float) $item->subtotal,
                 ])->values(),
                 'payment' => $payment ? [
-                    'method'    => $payment->tender?->name ?? $payment->method ?? 'Cash',
-                    'amount'    => $amountTendered,
-                    'change'    => $change,
-                    'status'    => $payment->status,
+                    'method' => $payment->tender?->name ?? $payment->method ?? 'Cash',
+                    'amount' => $amountTendered,
+                    'change' => $change,
+                    'status' => $payment->status,
                 ] : null,
             ],
         ]);
