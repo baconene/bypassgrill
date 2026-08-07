@@ -218,13 +218,13 @@ const statusBg = (s: string) => ({
                 <div class="p-5 flex flex-col sm:flex-row items-center gap-6">
                     <!-- QR Code -->
                     <div class="flex flex-col items-center gap-2 shrink-0">
-                        <div class="rounded-xl border-2 border-blue-200 dark:border-blue-700 bg-white p-3 shadow-sm">
+                        <a :href="gcashQrUrl" target="_blank" rel="noopener" class="rounded-xl border-2 border-blue-200 dark:border-blue-700 bg-white p-3 shadow-sm block hover:opacity-80 transition-opacity">
                             <img
                                 :src="gcashQrUrl"
                                 alt="GCash QR Code"
                                 class="h-48 w-48 object-contain"
                             />
-                        </div>
+                        </a>
                         <p class="text-[10px] font-semibold uppercase tracking-wide text-blue-500 dark:text-blue-400 flex items-center gap-1">
                             <QrCode class="h-3 w-3" /> Scan to pay
                         </p>
