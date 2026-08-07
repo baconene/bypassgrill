@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, usePage } from '@inertiajs/vue3'
-import { computed } from 'vue'
-import { ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt, Smartphone, QrCode } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt, Smartphone, QrCode, X } from 'lucide-vue-next'
 
 defineOptions({ layout: null })
 
@@ -20,6 +20,8 @@ interface Order {
 }
 
 const props = defineProps<{ order: Order; gcashQrUrl: string | null }>()
+
+const qrModalOpen = ref(false)
 
 const fmt = (v: number) => '₱' + v.toLocaleString('en-PH', { minimumFractionDigits: 2 })
 
@@ -218,13 +220,13 @@ const statusBg = (s: string) => ({
                 <div class="p-5 flex flex-col sm:flex-row items-center gap-6">
                     <!-- QR Code -->
                     <div class="flex flex-col items-center gap-2 shrink-0">
-                        <a :href="gcashQrUrl" target="_blank" rel="noopener" class="rounded-xl border-2 border-blue-200 dark:border-blue-700 bg-white p-3 shadow-sm block hover:opacity-80 transition-opacity">
+                        <button @click="qrModalOpen = true" class="rounded-xl border-2 border-blue-200 dark:border-blue-700 bg-white p-3 shadow-sm block hover:opacity-80 transition-opacity cursor-zoom-in">
                             <img
                                 :src="gcashQrUrl"
                                 alt="GCash QR Code"
                                 class="h-48 w-48 object-contain"
                             />
-                        </a>
+                        </button>
                         <p class="text-[10px] font-semibold uppercase tracking-wide text-blue-500 dark:text-blue-400 flex items-center gap-1">
                             <QrCode class="h-3 w-3" /> Scan to pay
                         </p>
@@ -267,4 +269,28 @@ const statusBg = (s: string) => ({
             </p>
         </div>
     </div>
+
+    <!-- QR fullscreen modal -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div
+                v-if="qrModalOpen"
+                class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                @click="qrModalOpen = false"
+            >
+                <button
+                    class="absolute top-4 right-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20 transition-colors"
+                    @click="qrModalOpen = false"
+                >
+                    <X class="h-5 w-5" />
+                </button>
+                <img
+                    :src="gcashQrUrl!"
+                    alt="GCash QR Code"
+                    class="max-h-[90vmin] max-w-[90vmin] rounded-2xl bg-white p-4 shadow-2xl object-contain"
+                    @click.stop
+                />
+            </div>
+        </Transition>
+    </Teleport>
 </template>
