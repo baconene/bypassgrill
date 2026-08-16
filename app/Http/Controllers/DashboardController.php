@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Ingredient;
 use App\Models\KitchenSetting;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Services\InventoryService;
 use App\Services\ReportService;
 use Carbon\Carbon;
@@ -29,10 +30,11 @@ class DashboardController extends Controller
         }
 
         return Inertia::render('Dashboard', [
-            'stats' => $stats,
-            'recentOrders' => $this->recentOrders(),
-            'pl' => $pl,
-            'servingTime' => $this->buildServingTime($user),
+            'stats'                  => $stats,
+            'recentOrders'           => $this->recentOrders(),
+            'pl'                     => $pl,
+            'servingTime'            => $this->buildServingTime($user),
+            'pendingProductBreakdown' => $this->buildPendingProductBreakdown($user),
         ]);
     }
 
@@ -117,6 +119,27 @@ class DashboardController extends Controller
             'fast_minutes'    => $kitchenSetting->serving_fast_minutes,
             'slow_minutes'    => $kitchenSetting->serving_slow_minutes,
         ];
+    }
+
+    private function buildPendingProductBreakdown($user): array
+    {
+        if (! $user->hasAnyRole(['admin', 'cashier', 'kitchen'])) {
+            return [];
+        }
+
+        return OrderItem::query()
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->join('products', 'order_items.product_id', '=', 'products.id')
+            ->whereIn('orders.status', ['pending', 'preparing', 'ready'])
+            ->selectRaw('products.name as product_name, SUM(order_items.quantity) as total_qty')
+            ->groupBy('products.name')
+            ->orderByDesc('total_qty')
+            ->get()
+            ->map(fn ($r) => [
+                'name' => $r->product_name,
+                'qty'  => (int) $r->total_qty,
+            ])
+            ->toArray();
     }
 
     private function recentOrders(): array
