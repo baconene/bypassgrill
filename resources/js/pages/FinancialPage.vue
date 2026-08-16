@@ -54,6 +54,7 @@ const isAdmin = computed(() => ((page.props.auth as any)?.roles ?? []).includes(
 
 // ── State ──────────────────────────────────────────────────────────────────────
 const today = new Date().toISOString().split('T')[0]
+const nowDatetimeLocal = () => new Date().toISOString().substring(0, 16)
 const ftStartDate = ref(today)
 const ftEndDate = ref(today)
 const ftTypeFilter = ref('')
@@ -65,7 +66,7 @@ const ftTransactions = ref<FtTransaction[]>([])
 const ftMeta = ref<any>(null)
 const ftPage = ref(1)
 const showEntryForm = ref(false)
-const entryForm = ref({ type: 'expense' as 'expense' | 'income_adjustment', description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null as number | null })
+const entryForm = ref({ type: 'expense' as 'expense' | 'income_adjustment', description: '', amount: '', notes: '', transacted_at: nowDatetimeLocal(), payment_tender_id: null as number | null })
 const entrySaving = ref(false)
 const ftDeleting = ref<number | null>(null)
 const summaryOpen = ref(true)
@@ -245,7 +246,7 @@ const loadFinancial = async (page = 1) => {
 
 // ── Actions ────────────────────────────────────────────────────────────────────
 const saveEntry = async () => {
-    if (!entryForm.value.description.trim() || !entryForm.value.amount || !entryForm.value.payment_tender_id) return
+    if (!entryForm.value.description.trim() || !entryForm.value.amount || !entryForm.value.payment_tender_id || !entryForm.value.transacted_at) return
     entrySaving.value = true
     const recordedDate = entryForm.value.transacted_at
         ? entryForm.value.transacted_at.substring(0, 10)
@@ -262,7 +263,7 @@ const saveEntry = async () => {
         await api.post('/api/v1/financial-transactions', payload)
         const label = entryForm.value.type === 'income_adjustment' ? 'Income adjustment' : 'Expense'
         toast.success(`${label} recorded.`)
-        entryForm.value = { type: 'expense', description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null }
+        entryForm.value = { type: 'expense', description: '', amount: '', notes: '', transacted_at: nowDatetimeLocal(), payment_tender_id: null }
         showEntryForm.value = false
         // Widen the date filter to include the entry's date so it's always visible after save.
         if (recordedDate < ftStartDate.value) ftStartDate.value = recordedDate
@@ -677,9 +678,9 @@ onMounted(async () => {
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Date/Time</label>
+                    <label class="text-xs font-medium text-muted-foreground block mb-1">Date/Time <span class="text-red-500">*</span></label>
                     <input v-model="entryForm.transacted_at" type="datetime-local"
-                        min="2000-01-01T00:00" max="2099-12-31T23:59"
+                        min="2000-01-01T00:00" max="2099-12-31T23:59" required
                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
                 <div>
@@ -700,7 +701,7 @@ onMounted(async () => {
                 </div>
             </div>
             <div class="flex gap-2 mt-3">
-                <button @click="saveEntry" :disabled="entrySaving || !entryForm.description.trim() || !entryForm.amount || !entryForm.payment_tender_id"
+                <button @click="saveEntry" :disabled="entrySaving || !entryForm.description.trim() || !entryForm.amount || !entryForm.payment_tender_id || !entryForm.transacted_at"
                     class="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
                     {{ entrySaving ? 'Saving…' : 'Record Entry' }}
                 </button>
