@@ -976,7 +976,7 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
                 v-if="paymentOpen && pendingOrder"
                 class="fixed inset-0 z-50 flex flex-col sm:items-center sm:justify-center sm:bg-black/60 bg-background sm:p-4 overflow-y-auto sm:overflow-hidden"
             >
-                <div class="w-full flex-1 sm:flex-none sm:max-w-sm sm:rounded-2xl bg-background sm:shadow-2xl sm:overflow-hidden">
+                <div class="w-full flex-1 sm:flex-none sm:max-w-sm sm:rounded-2xl bg-background sm:shadow-2xl sm:overflow-hidden sm:max-h-[90vh] sm:flex sm:flex-col">
 
                     <!-- ── SUCCESS STATE ────────────────────────────────── -->
                     <template v-if="paymentDone && completedOrder">
@@ -1042,7 +1042,7 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
                     <!-- ── PAYMENT FORM ─────────────────────────────────── -->
                     <template v-else>
                         <!-- Header -->
-                        <div class="p-5 border-b flex items-center gap-3">
+                        <div class="p-5 border-b flex items-center gap-3 sm:shrink-0">
                             <div class="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
                                 <CreditCard class="h-5 w-5 text-green-600" />
                             </div>
@@ -1057,7 +1057,7 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
                             </button>
                         </div>
 
-                        <div class="p-5 space-y-5">
+                        <div class="p-5 space-y-5 sm:flex-1 sm:overflow-y-auto">
                             <!-- Total due -->
                             <div class="rounded-xl bg-primary/5 border border-primary/20 p-4 text-center">
                                 <p class="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Amount Due</p>
@@ -1121,7 +1121,7 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
                             </div>
                         </div>
 
-                        <div class="p-5 border-t space-y-2">
+                        <div class="p-5 border-t space-y-2 sm:shrink-0">
                             <button
                                 @click="submitPayment"
                                 :disabled="paymentSubmitting || !selectedTenderId"
