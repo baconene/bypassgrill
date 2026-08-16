@@ -106,6 +106,30 @@ const servingSpeedLabel = computed(() => {
             </p>
         </div>
 
+        <!-- Pending Product Breakdown -->
+        <div
+            v-if="pendingProductBreakdown.length > 0 && (hasRole('kitchen') || hasRole('cashier') || hasRole('admin'))"
+            class="rounded-xl border bg-card shadow-sm overflow-hidden"
+        >
+            <div class="flex items-center gap-2 px-4 py-3 border-b">
+                <UtensilsCrossed class="h-4 w-4 text-orange-500 shrink-0" />
+                <h2 class="font-semibold text-sm">Products Still to Serve</h2>
+                <span class="ml-auto rounded-full bg-orange-100 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 text-xs font-bold px-2 py-0.5">
+                    {{ pendingProductBreakdown.reduce((s, r) => s + r.qty, 0) }} total
+                </span>
+            </div>
+            <div class="divide-y">
+                <div
+                    v-for="row in pendingProductBreakdown"
+                    :key="row.name"
+                    class="flex items-center justify-between px-4 py-2.5"
+                >
+                    <span class="text-sm font-medium">{{ row.name }}</span>
+                    <span class="rounded-full bg-muted px-3 py-0.5 text-sm font-black tabular-nums">× {{ row.qty }}</span>
+                </div>
+            </div>
+        </div>
+
         <!-- Serving Time Card -->
         <div v-if="servingTime" class="rounded-xl border bg-card shadow-sm overflow-hidden">
             <div class="flex items-center gap-2 px-4 pt-4 pb-2">
@@ -267,30 +291,6 @@ const servingSpeedLabel = computed(() => {
                     <p class="text-xs text-muted-foreground mt-1">of {{ stats.total_ingredients ?? 0 }} ingredients</p>
                 </div>
             </template>
-        </div>
-
-        <!-- Pending Product Breakdown -->
-        <div
-            v-if="pendingProductBreakdown.length > 0 && (hasRole('kitchen') || hasRole('cashier') || hasRole('admin'))"
-            class="rounded-xl border bg-card shadow-sm overflow-hidden"
-        >
-            <div class="flex items-center gap-2 px-4 py-3 border-b">
-                <UtensilsCrossed class="h-4 w-4 text-orange-500 shrink-0" />
-                <h2 class="font-semibold text-sm">Products Still to Serve</h2>
-                <span class="ml-auto rounded-full bg-orange-100 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 text-xs font-bold px-2 py-0.5">
-                    {{ pendingProductBreakdown.reduce((s, r) => s + r.qty, 0) }} total
-                </span>
-            </div>
-            <div class="divide-y">
-                <div
-                    v-for="row in pendingProductBreakdown"
-                    :key="row.name"
-                    class="flex items-center justify-between px-4 py-2.5"
-                >
-                    <span class="text-sm font-medium">{{ row.name }}</span>
-                    <span class="rounded-full bg-muted px-3 py-0.5 text-sm font-black tabular-nums">× {{ row.qty }}</span>
-                </div>
-            </div>
         </div>
 
         <!-- P&L Summary (admin/auditor) -->
