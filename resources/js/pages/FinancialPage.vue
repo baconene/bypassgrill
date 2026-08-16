@@ -245,7 +245,7 @@ const loadFinancial = async (page = 1) => {
 
 // ── Actions ────────────────────────────────────────────────────────────────────
 const saveEntry = async () => {
-    if (!entryForm.value.description.trim() || !entryForm.value.amount) return
+    if (!entryForm.value.description.trim() || !entryForm.value.amount || !entryForm.value.payment_tender_id) return
     entrySaving.value = true
     const recordedDate = entryForm.value.transacted_at
         ? entryForm.value.transacted_at.substring(0, 10)
@@ -689,18 +689,18 @@ onMounted(async () => {
                 </div>
                 <div>
                     <label class="text-xs font-medium text-muted-foreground block mb-1">
-                        Tender / Account
-                        <span class="text-muted-foreground/60 font-normal">(optional)</span>
+                        Tender / Account <span class="text-red-500">*</span>
                     </label>
                     <select v-model="entryForm.payment_tender_id"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                        <option :value="null">— Not tagged —</option>
+                        :class="['w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary',
+                            entryForm.payment_tender_id ? 'bg-background border-border' : 'bg-background border-red-400 text-muted-foreground']">
+                        <option :value="null" disabled>— Select tender —</option>
                         <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
                     </select>
                 </div>
             </div>
             <div class="flex gap-2 mt-3">
-                <button @click="saveEntry" :disabled="entrySaving || !entryForm.description.trim() || !entryForm.amount"
+                <button @click="saveEntry" :disabled="entrySaving || !entryForm.description.trim() || !entryForm.amount || !entryForm.payment_tender_id"
                     class="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
                     {{ entrySaving ? 'Saving…' : 'Record Entry' }}
                 </button>
