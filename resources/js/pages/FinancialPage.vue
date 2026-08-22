@@ -91,24 +91,28 @@ const showComparisonHelp = ref(false)
 // ── Mobile FAB state ─────────────────────────────────────────────────────────
 const fabOpen = ref(false)
 const fabX = ref(16)
-const fabDragStartX = ref(0)
-const fabDragStartFabX = ref(0)
-const fabHasDragged = ref(false)
 const showMobileFilter = ref(false)
 const showMobileAddTx = ref(false)
 
 const onFabTouchStart = (e: TouchEvent) => {
-    fabDragStartX.value = e.touches[0].clientX
-    fabDragStartFabX.value = fabX.value
-    fabHasDragged.value = false
-}
-const onFabTouchMove = (e: TouchEvent) => {
-    const dx = e.touches[0].clientX - fabDragStartX.value
-    if (Math.abs(dx) > 6) fabHasDragged.value = true
-    fabX.value = Math.max(8, Math.min(window.innerWidth - 56, fabDragStartFabX.value + dx))
-}
-const onFabTouchEnd = () => {
-    if (!fabHasDragged.value) fabOpen.value = !fabOpen.value
+    e.preventDefault()
+    const startClientX = e.touches[0].clientX
+    const startFabX = fabX.value
+    let hasDragged = false
+
+    const onMove = (ev: TouchEvent) => {
+        ev.preventDefault()
+        const dx = ev.touches[0].clientX - startClientX
+        if (Math.abs(dx) > 6) hasDragged = true
+        fabX.value = Math.max(8, Math.min(window.innerWidth - 56, startFabX + dx))
+    }
+    const onEnd = () => {
+        if (!hasDragged) fabOpen.value = !fabOpen.value
+        document.removeEventListener('touchmove', onMove)
+        document.removeEventListener('touchend', onEnd)
+    }
+    document.addEventListener('touchmove', onMove, { passive: false })
+    document.addEventListener('touchend', onEnd)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -788,8 +792,8 @@ onMounted(async () => {
         <!-- ── Ledger tab ─────────────────────────────────────────────────────── -->
         <div v-show="activeTab === 'ledger'" class="space-y-5">
 
-        <!-- ── Filters and actions bar ────────────────────────────────────────── -->
-        <div class="rounded-xl border bg-card shadow-sm p-4">
+        <!-- ── Filters and actions bar (desktop only — mobile uses FAB) ───────── -->
+        <div class="hidden md:block rounded-xl border bg-card shadow-sm p-4">
             <div class="flex flex-col sm:flex-row flex-wrap gap-3 sm:items-end">
                 <div class="flex gap-3 flex-1">
                     <div class="flex-1 min-w-0">
@@ -851,8 +855,8 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- ── Entry form ─────────────────────────────────────────────────────────── -->
-        <div v-if="showEntryForm" class="rounded-xl border bg-card shadow-sm p-4">
+        <!-- ── Entry form (desktop only) ────────────────────────────────────────── -->
+        <div v-if="showEntryForm" class="hidden md:block rounded-xl border bg-card shadow-sm p-4">
             <p class="text-sm font-bold mb-3">Record Expense or Income Adjustment</p>
             <div class="grid sm:grid-cols-2 gap-3">
                 <div>
@@ -1492,9 +1496,7 @@ onMounted(async () => {
 
         <!-- Main FAB -->
         <button
-            @touchstart.prevent="onFabTouchStart($event as unknown as TouchEvent)"
-            @touchmove.prevent="onFabTouchMove($event as unknown as TouchEvent)"
-            @touchend.prevent="onFabTouchEnd()"
+            @touchstart="onFabTouchStart($event as unknown as TouchEvent)"
             :class="['w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all duration-200',
                 fabOpen ? 'bg-foreground text-background rotate-45' : 'bg-primary text-primary-foreground']">
             <Plus class="h-5 w-5" />
