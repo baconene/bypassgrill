@@ -5,7 +5,7 @@ import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
     BarChart3, DollarSign, Plus, Trash2, ChevronLeft, ChevronRight,
-    TrendingUp, TrendingDown, ChevronDown, Search, Pencil, X,
+    TrendingUp, TrendingDown, ChevronDown, Search, Pencil, X, Filter, Menu,
 } from 'lucide-vue-next'
 
 defineOptions({
@@ -86,6 +86,30 @@ const dailyData = ref<{ date: string; income: number; expense: number; balance: 
 const prevSummary = ref<FtSummary | null>(null)
 const perfLoading = ref(false)
 const hoveredDayIdx = ref<number | null>(null)
+const showComparisonHelp = ref(false)
+
+// ── Mobile FAB state ─────────────────────────────────────────────────────────
+const fabOpen = ref(false)
+const fabX = ref(16)
+const fabDragStartX = ref(0)
+const fabDragStartFabX = ref(0)
+const fabHasDragged = ref(false)
+const showMobileFilter = ref(false)
+const showMobileAddTx = ref(false)
+
+const onFabTouchStart = (e: TouchEvent) => {
+    fabDragStartX.value = e.touches[0].clientX
+    fabDragStartFabX.value = fabX.value
+    fabHasDragged.value = false
+}
+const onFabTouchMove = (e: TouchEvent) => {
+    const dx = e.touches[0].clientX - fabDragStartX.value
+    if (Math.abs(dx) > 6) fabHasDragged.value = true
+    fabX.value = Math.max(8, Math.min(window.innerWidth - 56, fabDragStartFabX.value + dx))
+}
+const onFabTouchEnd = () => {
+    if (!fabHasDragged.value) fabOpen.value = !fabOpen.value
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (v: number | string | null | undefined) =>
@@ -417,6 +441,7 @@ const saveEntry = async () => {
         toast.success(`${label} recorded.`)
         entryForm.value = { type: 'expense', description: '', amount: '', notes: '', transacted_at: nowDatetimeLocal(), payment_tender_id: null }
         showEntryForm.value = false
+        showMobileAddTx.value = false
         // Widen the date filter to include the entry's date so it's always visible after save.
         if (recordedDate < ftStartDate.value) ftStartDate.value = recordedDate
         if (recordedDate > ftEndDate.value) ftEndDate.value = recordedDate
@@ -1205,11 +1230,31 @@ onMounted(async () => {
                 <!-- Period vs Previous comparison -->
                 <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                     <div class="px-4 py-3 border-b">
-                        <h3 class="font-bold text-sm">Period Comparison</h3>
-                        <p class="text-xs text-muted-foreground mt-0.5">
-                            {{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}
-                            vs same-length period before it
-                        </p>
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <h3 class="font-bold text-sm">Period Comparison</h3>
+                                <p class="text-xs text-muted-foreground mt-0.5">
+                                    {{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}
+                                    vs same-length period before it
+                                </p>
+                            </div>
+                            <button @click="showComparisonHelp = !showComparisonHelp"
+                                :class="['shrink-0 w-6 h-6 rounded-full border text-xs font-bold transition-colors flex items-center justify-center',
+                                    showComparisonHelp ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground hover:bg-muted']">
+                                ?
+                            </button>
+                        </div>
+                        <!-- Help panel -->
+                        <div v-if="showComparisonHelp" class="mt-3 rounded-lg bg-muted/60 border p-3 text-xs space-y-2">
+                            <p><span class="font-semibold text-foreground">This Period</span> — totals for the date range you selected (From / To in the filters).</p>
+                            <p><span class="font-semibold text-foreground">Previous</span> — the same-length window immediately before your selected range. E.g. if you selected 7 days, Previous covers the 7 days before that. For a single day, Previous is the day before it.</p>
+                            <p><span class="font-semibold text-foreground">Change</span> — difference between This Period and Previous.
+                                <span class="text-emerald-600 font-semibold">Green</span> = improvement (more income or less cost);
+                                <span class="text-red-600 font-semibold">Red</span> = worse performance.
+                                The % next to the value shows how large the change is relative to the previous period.
+                            </p>
+                            <p class="text-[10px] text-muted-foreground">Tip: set the same date for both From and To to compare a single day vs the day before.</p>
+                        </div>
                     </div>
                     <!-- Mobile: stacked cards -->
                     <div class="md:hidden divide-y">
@@ -1411,4 +1456,213 @@ onMounted(async () => {
         </div><!-- end performance tab -->
 
     </div>
+
+    <!-- ── Mobile FAB ──────────────────────────────────────────────────────────── -->
+    <div class="md:hidden fixed z-50"
+         :style="{ top: '60px', left: fabX + 'px' }"
+         style="touch-action:none; user-select:none">
+
+        <!-- Sub-buttons (shown when open, appear below the FAB) -->
+        <transition
+            enter-active-class="transition-all duration-200 ease-out"
+            enter-from-class="opacity-0 scale-75 translate-y-2"
+            enter-to-class="opacity-100 scale-100 translate-y-0"
+            leave-active-class="transition-all duration-150 ease-in"
+            leave-to-class="opacity-0 scale-75 translate-y-2">
+            <div v-if="fabOpen" class="absolute top-14 left-1/2 -translate-x-1/2 flex gap-3">
+                <div class="flex flex-col items-center gap-1">
+                    <button @click="showMobileFilter=true; fabOpen=false"
+                        class="w-11 h-11 rounded-full bg-blue-500 shadow-lg flex items-center justify-center text-white active:scale-95 transition-transform">
+                        <Filter class="h-4 w-4" />
+                    </button>
+                    <span class="text-[10px] font-medium text-foreground bg-card/90 rounded px-1 shadow-sm whitespace-nowrap">Filter</span>
+                </div>
+                <div class="flex flex-col items-center gap-1">
+                    <button @click="showMobileAddTx=true; fabOpen=false"
+                        class="w-11 h-11 rounded-full bg-emerald-500 shadow-lg flex items-center justify-center text-white active:scale-95 transition-transform">
+                        <Plus class="h-4 w-4" />
+                    </button>
+                    <span class="text-[10px] font-medium text-foreground bg-card/90 rounded px-1 shadow-sm whitespace-nowrap">Add</span>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Tap backdrop to close sub-menu -->
+        <div v-if="fabOpen" class="fixed inset-0 -z-10" @click="fabOpen=false" />
+
+        <!-- Main FAB -->
+        <button
+            @touchstart.prevent="onFabTouchStart($event as unknown as TouchEvent)"
+            @touchmove.prevent="onFabTouchMove($event as unknown as TouchEvent)"
+            @touchend.prevent="onFabTouchEnd()"
+            :class="['w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all duration-200',
+                fabOpen ? 'bg-foreground text-background rotate-45' : 'bg-primary text-primary-foreground']">
+            <Plus class="h-5 w-5" />
+        </button>
+    </div>
+
+    <!-- ── Mobile Filter Modal (slides from top) ───────────────────────────────── -->
+    <teleport to="body">
+        <transition
+            enter-active-class="transition-all duration-300 ease-out"
+            enter-from-class="opacity-0"
+            enter-to-class="opacity-100"
+            leave-active-class="transition-all duration-200 ease-in"
+            leave-to-class="opacity-0">
+            <div v-if="showMobileFilter" class="fixed inset-0 z-[60] md:hidden flex flex-col">
+                <!-- Backdrop -->
+                <div class="absolute inset-0 bg-black/50" @click="showMobileFilter=false" />
+                <!-- Panel slides from top -->
+                <div class="relative bg-card rounded-b-2xl shadow-2xl p-4 max-h-[80vh] overflow-y-auto"
+                     style="animation: slideDown 0.3s ease-out">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <p class="font-bold text-base">Filters</p>
+                            <p class="text-xs text-muted-foreground mt-0.5">Refine the ledger view</p>
+                        </div>
+                        <button @click="showMobileFilter=false" class="w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center">
+                            <X class="h-4 w-4" />
+                        </button>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                                <input v-model="ftStartDate" type="date"
+                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                            </div>
+                            <div>
+                                <label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                                <input v-model="ftEndDate" type="date"
+                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                            <select v-model="ftTypeFilter"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="">All Types</option>
+                                <option value="payment">Payment</option>
+                                <option value="expense">Expense</option>
+                                <option value="income_adjustment">Income Adjustment</option>
+                                <option value="payroll">Payroll</option>
+                                <option value="asset_deduction">Asset Deduction</option>
+                                <option value="payout_share">Payout Share</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Tender</label>
+                            <select v-model="ftTenderFilter"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="">All Tenders</option>
+                                <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center justify-between rounded-lg border bg-background px-3 py-2.5">
+                            <label class="text-sm font-medium">Include Asset Deductions</label>
+                            <button @click="includeAssetDeductions = !includeAssetDeductions"
+                                :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200',
+                                    includeAssetDeductions ? 'bg-primary' : 'bg-muted-foreground/30']"
+                                role="switch" :aria-checked="includeAssetDeductions">
+                                <span :class="['pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200',
+                                    includeAssetDeductions ? 'translate-x-5' : 'translate-x-0']" />
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mt-4">
+                        <button @click="loadFinancial(); showMobileFilter=false"
+                            class="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90">
+                            Apply Filters
+                        </button>
+                        <button @click="ftStartDate=today; ftEndDate=today; ftTypeFilter=''; ftTenderFilter=''; loadFinancial(); showMobileFilter=false"
+                            class="rounded-lg border px-4 py-2.5 text-sm font-medium hover:bg-muted">
+                            Reset
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+    </teleport>
+
+    <!-- ── Mobile Add Transaction Modal (center) ───────────────────────────────── -->
+    <teleport to="body">
+        <transition
+            enter-active-class="transition-all duration-200 ease-out"
+            enter-from-class="opacity-0 scale-95"
+            enter-to-class="opacity-100 scale-100"
+            leave-active-class="transition-all duration-150 ease-in"
+            leave-to-class="opacity-0 scale-95">
+            <div v-if="showMobileAddTx" class="fixed inset-0 z-[60] md:hidden flex items-center justify-center p-4">
+                <!-- Backdrop -->
+                <div class="absolute inset-0 bg-black/50" @click="showMobileAddTx=false" />
+                <!-- Modal -->
+                <div class="relative bg-card rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto">
+                    <div class="sticky top-0 bg-card rounded-t-2xl px-4 pt-4 pb-3 border-b flex items-center justify-between">
+                        <p class="text-base font-bold">Record Entry</p>
+                        <button @click="showMobileAddTx=false" class="w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center">
+                            <X class="h-4 w-4" />
+                        </button>
+                    </div>
+                    <div class="p-4 space-y-3">
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Type *</label>
+                            <select v-model="entryForm.type"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="expense">Expense</option>
+                                <option value="income_adjustment">Income Adjustment</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
+                            <input v-model="entryForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Description *</label>
+                            <input v-model="entryForm.description" type="text" placeholder="e.g. Office supplies"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Date/Time *</label>
+                            <input v-model="entryForm.transacted_at" type="datetime-local"
+                                min="2000-01-01T00:00" max="2099-12-31T23:59" required
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Tender / Account *</label>
+                            <select v-model="entryForm.payment_tender_id"
+                                :class="['w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary',
+                                    entryForm.payment_tender_id ? 'bg-background border-border' : 'bg-background border-red-400 text-muted-foreground']">
+                                <option :value="null" disabled>— Select tender —</option>
+                                <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-muted-foreground block mb-1">Notes</label>
+                            <input v-model="entryForm.notes" type="text" placeholder="Optional reference"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                        </div>
+                    </div>
+                    <div class="px-4 pb-4 flex gap-2">
+                        <button @click="saveEntry"
+                            :disabled="entrySaving || !entryForm.description.trim() || !entryForm.amount || !entryForm.payment_tender_id || !entryForm.transacted_at"
+                            class="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                            {{ entrySaving ? 'Saving…' : 'Record Entry' }}
+                        </button>
+                        <button @click="showMobileAddTx=false" class="rounded-lg border px-4 py-2.5 text-sm font-medium hover:bg-muted">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+    </teleport>
+
 </template>
+
+<style scoped>
+@keyframes slideDown {
+    from { transform: translateY(-100%); opacity: 0; }
+    to   { transform: translateY(0);     opacity: 1; }
+}
+</style>
