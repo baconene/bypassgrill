@@ -154,6 +154,36 @@ class FinancialTransactionController extends Controller {
         ]);
     }
 
+    public function daily(Request $request): JsonResponse {
+        $this->checkReports();
+        $days  = min((int) $request->get('days', 30), 90);
+        $end   = Carbon::today()->endOfDay();
+        $start = Carbon::today()->subDays($days - 1)->startOfDay();
+
+        $rows = FinancialTransaction::where('type', '!=', 'order')
+            ->whereBetween('transacted_at', [$start, $end])
+            ->selectRaw("DATE(transacted_at) as date,
+                SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
+                SUM(CASE WHEN type IN ('expense','payroll','asset_deduction','payout_share') THEN amount ELSE 0 END) as expense")
+            ->groupByRaw('DATE(transacted_at)')
+            ->orderBy('date')
+            ->get()
+            ->keyBy('date');
+
+        $result = [];
+        for ($i = $days - 1; $i >= 0; $i--) {
+            $date     = Carbon::today()->subDays($i)->toDateString();
+            $row      = $rows->get($date);
+            $result[] = [
+                'date'    => $date,
+                'income'  => $row ? round((float) $row->income,  2) : 0.0,
+                'expense' => $row ? round((float) $row->expense, 2) : 0.0,
+            ];
+        }
+
+        return response()->json($result);
+    }
+
     public function store(Request $request): JsonResponse {
         if (! auth()->user()?->hasAnyRole('admin', 'auditor')) abort(403);
         \Log::info('💾 POST /financial-transactions received', ['transacted_at_raw' => $request->input('transacted_at')]);

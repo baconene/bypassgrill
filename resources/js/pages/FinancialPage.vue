@@ -81,6 +81,12 @@ const editingTx = ref<FtTransaction | null>(null)
 const editForm = ref({ type: '', description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null as number | null })
 const editSaving = ref(false)
 
+const activeTab = ref<'ledger' | 'performance'>('ledger')
+const dailyData = ref<{ date: string; income: number; expense: number }[]>([])
+const prevSummary = ref<FtSummary | null>(null)
+const perfLoading = ref(false)
+const hoveredDayIdx = ref<number | null>(null)
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (v: number | string | null | undefined) =>
     '₱' + parseFloat(String(v ?? 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })
@@ -177,6 +183,81 @@ const totalIncome = computed(() => {
     return ftSummary.value.payments.total + (ftSummary.value.income_adjustments?.total ?? 0)
 })
 
+const periodIncome = computed(() => {
+    if (!ftSummary.value) return 0
+    return ftSummary.value.payments.total + (ftSummary.value.income_adjustments?.total ?? 0)
+})
+
+const periodExpenses = computed(() => {
+    if (!ftSummary.value) return 0
+    const s = ftSummary.value
+    return s.expenses.total + (s.payroll?.total ?? 0) + (s.asset_deductions?.total ?? 0) + (s.payout_shares?.total ?? 0)
+})
+
+const comparisonRows = computed(() => {
+    if (!ftSummary.value) return []
+    const s = ftSummary.value
+    const p = prevSummary.value
+    const prevIncome   = p ? p.payments.total + (p.income_adjustments?.total ?? 0) : 0
+    const prevExpenses = p ? p.expenses.total + (p.payroll?.total ?? 0) + (p.asset_deductions?.total ?? 0) + (p.payout_shares?.total ?? 0) : 0
+    const mkRow = (label: string, cur: number, prev: number, higherIsBetter = true) => {
+        const change = cur - prev
+        const changePct = prev !== 0 ? Math.round((change / Math.abs(prev)) * 100) : null
+        const good = higherIsBetter ? change >= 0 : change <= 0
+        return {
+            label, cur, prev, change, changePct,
+            changeClass: change === 0 ? 'text-muted-foreground' : good ? 'text-emerald-600 font-semibold' : 'text-red-600 font-semibold',
+            sign: change >= 0 ? '+' : '',
+        }
+    }
+    return [
+        mkRow('Total Income',    periodIncome.value,          prevIncome,                   true),
+        mkRow('Total Expenses',  periodExpenses.value,        prevExpenses,                 false),
+        mkRow('Net Cash',        s.net ?? 0,                  p?.net ?? 0,                  true),
+        mkRow('Payments',        s.payments.total,            p?.payments?.total ?? 0,      true),
+        mkRow('Expenses only',   s.expenses.total,            p?.expenses?.total ?? 0,      false),
+        mkRow('Payroll',         s.payroll?.total ?? 0,       p?.payroll?.total ?? 0,       false),
+    ]
+})
+
+const typeBreakdown = computed(() => {
+    if (!ftSummary.value) return []
+    const s = ftSummary.value
+    return [
+        { type: 'payment',          total: s.payments.total,                count: s.payments.count },
+        { type: 'income_adjustment',total: s.income_adjustments?.total ?? 0,count: s.income_adjustments?.count ?? 0 },
+        { type: 'expense',          total: s.expenses.total,                count: s.expenses.count },
+        { type: 'payroll',          total: s.payroll?.total ?? 0,           count: s.payroll?.count ?? 0 },
+        { type: 'asset_deduction',  total: s.asset_deductions?.total ?? 0,  count: s.asset_deductions?.count ?? 0 },
+        { type: 'payout_share',     total: s.payout_shares?.total ?? 0,     count: s.payout_shares?.count ?? 0 },
+    ].filter(r => r.total > 0 || r.count > 0)
+})
+
+const lineChart = computed(() => {
+    const data = dailyData.value
+    if (!data.length) return null
+    const n = data.length
+    const VW = 600, VH = 190
+    const padL = 58, padR = 14, padT = 14, padB = 38
+    const W = VW - padL - padR
+    const H = VH - padT - padB
+    const maxVal = Math.max(...data.flatMap(d => [d.income, d.expense]), 100)
+    const xPos = (i: number) => padL + (n > 1 ? (i / (n - 1)) * W : W / 2)
+    const yPos = (v: number) => padT + H * (1 - v / maxVal)
+    const polyline = (key: 'income' | 'expense') =>
+        data.map((d, i) => `${xPos(i)},${yPos(d[key])}`).join(' ')
+    const area = (key: 'income' | 'expense') => {
+        const pts = data.map((d, i) => `L${xPos(i)},${yPos(d[key])}`).join(' ')
+        return `M${xPos(0)},${padT + H} ${pts} L${xPos(n - 1)},${padT + H}Z`
+    }
+    const yTicks = [0, 0.25, 0.5, 0.75, 1].map(p => ({ y: yPos(maxVal * p), val: maxVal * p }))
+    const stepW = n > 1 ? W / (n - 1) : W
+    const xLabels = data.map((d, i) => ({ i, x: xPos(i), label: d.date.slice(5) }))
+        .filter((_, i) => i === 0 || i === n - 1 || i % 5 === 0)
+    const strips = data.map((_, i) => ({ x: xPos(i) - stepW / 2, width: stepW, index: i }))
+    return { polyline, area, yTicks, xLabels, strips, xPos, yPos, padL, padT, padB, H, VW, VH }
+})
+
 const sortedTx = computed(() => {
     let list = ftTransactions.value
     const q = ftSearch.value.trim().toLowerCase()
@@ -245,6 +326,35 @@ const loadFinancial = async (page = 1) => {
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to load transactions.')
     }
+}
+
+const loadPerformance = async () => {
+    perfLoading.value = true
+    try {
+        const s = new Date(ftStartDate.value + 'T00:00:00')
+        const e = new Date(ftEndDate.value + 'T00:00:00')
+        const len = Math.round((e.getTime() - s.getTime()) / 86400000) + 1
+        const prevEnd = new Date(s); prevEnd.setDate(prevEnd.getDate() - 1)
+        const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - len + 1)
+        const toDate = (d: Date) => d.toISOString().split('T')[0]
+        const [dailyRes, prevRes] = await Promise.all([
+            api.get('/api/v1/financial-transactions/daily', { params: { days: 30 } }),
+            api.get('/api/v1/financial-transactions/summary', {
+                params: { start_date: toDate(prevStart), end_date: toDate(prevEnd), include_asset_deductions: includeAssetDeductions.value },
+            }),
+        ])
+        dailyData.value = dailyRes.data
+        prevSummary.value = prevRes.data
+    } catch {
+        toast.error('Failed to load performance data.')
+    } finally {
+        perfLoading.value = false
+    }
+}
+
+const switchTab = (tab: 'ledger' | 'performance') => {
+    activeTab.value = tab
+    if (tab === 'performance' && !dailyData.value.length) loadPerformance()
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────────
@@ -596,6 +706,23 @@ onMounted(async () => {
                 </div>
             </div>
         </div>
+
+        <!-- ── Tab switcher ─────────────────────────────────────────────────── -->
+        <div class="flex gap-1 rounded-xl border bg-card shadow-sm p-1">
+            <button @click="switchTab('ledger')"
+                :class="['flex-1 rounded-lg py-2 text-sm font-semibold transition-colors',
+                    activeTab === 'ledger' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted/40']">
+                Ledger
+            </button>
+            <button @click="switchTab('performance')"
+                :class="['flex-1 rounded-lg py-2 text-sm font-semibold transition-colors',
+                    activeTab === 'performance' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted/40']">
+                Performance
+            </button>
+        </div>
+
+        <!-- ── Ledger tab ─────────────────────────────────────────────────────── -->
+        <div v-show="activeTab === 'ledger'" class="space-y-5">
 
         <!-- ── Filters and actions bar ────────────────────────────────────────── -->
         <div class="rounded-xl border bg-card shadow-sm p-4">
@@ -995,6 +1122,257 @@ onMounted(async () => {
                 </button>
             </div>
         </div>
+
+        </div><!-- end ledger tab -->
+
+        <!-- ── Performance tab ──────────────────────────────────────────────── -->
+        <div v-show="activeTab === 'performance'" class="space-y-5">
+            <div v-if="perfLoading" class="text-center py-12 text-muted-foreground text-sm">Loading performance data…</div>
+            <template v-else-if="ftSummary">
+
+                <!-- KPI cards -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div class="rounded-xl border bg-card shadow-sm p-4">
+                        <p class="text-xs font-medium text-muted-foreground mb-1">Period Income</p>
+                        <p class="text-xl font-black text-green-600 tabular-nums leading-tight">{{ fmt(periodIncome) }}</p>
+                        <p class="text-[11px] text-muted-foreground mt-1">payments + adjustments</p>
+                    </div>
+                    <div class="rounded-xl border bg-card shadow-sm p-4">
+                        <p class="text-xs font-medium text-muted-foreground mb-1">Period Expenses</p>
+                        <p class="text-xl font-black text-red-600 tabular-nums leading-tight">{{ fmt(periodExpenses) }}</p>
+                        <p class="text-[11px] text-muted-foreground mt-1">all outflows</p>
+                    </div>
+                    <div class="rounded-xl border bg-card shadow-sm p-4">
+                        <p class="text-xs font-medium text-muted-foreground mb-1">Period Net</p>
+                        <p class="text-xl font-black tabular-nums leading-tight"
+                            :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                            {{ fmt(ftSummary.net ?? 0) }}
+                        </p>
+                        <p class="text-[11px] mt-1" :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                            {{ (ftSummary.net ?? 0) >= 0 ? 'surplus' : 'deficit' }}
+                        </p>
+                    </div>
+                    <div class="rounded-xl border bg-card shadow-sm p-4">
+                        <p class="text-xs font-medium text-muted-foreground mb-1">Balance as of {{ ftSummary.period?.end }}</p>
+                        <p class="text-xl font-black tabular-nums leading-tight"
+                            :class="(ftSummary.balance_as_of_end ?? 0) >= 0 ? 'text-blue-600' : 'text-red-600'">
+                            {{ fmt(ftSummary.balance_as_of_end ?? 0) }}
+                        </p>
+                        <p class="text-[11px] text-muted-foreground mt-1">cumulative balance</p>
+                    </div>
+                </div>
+
+                <!-- Period vs Previous comparison -->
+                <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                    <div class="px-4 py-3 border-b">
+                        <h3 class="font-bold text-sm">Period Comparison</h3>
+                        <p class="text-xs text-muted-foreground mt-0.5">
+                            {{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}
+                            vs the same-length period before it
+                        </p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-muted/50 text-xs text-muted-foreground uppercase tracking-wide">
+                                <tr>
+                                    <th class="px-4 py-2.5 text-left font-medium">Metric</th>
+                                    <th class="px-4 py-2.5 text-right font-medium">This Period</th>
+                                    <th class="px-4 py-2.5 text-right font-medium">Previous</th>
+                                    <th class="px-4 py-2.5 text-right font-medium">Change</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-border">
+                                <tr v-for="row in comparisonRows" :key="row.label" class="hover:bg-muted/20 transition-colors">
+                                    <td class="px-4 py-2.5 font-medium">{{ row.label }}</td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums font-semibold">{{ fmt(row.cur) }}</td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{{ fmt(row.prev) }}</td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums">
+                                        <span :class="row.changeClass">
+                                            {{ row.sign }}{{ fmt(Math.abs(row.change)) }}
+                                            <span v-if="row.changePct !== null" class="text-xs opacity-75">({{ row.changePct }}%)</span>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 30-day dual line chart -->
+                <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                    <div class="px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                            <h3 class="font-bold text-sm">30-Day Income vs Expense</h3>
+                            <p class="text-xs text-muted-foreground mt-0.5">Daily totals — see when expenses overlap income</p>
+                        </div>
+                        <div class="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span class="flex items-center gap-1.5">
+                                <span class="w-6 h-0.5 rounded-full bg-green-500 inline-block"></span>Income
+                            </span>
+                            <span class="flex items-center gap-1.5">
+                                <span class="w-6 h-0.5 rounded-full bg-red-500 inline-block"></span>Expense
+                            </span>
+                        </div>
+                    </div>
+                    <div class="p-4 relative" v-if="lineChart">
+                        <svg :viewBox="`0 0 ${lineChart.VW} ${lineChart.VH}`" class="w-full" style="height:220px"
+                            @mouseleave="hoveredDayIdx = null">
+                            <!-- Horizontal grid lines -->
+                            <line v-for="tick in lineChart.yTicks" :key="tick.y"
+                                :x1="lineChart.padL" :y1="tick.y"
+                                :x2="lineChart.VW - 14" :y2="tick.y"
+                                stroke="currentColor" stroke-opacity="0.07" stroke-width="1" />
+                            <!-- Y axis labels -->
+                            <text v-for="tick in lineChart.yTicks" :key="`yl${tick.y}`"
+                                :x="lineChart.padL - 6" :y="tick.y + 4"
+                                text-anchor="end" fill="currentColor" fill-opacity="0.45" font-size="9">
+                                ₱{{ tick.val >= 1000 ? (tick.val / 1000).toFixed(tick.val >= 10000 ? 0 : 1) + 'k' : tick.val.toFixed(0) }}
+                            </text>
+                            <!-- X axis labels -->
+                            <text v-for="lbl in lineChart.xLabels" :key="`xl${lbl.i}`"
+                                :x="lbl.x" :y="lineChart.VH - 4"
+                                text-anchor="middle" fill="currentColor" fill-opacity="0.45" font-size="9">
+                                {{ lbl.label }}
+                            </text>
+                            <!-- Income fill area -->
+                            <path :d="lineChart.area('income')" fill="#22c55e" fill-opacity="0.10" />
+                            <!-- Expense fill area -->
+                            <path :d="lineChart.area('expense')" fill="#ef4444" fill-opacity="0.10" />
+                            <!-- Income line -->
+                            <polyline :points="lineChart.polyline('income')"
+                                fill="none" stroke="#22c55e" stroke-width="2"
+                                stroke-linejoin="round" stroke-linecap="round" />
+                            <!-- Expense line -->
+                            <polyline :points="lineChart.polyline('expense')"
+                                fill="none" stroke="#ef4444" stroke-width="2"
+                                stroke-linejoin="round" stroke-linecap="round" />
+                            <!-- Invisible hover strips -->
+                            <rect v-for="strip in lineChart.strips" :key="strip.index"
+                                :x="strip.x" :y="lineChart.padT"
+                                :width="strip.width" :height="lineChart.H"
+                                fill="transparent"
+                                @mouseenter="hoveredDayIdx = strip.index" />
+                            <!-- Hover indicator -->
+                            <template v-if="hoveredDayIdx !== null">
+                                <line
+                                    :x1="lineChart.xPos(hoveredDayIdx)" :y1="lineChart.padT"
+                                    :x2="lineChart.xPos(hoveredDayIdx)" :y2="lineChart.padT + lineChart.H"
+                                    stroke="currentColor" stroke-opacity="0.25" stroke-width="1" stroke-dasharray="3,3" />
+                                <circle
+                                    :cx="lineChart.xPos(hoveredDayIdx)"
+                                    :cy="lineChart.yPos(dailyData[hoveredDayIdx].income)"
+                                    r="4" fill="#22c55e" />
+                                <circle
+                                    :cx="lineChart.xPos(hoveredDayIdx)"
+                                    :cy="lineChart.yPos(dailyData[hoveredDayIdx].expense)"
+                                    r="4" fill="#ef4444" />
+                            </template>
+                        </svg>
+                        <!-- Hover tooltip -->
+                        <div v-if="hoveredDayIdx !== null && dailyData[hoveredDayIdx]"
+                            class="absolute top-6 left-16 bg-card border rounded-lg shadow-lg px-3 py-2 text-xs pointer-events-none z-10 min-w-[140px]">
+                            <p class="font-bold mb-1 text-foreground">{{ dailyData[hoveredDayIdx].date }}</p>
+                            <p class="text-green-600">Income: {{ fmt(dailyData[hoveredDayIdx].income) }}</p>
+                            <p class="text-red-600">Expense: {{ fmt(dailyData[hoveredDayIdx].expense) }}</p>
+                            <p class="font-semibold mt-1 pt-1 border-t"
+                                :class="(dailyData[hoveredDayIdx].income - dailyData[hoveredDayIdx].expense) >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                                Net: {{ fmt(dailyData[hoveredDayIdx].income - dailyData[hoveredDayIdx].expense) }}
+                            </p>
+                        </div>
+                    </div>
+                    <div v-else class="p-8 text-center text-sm text-muted-foreground">No daily data available.</div>
+                </div>
+
+                <!-- Breakdown by type + by tender -->
+                <div class="grid md:grid-cols-2 gap-5">
+                    <!-- By type -->
+                    <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                        <div class="px-4 py-3 border-b">
+                            <h3 class="font-bold text-sm">By Transaction Type</h3>
+                            <p class="text-xs text-muted-foreground mt-0.5">{{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}</p>
+                        </div>
+                        <table class="w-full text-sm">
+                            <thead class="bg-muted/50 text-xs text-muted-foreground uppercase tracking-wide">
+                                <tr>
+                                    <th class="px-4 py-2.5 text-left font-medium">Type</th>
+                                    <th class="px-4 py-2.5 text-right font-medium">Txns</th>
+                                    <th class="px-4 py-2.5 text-right font-medium">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-border">
+                                <tr v-for="row in typeBreakdown" :key="row.type" class="hover:bg-muted/20 transition-colors">
+                                    <td class="px-4 py-2.5">
+                                        <span :class="['px-2 py-0.5 rounded-full text-xs font-medium', typeBadgeClass(row.type)]">
+                                            {{ typeLabel(row.type) }}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums font-semibold"
+                                        :class="isCredit(row.type) ? 'text-green-600' : 'text-red-600'">
+                                        {{ isCredit(row.type) ? '+' : '-' }}{{ fmt(row.total) }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot class="border-t">
+                                <tr>
+                                    <td colspan="2" class="px-4 py-2.5 text-xs font-bold text-muted-foreground">Net</td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums font-black"
+                                        :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                                        {{ fmt(ftSummary.net ?? 0) }}
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <!-- By tender -->
+                    <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
+                        <div class="px-4 py-3 border-b">
+                            <h3 class="font-bold text-sm">By Tender / Account</h3>
+                            <p class="text-xs text-muted-foreground mt-0.5">net flow this period</p>
+                        </div>
+                        <table class="w-full text-sm">
+                            <thead class="bg-muted/50 text-xs text-muted-foreground uppercase tracking-wide">
+                                <tr>
+                                    <th class="px-4 py-2.5 text-left font-medium">Tender</th>
+                                    <th class="px-4 py-2.5 text-right font-medium">In</th>
+                                    <th class="px-4 py-2.5 text-right font-medium">Out</th>
+                                    <th class="px-4 py-2.5 text-right font-medium">Net</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-border">
+                                <tr v-for="row in ftSummary.net_by_tender ?? []" :key="row.tender" class="hover:bg-muted/20 transition-colors">
+                                    <td class="px-4 py-2.5 font-medium">{{ row.tender }}</td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums text-green-600">+{{ fmt(row.total_in) }}</td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums text-red-600">-{{ fmt(row.total_out) }}</td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums font-bold"
+                                        :class="row.net >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                                        {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot class="border-t">
+                                <tr>
+                                    <td class="px-4 py-2.5 text-xs font-bold text-muted-foreground">Total</td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums font-bold text-green-600">
+                                        +{{ fmt((ftSummary.net_by_tender ?? []).reduce((s, r) => s + r.total_in, 0)) }}
+                                    </td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums font-bold text-red-600">
+                                        -{{ fmt((ftSummary.net_by_tender ?? []).reduce((s, r) => s + r.total_out, 0)) }}
+                                    </td>
+                                    <td class="px-4 py-2.5 text-right tabular-nums font-black"
+                                        :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                                        {{ (ftSummary.net ?? 0) >= 0 ? '+' : '' }}{{ fmt(ftSummary.net ?? 0) }}
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+            </template>
+            <div v-else class="text-center py-12 text-muted-foreground text-sm">Load the financial data first by using the date filters.</div>
+        </div><!-- end performance tab -->
 
     </div>
 </template>
