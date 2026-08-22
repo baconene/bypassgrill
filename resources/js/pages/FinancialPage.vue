@@ -78,7 +78,7 @@ const ftSortDir = ref<'asc' | 'desc'>('desc')
 const tenders = ref<PaymentTender[]>([])
 const includeAssetDeductions = ref(true)
 const editingTx = ref<FtTransaction | null>(null)
-const editForm = ref({ description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null as number | null })
+const editForm = ref({ type: '', description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null as number | null })
 const editSaving = ref(false)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -96,7 +96,8 @@ const fmtDatetime = (s: string) => {
 }
 
 const typeLabel = (t: string) => ({
-    order: 'Order', payment: 'Payment', expense: 'Expense', income_adjustment: 'Income Adj.', payroll: 'Payroll',
+    order: 'Order', payment: 'Payment', expense: 'Expense', income_adjustment: 'Income Adj.',
+    payroll: 'Payroll', asset_deduction: 'Asset Deduction', payout_share: 'Payout Share',
 }[t] ?? t)
 
 const typeBadgeClass = (t: string) => ({
@@ -105,6 +106,8 @@ const typeBadgeClass = (t: string) => ({
     expense:           'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
     income_adjustment: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
     payroll:           'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    asset_deduction:   'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    payout_share:      'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
 }[t] ?? 'bg-muted text-muted-foreground')
 
 const isCredit = (t: string) => t === 'payment' || t === 'income_adjustment'
@@ -281,6 +284,7 @@ const startEdit = (tx: FtTransaction) => {
     // Format datetime-local value: strip seconds/ms from ISO string
     const dt = tx.transacted_at ? tx.transacted_at.replace(' ', 'T').substring(0, 16) : ''
     editForm.value = {
+        type: tx.type,
         description: tx.description,
         amount: String(tx.amount),
         notes: tx.notes ?? '',
@@ -296,6 +300,7 @@ const saveEdit = async () => {
     editSaving.value = true
     try {
         await api.patch(`/api/v1/financial-transactions/${editingTx.value.id}`, {
+            type: editForm.value.type || undefined,
             description: editForm.value.description || undefined,
             amount: editForm.value.amount ? parseFloat(editForm.value.amount) : undefined,
             notes: editForm.value.notes || null,
@@ -722,6 +727,17 @@ onMounted(async () => {
                 </button>
             </div>
             <div class="grid sm:grid-cols-2 gap-3">
+                <div v-if="editingTx?.type !== 'payment'" class="sm:col-span-2">
+                    <label class="text-xs font-medium text-muted-foreground block mb-1">Type *</label>
+                    <select v-model="editForm.type"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                        <option value="expense">Expense</option>
+                        <option value="income_adjustment">Income Adjustment</option>
+                        <option value="asset_deduction">Asset Deduction</option>
+                        <option value="payroll">Payroll</option>
+                        <option value="payout_share">Payout Share</option>
+                    </select>
+                </div>
                 <div>
                     <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
                     <input v-model="editForm.amount" type="number" min="0.01" step="0.01"

@@ -190,6 +190,7 @@ class FinancialTransactionController extends Controller {
         }
 
         $data = $request->validate([
+            'type'              => 'sometimes|in:expense,income_adjustment,asset_deduction,payroll,payout_share',
             'amount'            => 'sometimes|numeric|min:0.01',
             'description'       => 'sometimes|string|max:255',
             'notes'             => 'nullable|string',
