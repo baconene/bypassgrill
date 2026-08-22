@@ -357,6 +357,21 @@ const switchTab = (tab: 'ledger' | 'performance') => {
     if (tab === 'performance' && !dailyData.value.length) loadPerformance()
 }
 
+const onChartTouch = (e: TouchEvent) => {
+    if (!lineChart.value || !dailyData.value.length) return
+    const target = e.currentTarget as SVGSVGElement
+    const rect = target.getBoundingClientRect()
+    const touch = e.touches[0]
+    if (!touch) return
+    const relX = touch.clientX - rect.left
+    const chart = lineChart.value
+    const svgX = (relX / rect.width) * chart.VW
+    const n = dailyData.value.length
+    hoveredDayIdx.value = Math.round(Math.max(0, Math.min(n - 1,
+        ((svgX - chart.padL) / (chart.VW - chart.padL - 14)) * (n - 1)
+    )))
+}
+
 // ── Actions ────────────────────────────────────────────────────────────────────
 const saveEntry = async () => {
     if (!entryForm.value.description.trim() || !entryForm.value.amount || !entryForm.value.payment_tender_id || !entryForm.value.transacted_at) return
@@ -1126,39 +1141,40 @@ onMounted(async () => {
         </div><!-- end ledger tab -->
 
         <!-- ── Performance tab ──────────────────────────────────────────────── -->
-        <div v-show="activeTab === 'performance'" class="space-y-5">
+        <div v-show="activeTab === 'performance'" class="space-y-4">
             <div v-if="perfLoading" class="text-center py-12 text-muted-foreground text-sm">Loading performance data…</div>
             <template v-else-if="ftSummary">
 
-                <!-- KPI cards -->
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div class="rounded-xl border bg-card shadow-sm p-4">
-                        <p class="text-xs font-medium text-muted-foreground mb-1">Period Income</p>
-                        <p class="text-xl font-black text-green-600 tabular-nums leading-tight">{{ fmt(periodIncome) }}</p>
-                        <p class="text-[11px] text-muted-foreground mt-1">payments + adjustments</p>
+                <!-- KPI cards — 2 cols on mobile, 4 on lg -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+                    <div class="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
+                        <p class="text-[11px] sm:text-xs font-medium text-muted-foreground mb-1 leading-tight">Period Income</p>
+                        <p class="text-base sm:text-xl font-black text-green-600 tabular-nums leading-tight">{{ fmt(periodIncome) }}</p>
+                        <p class="text-[10px] sm:text-[11px] text-muted-foreground mt-1">payments + adj.</p>
                     </div>
-                    <div class="rounded-xl border bg-card shadow-sm p-4">
-                        <p class="text-xs font-medium text-muted-foreground mb-1">Period Expenses</p>
-                        <p class="text-xl font-black text-red-600 tabular-nums leading-tight">{{ fmt(periodExpenses) }}</p>
-                        <p class="text-[11px] text-muted-foreground mt-1">all outflows</p>
+                    <div class="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
+                        <p class="text-[11px] sm:text-xs font-medium text-muted-foreground mb-1 leading-tight">Period Expenses</p>
+                        <p class="text-base sm:text-xl font-black text-red-600 tabular-nums leading-tight">{{ fmt(periodExpenses) }}</p>
+                        <p class="text-[10px] sm:text-[11px] text-muted-foreground mt-1">all outflows</p>
                     </div>
-                    <div class="rounded-xl border bg-card shadow-sm p-4">
-                        <p class="text-xs font-medium text-muted-foreground mb-1">Period Net</p>
-                        <p class="text-xl font-black tabular-nums leading-tight"
+                    <div class="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
+                        <p class="text-[11px] sm:text-xs font-medium text-muted-foreground mb-1 leading-tight">Period Net</p>
+                        <p class="text-base sm:text-xl font-black tabular-nums leading-tight"
                             :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
                             {{ fmt(ftSummary.net ?? 0) }}
                         </p>
-                        <p class="text-[11px] mt-1" :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                        <p class="text-[10px] sm:text-[11px] mt-1 font-medium"
+                            :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
                             {{ (ftSummary.net ?? 0) >= 0 ? 'surplus' : 'deficit' }}
                         </p>
                     </div>
-                    <div class="rounded-xl border bg-card shadow-sm p-4">
-                        <p class="text-xs font-medium text-muted-foreground mb-1">Balance as of {{ ftSummary.period?.end }}</p>
-                        <p class="text-xl font-black tabular-nums leading-tight"
+                    <div class="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
+                        <p class="text-[11px] sm:text-xs font-medium text-muted-foreground mb-1 leading-tight">Balance ({{ ftSummary.period?.end }})</p>
+                        <p class="text-base sm:text-xl font-black tabular-nums leading-tight"
                             :class="(ftSummary.balance_as_of_end ?? 0) >= 0 ? 'text-blue-600' : 'text-red-600'">
                             {{ fmt(ftSummary.balance_as_of_end ?? 0) }}
                         </p>
-                        <p class="text-[11px] text-muted-foreground mt-1">cumulative balance</p>
+                        <p class="text-[10px] sm:text-[11px] text-muted-foreground mt-1">cumulative</p>
                     </div>
                 </div>
 
@@ -1168,10 +1184,34 @@ onMounted(async () => {
                         <h3 class="font-bold text-sm">Period Comparison</h3>
                         <p class="text-xs text-muted-foreground mt-0.5">
                             {{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}
-                            vs the same-length period before it
+                            vs same-length period before it
                         </p>
                     </div>
-                    <div class="overflow-x-auto">
+                    <!-- Mobile: stacked cards -->
+                    <div class="md:hidden divide-y">
+                        <div v-for="row in comparisonRows" :key="row.label" class="px-4 py-3">
+                            <p class="text-xs font-semibold text-muted-foreground mb-2">{{ row.label }}</p>
+                            <div class="flex items-center justify-between gap-2">
+                                <div class="text-center flex-1">
+                                    <p class="text-[10px] text-muted-foreground mb-0.5">This Period</p>
+                                    <p class="text-sm font-bold tabular-nums">{{ fmt(row.cur) }}</p>
+                                </div>
+                                <div class="text-center flex-1">
+                                    <p class="text-[10px] text-muted-foreground mb-0.5">Previous</p>
+                                    <p class="text-sm tabular-nums text-muted-foreground">{{ fmt(row.prev) }}</p>
+                                </div>
+                                <div class="text-center flex-1">
+                                    <p class="text-[10px] text-muted-foreground mb-0.5">Change</p>
+                                    <p :class="['text-sm tabular-nums', row.changeClass]">
+                                        {{ row.sign }}{{ fmt(Math.abs(row.change)) }}
+                                        <span v-if="row.changePct !== null" class="text-[10px] opacity-75 block">({{ row.changePct }}%)</span>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Desktop: table -->
+                    <div class="hidden md:block overflow-x-auto">
                         <table class="w-full text-sm">
                             <thead class="bg-muted/50 text-xs text-muted-foreground uppercase tracking-wide">
                                 <tr>
@@ -1203,126 +1243,100 @@ onMounted(async () => {
                     <div class="px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2">
                         <div>
                             <h3 class="font-bold text-sm">30-Day Income vs Expense</h3>
-                            <p class="text-xs text-muted-foreground mt-0.5">Daily totals — see when expenses overlap income</p>
+                            <p class="text-xs text-muted-foreground mt-0.5">Tap or hover a day to inspect</p>
                         </div>
-                        <div class="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span class="flex items-center gap-1.5">
-                                <span class="w-6 h-0.5 rounded-full bg-green-500 inline-block"></span>Income
-                            </span>
-                            <span class="flex items-center gap-1.5">
-                                <span class="w-6 h-0.5 rounded-full bg-red-500 inline-block"></span>Expense
-                            </span>
+                        <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                            <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 rounded-full bg-green-500 inline-block"></span>Income</span>
+                            <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 rounded-full bg-red-500 inline-block"></span>Expense</span>
                         </div>
                     </div>
-                    <div class="p-4 relative" v-if="lineChart">
-                        <svg :viewBox="`0 0 ${lineChart.VW} ${lineChart.VH}`" class="w-full" style="height:220px"
-                            @mouseleave="hoveredDayIdx = null">
-                            <!-- Horizontal grid lines -->
+                    <div class="px-3 pt-3 pb-1" v-if="lineChart">
+                        <svg :viewBox="`0 0 ${lineChart.VW} ${lineChart.VH}`" class="w-full" style="height:190px;touch-action:none"
+                            @mouseleave="hoveredDayIdx = null"
+                            @touchmove.prevent="onChartTouch($event as unknown as TouchEvent)"
+                            @touchend="hoveredDayIdx = null">
+                            <!-- Grid lines -->
                             <line v-for="tick in lineChart.yTicks" :key="tick.y"
-                                :x1="lineChart.padL" :y1="tick.y"
-                                :x2="lineChart.VW - 14" :y2="tick.y"
+                                :x1="lineChart.padL" :y1="tick.y" :x2="lineChart.VW - 14" :y2="tick.y"
                                 stroke="currentColor" stroke-opacity="0.07" stroke-width="1" />
-                            <!-- Y axis labels -->
+                            <!-- Y axis -->
                             <text v-for="tick in lineChart.yTicks" :key="`yl${tick.y}`"
-                                :x="lineChart.padL - 6" :y="tick.y + 4"
+                                :x="lineChart.padL - 5" :y="tick.y + 4"
                                 text-anchor="end" fill="currentColor" fill-opacity="0.45" font-size="9">
                                 ₱{{ tick.val >= 1000 ? (tick.val / 1000).toFixed(tick.val >= 10000 ? 0 : 1) + 'k' : tick.val.toFixed(0) }}
                             </text>
-                            <!-- X axis labels -->
+                            <!-- X axis -->
                             <text v-for="lbl in lineChart.xLabels" :key="`xl${lbl.i}`"
                                 :x="lbl.x" :y="lineChart.VH - 4"
                                 text-anchor="middle" fill="currentColor" fill-opacity="0.45" font-size="9">
                                 {{ lbl.label }}
                             </text>
-                            <!-- Income fill area -->
+                            <!-- Fill areas -->
                             <path :d="lineChart.area('income')" fill="#22c55e" fill-opacity="0.10" />
-                            <!-- Expense fill area -->
                             <path :d="lineChart.area('expense')" fill="#ef4444" fill-opacity="0.10" />
-                            <!-- Income line -->
-                            <polyline :points="lineChart.polyline('income')"
-                                fill="none" stroke="#22c55e" stroke-width="2"
-                                stroke-linejoin="round" stroke-linecap="round" />
-                            <!-- Expense line -->
-                            <polyline :points="lineChart.polyline('expense')"
-                                fill="none" stroke="#ef4444" stroke-width="2"
-                                stroke-linejoin="round" stroke-linecap="round" />
-                            <!-- Invisible hover strips -->
+                            <!-- Lines -->
+                            <polyline :points="lineChart.polyline('income')" fill="none" stroke="#22c55e" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+                            <polyline :points="lineChart.polyline('expense')" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+                            <!-- Hover strips -->
                             <rect v-for="strip in lineChart.strips" :key="strip.index"
-                                :x="strip.x" :y="lineChart.padT"
-                                :width="strip.width" :height="lineChart.H"
-                                fill="transparent"
-                                @mouseenter="hoveredDayIdx = strip.index" />
+                                :x="strip.x" :y="lineChart.padT" :width="strip.width" :height="lineChart.H"
+                                fill="transparent" @mouseenter="hoveredDayIdx = strip.index" />
                             <!-- Hover indicator -->
                             <template v-if="hoveredDayIdx !== null">
-                                <line
-                                    :x1="lineChart.xPos(hoveredDayIdx)" :y1="lineChart.padT"
+                                <line :x1="lineChart.xPos(hoveredDayIdx)" :y1="lineChart.padT"
                                     :x2="lineChart.xPos(hoveredDayIdx)" :y2="lineChart.padT + lineChart.H"
-                                    stroke="currentColor" stroke-opacity="0.25" stroke-width="1" stroke-dasharray="3,3" />
-                                <circle
-                                    :cx="lineChart.xPos(hoveredDayIdx)"
-                                    :cy="lineChart.yPos(dailyData[hoveredDayIdx].income)"
-                                    r="4" fill="#22c55e" />
-                                <circle
-                                    :cx="lineChart.xPos(hoveredDayIdx)"
-                                    :cy="lineChart.yPos(dailyData[hoveredDayIdx].expense)"
-                                    r="4" fill="#ef4444" />
+                                    stroke="currentColor" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3,3" />
+                                <circle :cx="lineChart.xPos(hoveredDayIdx)" :cy="lineChart.yPos(dailyData[hoveredDayIdx].income)" r="4" fill="#22c55e" />
+                                <circle :cx="lineChart.xPos(hoveredDayIdx)" :cy="lineChart.yPos(dailyData[hoveredDayIdx].expense)" r="4" fill="#ef4444" />
                             </template>
                         </svg>
-                        <!-- Hover tooltip -->
-                        <div v-if="hoveredDayIdx !== null && dailyData[hoveredDayIdx]"
-                            class="absolute top-6 left-16 bg-card border rounded-lg shadow-lg px-3 py-2 text-xs pointer-events-none z-10 min-w-[140px]">
-                            <p class="font-bold mb-1 text-foreground">{{ dailyData[hoveredDayIdx].date }}</p>
-                            <p class="text-green-600">Income: {{ fmt(dailyData[hoveredDayIdx].income) }}</p>
-                            <p class="text-red-600">Expense: {{ fmt(dailyData[hoveredDayIdx].expense) }}</p>
-                            <p class="font-semibold mt-1 pt-1 border-t"
-                                :class="(dailyData[hoveredDayIdx].income - dailyData[hoveredDayIdx].expense) >= 0 ? 'text-emerald-600' : 'text-red-600'">
-                                Net: {{ fmt(dailyData[hoveredDayIdx].income - dailyData[hoveredDayIdx].expense) }}
-                            </p>
+                        <!-- Info strip — replaces floating tooltip, works on both touch and hover -->
+                        <div class="h-10 flex items-center justify-center gap-3 sm:gap-5 text-xs border-t mt-1">
+                            <template v-if="hoveredDayIdx !== null && dailyData[hoveredDayIdx]">
+                                <span class="font-semibold text-muted-foreground shrink-0">{{ dailyData[hoveredDayIdx].date }}</span>
+                                <span class="text-green-600 tabular-nums shrink-0">+{{ fmt(dailyData[hoveredDayIdx].income) }}</span>
+                                <span class="text-red-600 tabular-nums shrink-0">-{{ fmt(dailyData[hoveredDayIdx].expense) }}</span>
+                                <span class="tabular-nums font-bold shrink-0"
+                                    :class="(dailyData[hoveredDayIdx].income - dailyData[hoveredDayIdx].expense) >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                                    Net {{ fmt(dailyData[hoveredDayIdx].income - dailyData[hoveredDayIdx].expense) }}
+                                </span>
+                            </template>
+                            <span v-else class="text-muted-foreground">Tap or hover a day</span>
                         </div>
                     </div>
                     <div v-else class="p-8 text-center text-sm text-muted-foreground">No daily data available.</div>
                 </div>
 
                 <!-- Breakdown by type + by tender -->
-                <div class="grid md:grid-cols-2 gap-5">
+                <div class="grid md:grid-cols-2 gap-4">
                     <!-- By type -->
                     <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                         <div class="px-4 py-3 border-b">
                             <h3 class="font-bold text-sm">By Transaction Type</h3>
                             <p class="text-xs text-muted-foreground mt-0.5">{{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}</p>
                         </div>
-                        <table class="w-full text-sm">
-                            <thead class="bg-muted/50 text-xs text-muted-foreground uppercase tracking-wide">
-                                <tr>
-                                    <th class="px-4 py-2.5 text-left font-medium">Type</th>
-                                    <th class="px-4 py-2.5 text-right font-medium">Txns</th>
-                                    <th class="px-4 py-2.5 text-right font-medium">Total</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-border">
-                                <tr v-for="row in typeBreakdown" :key="row.type" class="hover:bg-muted/20 transition-colors">
-                                    <td class="px-4 py-2.5">
-                                        <span :class="['px-2 py-0.5 rounded-full text-xs font-medium', typeBadgeClass(row.type)]">
-                                            {{ typeLabel(row.type) }}
-                                        </span>
-                                    </td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums font-semibold"
-                                        :class="isCredit(row.type) ? 'text-green-600' : 'text-red-600'">
-                                        {{ isCredit(row.type) ? '+' : '-' }}{{ fmt(row.total) }}
-                                    </td>
-                                </tr>
-                            </tbody>
-                            <tfoot class="border-t">
-                                <tr>
-                                    <td colspan="2" class="px-4 py-2.5 text-xs font-bold text-muted-foreground">Net</td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums font-black"
-                                        :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
-                                        {{ fmt(ftSummary.net ?? 0) }}
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        </table>
+                        <div class="divide-y">
+                            <div v-for="row in typeBreakdown" :key="row.type"
+                                class="flex items-center justify-between px-4 py-3 hover:bg-muted/20 transition-colors">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <span :class="['px-2 py-0.5 rounded-full text-xs font-medium shrink-0', typeBadgeClass(row.type)]">
+                                        {{ typeLabel(row.type) }}
+                                    </span>
+                                    <span class="text-xs text-muted-foreground shrink-0">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</span>
+                                </div>
+                                <span class="text-sm font-bold tabular-nums shrink-0"
+                                    :class="isCredit(row.type) ? 'text-green-600' : 'text-red-600'">
+                                    {{ isCredit(row.type) ? '+' : '-' }}{{ fmt(row.total) }}
+                                </span>
+                            </div>
+                            <div class="flex items-center justify-between px-4 py-3 bg-muted/20">
+                                <span class="text-xs font-bold text-muted-foreground">Net</span>
+                                <span class="text-sm font-black tabular-nums"
+                                    :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                                    {{ fmt(ftSummary.net ?? 0) }}
+                                </span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- By tender -->
@@ -1331,47 +1345,34 @@ onMounted(async () => {
                             <h3 class="font-bold text-sm">By Tender / Account</h3>
                             <p class="text-xs text-muted-foreground mt-0.5">net flow this period</p>
                         </div>
-                        <table class="w-full text-sm">
-                            <thead class="bg-muted/50 text-xs text-muted-foreground uppercase tracking-wide">
-                                <tr>
-                                    <th class="px-4 py-2.5 text-left font-medium">Tender</th>
-                                    <th class="px-4 py-2.5 text-right font-medium">In</th>
-                                    <th class="px-4 py-2.5 text-right font-medium">Out</th>
-                                    <th class="px-4 py-2.5 text-right font-medium">Net</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-border">
-                                <tr v-for="row in ftSummary.net_by_tender ?? []" :key="row.tender" class="hover:bg-muted/20 transition-colors">
-                                    <td class="px-4 py-2.5 font-medium">{{ row.tender }}</td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums text-green-600">+{{ fmt(row.total_in) }}</td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums text-red-600">-{{ fmt(row.total_out) }}</td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums font-bold"
+                        <div class="divide-y">
+                            <div v-for="row in ftSummary.net_by_tender ?? []" :key="row.tender"
+                                class="px-4 py-3 hover:bg-muted/20 transition-colors">
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-sm font-semibold">{{ row.tender }}</span>
+                                    <span class="text-sm font-black tabular-nums"
                                         :class="row.net >= 0 ? 'text-emerald-600' : 'text-red-600'">
                                         {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
-                                    </td>
-                                </tr>
-                            </tbody>
-                            <tfoot class="border-t">
-                                <tr>
-                                    <td class="px-4 py-2.5 text-xs font-bold text-muted-foreground">Total</td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums font-bold text-green-600">
-                                        +{{ fmt((ftSummary.net_by_tender ?? []).reduce((s, r) => s + r.total_in, 0)) }}
-                                    </td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums font-bold text-red-600">
-                                        -{{ fmt((ftSummary.net_by_tender ?? []).reduce((s, r) => s + r.total_out, 0)) }}
-                                    </td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums font-black"
-                                        :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
-                                        {{ (ftSummary.net ?? 0) >= 0 ? '+' : '' }}{{ fmt(ftSummary.net ?? 0) }}
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        </table>
+                                    </span>
+                                </div>
+                                <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                                    <span class="text-green-600 tabular-nums">+{{ fmt(row.total_in) }} in</span>
+                                    <span class="text-red-600 tabular-nums">-{{ fmt(row.total_out) }} out</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between px-4 py-3 bg-muted/20">
+                                <span class="text-xs font-bold text-muted-foreground">Total Net</span>
+                                <span class="text-sm font-black tabular-nums"
+                                    :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
+                                    {{ (ftSummary.net ?? 0) >= 0 ? '+' : '' }}{{ fmt(ftSummary.net ?? 0) }}
+                                </span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
             </template>
-            <div v-else class="text-center py-12 text-muted-foreground text-sm">Load the financial data first by using the date filters.</div>
+            <div v-else class="text-center py-12 text-muted-foreground text-sm">Load the financial data first using the date filters.</div>
         </div><!-- end performance tab -->
 
     </div>
