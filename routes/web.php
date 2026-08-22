@@ -24,6 +24,9 @@ Route::get('/public/orders/{token}', [\App\Http\Controllers\PublicOrderControlle
 Route::inertia('/printing-architecture', 'PrintingArchitecture')
     ->name('printing.architecture');
 
+Route::inertia('/hi-tan', 'HiTan')
+    ->name('hi.tan');
+
 Route::inertia('/gumroadDescription', 'GumroadDescription')
     ->name('gumroad.description');
 
