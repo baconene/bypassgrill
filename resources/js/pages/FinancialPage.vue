@@ -82,7 +82,7 @@ const editForm = ref({ type: '', description: '', amount: '', notes: '', transac
 const editSaving = ref(false)
 
 const activeTab = ref<'ledger' | 'performance'>('ledger')
-const dailyData = ref<{ date: string; income: number; expense: number }[]>([])
+const dailyData = ref<{ date: string; income: number; expense: number; balance: number }[]>([])
 const prevSummary = ref<FtSummary | null>(null)
 const perfLoading = ref(false)
 const hoveredDayIdx = ref<number | null>(null)
@@ -238,24 +238,48 @@ const lineChart = computed(() => {
     if (!data.length) return null
     const n = data.length
     const VW = 600, VH = 190
-    const padL = 58, padR = 14, padT = 14, padB = 38
+    const padL = 58, padR = 58, padT = 14, padB = 38
     const W = VW - padL - padR
     const H = VH - padT - padB
-    const maxVal = Math.max(...data.flatMap(d => [d.income, d.expense]), 100)
+
+    // Left axis: daily income / expense scale
+    const maxIE = Math.max(...data.flatMap(d => [d.income, d.expense]), 100)
     const xPos = (i: number) => padL + (n > 1 ? (i / (n - 1)) * W : W / 2)
-    const yPos = (v: number) => padT + H * (1 - v / maxVal)
+    const yPos = (v: number) => padT + H * (1 - v / maxIE)
     const polyline = (key: 'income' | 'expense') =>
         data.map((d, i) => `${xPos(i)},${yPos(d[key])}`).join(' ')
     const area = (key: 'income' | 'expense') => {
         const pts = data.map((d, i) => `L${xPos(i)},${yPos(d[key])}`).join(' ')
         return `M${xPos(0)},${padT + H} ${pts} L${xPos(n - 1)},${padT + H}Z`
     }
-    const yTicks = [0, 0.25, 0.5, 0.75, 1].map(p => ({ y: yPos(maxVal * p), val: maxVal * p }))
+    const yTicks = [0, 0.25, 0.5, 0.75, 1].map(p => ({ y: yPos(maxIE * p), val: maxIE * p }))
+
+    // Right axis: cumulative YTD balance scale
+    const bals = data.map(d => d.balance)
+    const minBal = Math.min(...bals)
+    const maxBal = Math.max(...bals)
+    const bRange = Math.max(maxBal - minBal, 1)
+    const bMin = minBal - bRange * 0.08
+    const bMax = maxBal + bRange * 0.08
+    const yBal = (v: number) => padT + H * (1 - (v - bMin) / (bMax - bMin))
+    const balPolyline = data.map((d, i) => `${xPos(i)},${yBal(d.balance)}`).join(' ')
+    const balTicks = [0, 0.25, 0.5, 0.75, 1].map(p => ({
+        y: padT + H * (1 - p),
+        val: bMin + (bMax - bMin) * p,
+    }))
+    const shortFmt = (v: number) => {
+        const abs = Math.abs(v)
+        const s = v < 0 ? '-' : ''
+        if (abs >= 1_000_000) return s + (abs / 1_000_000).toFixed(1) + 'M'
+        if (abs >= 1_000) return s + (abs / 1_000).toFixed(0) + 'k'
+        return v.toFixed(0)
+    }
+
     const stepW = n > 1 ? W / (n - 1) : W
     const xLabels = data.map((d, i) => ({ i, x: xPos(i), label: d.date.slice(5) }))
         .filter((_, i) => i === 0 || i === n - 1 || i % 5 === 0)
     const strips = data.map((_, i) => ({ x: xPos(i) - stepW / 2, width: stepW, index: i }))
-    return { polyline, area, yTicks, xLabels, strips, xPos, yPos, padL, padT, padB, H, VW, VH }
+    return { polyline, area, balPolyline, yTicks, balTicks, shortFmt, xLabels, strips, xPos, yPos, yBal, padL, padR, padT, padB, H, VW, VH }
 })
 
 const sortedTx = computed(() => {
@@ -1238,16 +1262,17 @@ onMounted(async () => {
                     </div>
                 </div>
 
-                <!-- 30-day dual line chart -->
+                <!-- 30-day triple line chart -->
                 <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                     <div class="px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2">
                         <div>
-                            <h3 class="font-bold text-sm">30-Day Income vs Expense</h3>
-                            <p class="text-xs text-muted-foreground mt-0.5">Tap or hover a day to inspect</p>
+                            <h3 class="font-bold text-sm">30-Day Income vs Expense vs Balance</h3>
+                            <p class="text-xs text-muted-foreground mt-0.5">Tap or hover a day to inspect · Balance uses right axis</p>
                         </div>
                         <div class="flex items-center gap-3 text-xs text-muted-foreground">
                             <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 rounded-full bg-green-500 inline-block"></span>Income</span>
                             <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 rounded-full bg-red-500 inline-block"></span>Expense</span>
+                            <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 rounded-full bg-blue-500 inline-block"></span>Balance</span>
                         </div>
                     </div>
                     <div class="px-3 pt-3 pb-1" v-if="lineChart">
@@ -1257,13 +1282,19 @@ onMounted(async () => {
                             @touchend="hoveredDayIdx = null">
                             <!-- Grid lines -->
                             <line v-for="tick in lineChart.yTicks" :key="tick.y"
-                                :x1="lineChart.padL" :y1="tick.y" :x2="lineChart.VW - 14" :y2="tick.y"
+                                :x1="lineChart.padL" :y1="tick.y" :x2="lineChart.VW - lineChart.padR" :y2="tick.y"
                                 stroke="currentColor" stroke-opacity="0.07" stroke-width="1" />
-                            <!-- Y axis -->
+                            <!-- Left Y axis (income/expense) -->
                             <text v-for="tick in lineChart.yTicks" :key="`yl${tick.y}`"
                                 :x="lineChart.padL - 5" :y="tick.y + 4"
                                 text-anchor="end" fill="currentColor" fill-opacity="0.45" font-size="9">
                                 ₱{{ tick.val >= 1000 ? (tick.val / 1000).toFixed(tick.val >= 10000 ? 0 : 1) + 'k' : tick.val.toFixed(0) }}
+                            </text>
+                            <!-- Right Y axis (balance) -->
+                            <text v-for="tick in lineChart.balTicks" :key="`yr${tick.y}`"
+                                :x="lineChart.VW - lineChart.padR + 5" :y="tick.y + 4"
+                                text-anchor="start" fill="#3b82f6" fill-opacity="0.65" font-size="9">
+                                {{ lineChart.shortFmt(tick.val) }}
                             </text>
                             <!-- X axis -->
                             <text v-for="lbl in lineChart.xLabels" :key="`xl${lbl.i}`"
@@ -1271,12 +1302,14 @@ onMounted(async () => {
                                 text-anchor="middle" fill="currentColor" fill-opacity="0.45" font-size="9">
                                 {{ lbl.label }}
                             </text>
-                            <!-- Fill areas -->
+                            <!-- Fill areas (income/expense) -->
                             <path :d="lineChart.area('income')" fill="#22c55e" fill-opacity="0.10" />
                             <path :d="lineChart.area('expense')" fill="#ef4444" fill-opacity="0.10" />
-                            <!-- Lines -->
+                            <!-- Lines: income + expense -->
                             <polyline :points="lineChart.polyline('income')" fill="none" stroke="#22c55e" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
                             <polyline :points="lineChart.polyline('expense')" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+                            <!-- Balance line (right axis, dashed) -->
+                            <polyline :points="lineChart.balPolyline" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5,3" />
                             <!-- Hover strips -->
                             <rect v-for="strip in lineChart.strips" :key="strip.index"
                                 :x="strip.x" :y="lineChart.padT" :width="strip.width" :height="lineChart.H"
@@ -1288,10 +1321,11 @@ onMounted(async () => {
                                     stroke="currentColor" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3,3" />
                                 <circle :cx="lineChart.xPos(hoveredDayIdx)" :cy="lineChart.yPos(dailyData[hoveredDayIdx].income)" r="4" fill="#22c55e" />
                                 <circle :cx="lineChart.xPos(hoveredDayIdx)" :cy="lineChart.yPos(dailyData[hoveredDayIdx].expense)" r="4" fill="#ef4444" />
+                                <circle :cx="lineChart.xPos(hoveredDayIdx)" :cy="lineChart.yBal(dailyData[hoveredDayIdx].balance)" r="4" fill="#3b82f6" />
                             </template>
                         </svg>
-                        <!-- Info strip — replaces floating tooltip, works on both touch and hover -->
-                        <div class="h-10 flex items-center justify-center gap-3 sm:gap-5 text-xs border-t mt-1">
+                        <!-- Info strip -->
+                        <div class="h-12 flex items-center justify-center gap-2 sm:gap-4 text-xs border-t mt-1 px-2 flex-wrap">
                             <template v-if="hoveredDayIdx !== null && dailyData[hoveredDayIdx]">
                                 <span class="font-semibold text-muted-foreground shrink-0">{{ dailyData[hoveredDayIdx].date }}</span>
                                 <span class="text-green-600 tabular-nums shrink-0">+{{ fmt(dailyData[hoveredDayIdx].income) }}</span>
@@ -1300,6 +1334,7 @@ onMounted(async () => {
                                     :class="(dailyData[hoveredDayIdx].income - dailyData[hoveredDayIdx].expense) >= 0 ? 'text-emerald-600' : 'text-red-600'">
                                     Net {{ fmt(dailyData[hoveredDayIdx].income - dailyData[hoveredDayIdx].expense) }}
                                 </span>
+                                <span class="text-blue-600 tabular-nums font-bold shrink-0">Bal {{ fmt(dailyData[hoveredDayIdx].balance) }}</span>
                             </template>
                             <span v-else class="text-muted-foreground">Tap or hover a day</span>
                         </div>

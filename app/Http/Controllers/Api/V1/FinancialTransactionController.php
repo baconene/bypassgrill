@@ -160,24 +160,36 @@ class FinancialTransactionController extends Controller {
         $end   = Carbon::today()->endOfDay();
         $start = Carbon::today()->subDays($days - 1)->startOfDay();
 
+        // All-time running balance up to the day before this window
+        $openingBalance = (float) (FinancialTransaction::where('type', '!=', 'order')
+            ->whereDate('transacted_at', '<', $start->toDateString())
+            ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
+            ->value('bal') ?? 0);
+
         $rows = FinancialTransaction::where('type', '!=', 'order')
             ->whereBetween('transacted_at', [$start, $end])
             ->selectRaw("DATE(transacted_at) as date,
                 SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
-                SUM(CASE WHEN type IN ('expense','payroll','asset_deduction','payout_share') THEN amount ELSE 0 END) as expense")
+                SUM(CASE WHEN type IN ('expense','payroll','asset_deduction','payout_share') THEN amount ELSE 0 END) as expense,
+                SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as net_change")
             ->groupByRaw('DATE(transacted_at)')
             ->orderBy('date')
             ->get()
             ->keyBy('date');
 
-        $result = [];
+        $result  = [];
+        $balance = $openingBalance;
         for ($i = $days - 1; $i >= 0; $i--) {
-            $date     = Carbon::today()->subDays($i)->toDateString();
-            $row      = $rows->get($date);
+            $date    = Carbon::today()->subDays($i)->toDateString();
+            $row     = $rows->get($date);
+            if ($row) {
+                $balance = round($balance + (float) $row->net_change, 2);
+            }
             $result[] = [
                 'date'    => $date,
                 'income'  => $row ? round((float) $row->income,  2) : 0.0,
                 'expense' => $row ? round((float) $row->expense, 2) : 0.0,
+                'balance' => $balance,
             ];
         }
 
