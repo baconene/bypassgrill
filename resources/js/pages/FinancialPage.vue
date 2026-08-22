@@ -510,6 +510,7 @@ const deleteTransaction = async (tx: FtTransaction) => {
 }
 
 onMounted(async () => {
+    fabX.value = window.innerWidth - 72
     loading.value = true
     try { await Promise.all([loadFinancial(), loadTenders()]) } finally { loading.value = false }
 })
@@ -1461,47 +1462,49 @@ onMounted(async () => {
 
     </div>
 
-    <!-- ── Mobile FAB ──────────────────────────────────────────────────────────── -->
-    <div class="md:hidden fixed z-50"
-         :style="{ top: '60px', left: fabX + 'px' }"
-         style="touch-action:none; user-select:none">
+    <!-- ── Mobile FAB (teleported to body so fixed positioning is viewport-relative) -->
+    <teleport to="body">
+        <div class="md:hidden"
+             :style="{ position: 'fixed', bottom: '24px', left: fabX + 'px', zIndex: 9999 }"
+             style="touch-action:none; user-select:none">
 
-        <!-- Sub-buttons (shown when open, appear below the FAB) -->
-        <transition
-            enter-active-class="transition-all duration-200 ease-out"
-            enter-from-class="opacity-0 scale-75 translate-y-2"
-            enter-to-class="opacity-100 scale-100 translate-y-0"
-            leave-active-class="transition-all duration-150 ease-in"
-            leave-to-class="opacity-0 scale-75 translate-y-2">
-            <div v-if="fabOpen" class="absolute top-14 left-1/2 -translate-x-1/2 flex gap-3">
-                <div class="flex flex-col items-center gap-1">
-                    <button @click="showMobileFilter=true; fabOpen=false"
-                        class="w-11 h-11 rounded-full bg-blue-500 shadow-lg flex items-center justify-center text-white active:scale-95 transition-transform">
-                        <Filter class="h-4 w-4" />
-                    </button>
-                    <span class="text-[10px] font-medium text-foreground bg-card/90 rounded px-1 shadow-sm whitespace-nowrap">Filter</span>
+            <!-- Tap backdrop to close sub-menu -->
+            <div v-if="fabOpen" style="position:fixed;inset:0;z-index:-1" @click="fabOpen=false" />
+
+            <!-- Sub-buttons — open upward above the FAB -->
+            <transition
+                enter-active-class="transition-all duration-200 ease-out"
+                enter-from-class="opacity-0 scale-75 translate-y-3"
+                enter-to-class="opacity-100 scale-100 translate-y-0"
+                leave-active-class="transition-all duration-150 ease-in"
+                leave-to-class="opacity-0 scale-75 translate-y-3">
+                <div v-if="fabOpen" class="absolute bottom-14 left-1/2 -translate-x-1/2 flex gap-3">
+                    <div class="flex flex-col-reverse items-center gap-1">
+                        <button @click="showMobileFilter=true; fabOpen=false"
+                            class="w-11 h-11 rounded-full bg-blue-500 shadow-lg flex items-center justify-center text-white active:scale-95 transition-transform">
+                            <Filter class="h-4 w-4" />
+                        </button>
+                        <span class="text-[10px] font-medium text-foreground bg-card/90 rounded px-1 shadow-sm whitespace-nowrap">Filter</span>
+                    </div>
+                    <div class="flex flex-col-reverse items-center gap-1">
+                        <button @click="showMobileAddTx=true; fabOpen=false"
+                            class="w-11 h-11 rounded-full bg-emerald-500 shadow-lg flex items-center justify-center text-white active:scale-95 transition-transform">
+                            <Plus class="h-4 w-4" />
+                        </button>
+                        <span class="text-[10px] font-medium text-foreground bg-card/90 rounded px-1 shadow-sm whitespace-nowrap">Add</span>
+                    </div>
                 </div>
-                <div class="flex flex-col items-center gap-1">
-                    <button @click="showMobileAddTx=true; fabOpen=false"
-                        class="w-11 h-11 rounded-full bg-emerald-500 shadow-lg flex items-center justify-center text-white active:scale-95 transition-transform">
-                        <Plus class="h-4 w-4" />
-                    </button>
-                    <span class="text-[10px] font-medium text-foreground bg-card/90 rounded px-1 shadow-sm whitespace-nowrap">Add</span>
-                </div>
-            </div>
-        </transition>
+            </transition>
 
-        <!-- Tap backdrop to close sub-menu -->
-        <div v-if="fabOpen" class="fixed inset-0 -z-10" @click="fabOpen=false" />
-
-        <!-- Main FAB -->
-        <button
-            @touchstart="onFabTouchStart($event as unknown as TouchEvent)"
-            :class="['w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all duration-200',
-                fabOpen ? 'bg-foreground text-background rotate-45' : 'bg-primary text-primary-foreground']">
-            <Plus class="h-5 w-5" />
-        </button>
-    </div>
+            <!-- Main FAB button -->
+            <button
+                @touchstart="onFabTouchStart($event as unknown as TouchEvent)"
+                :class="['w-12 h-12 rounded-full shadow-xl flex items-center justify-center transition-all duration-200',
+                    fabOpen ? 'bg-foreground text-background rotate-45' : 'bg-primary text-primary-foreground']">
+                <Plus class="h-5 w-5" />
+            </button>
+        </div>
+    </teleport>
 
     <!-- ── Mobile Filter Modal (slides from top) ───────────────────────────────── -->
     <teleport to="body">
