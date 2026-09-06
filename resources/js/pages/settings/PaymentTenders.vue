@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
@@ -27,6 +27,11 @@ const saving = ref(false)
 // ── GCash QR ─────────────────────────────────────────────────────────────────
 const qrPreview = ref<string | null>(props.gcashQrUrl)
 const qrFile = ref<File | null>(null)
+
+// Keep preview in sync when Inertia refreshes props (e.g. after upload redirect)
+watch(() => props.gcashQrUrl, (url) => {
+    if (!qrFile.value) qrPreview.value = url
+})
 const qrUploading = ref(false)
 const qrDropping = ref(false)
 

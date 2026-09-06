@@ -14,7 +14,7 @@ class PaymentTenderSettingsController extends \App\Http\Controllers\Controller
     {
         $setting    = PrintServiceSetting::getSetting();
         $gcashQrUrl = $setting->gcash_qr_path && Storage::disk('public')->exists($setting->gcash_qr_path)
-            ? Storage::disk('public')->url($setting->gcash_qr_path)
+            ? Storage::disk('public')->url($setting->gcash_qr_path) . '?v=' . filemtime(Storage::disk('public')->path($setting->gcash_qr_path))
             : null;
 
         return Inertia::render('settings/PaymentTenders', [
