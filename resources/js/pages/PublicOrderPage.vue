@@ -204,15 +204,15 @@ const statusBg = (s: string) => ({
                 <p class="text-sm">{{ order.notes }}</p>
             </div>
 
-            <!-- GCash payment section — visible only when order is unpaid and QR is configured -->
+            <!-- GCash QR section — visible whenever a QR is configured -->
             <div
-                v-if="order.payment_status === 'pending' && gcashQrUrl"
+                v-if="gcashQrUrl"
                 class="rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 overflow-hidden"
             >
                 <div class="px-4 pt-4 pb-3 border-b border-blue-200 dark:border-blue-800 flex items-center gap-2">
                     <Smartphone class="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
                     <h3 class="font-bold text-sm text-blue-700 dark:text-blue-300">Pay with GCash</h3>
-                    <span class="ml-auto rounded-full bg-yellow-400 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-yellow-900">
+                    <span v-if="order.payment_status === 'pending'" class="ml-auto rounded-full bg-yellow-400 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-yellow-900">
                         Payment Pending
                     </span>
                 </div>
