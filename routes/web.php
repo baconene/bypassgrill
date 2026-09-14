@@ -35,6 +35,8 @@ Route::get('menu/{id}', [MenuController::class, 'show'])
     ->name('menu.show');
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    Route::inertia('deposit-control', 'DepositControlPage')
+        ->name('deposit-control.index')->middleware('role:cashier|admin|auditor');
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('pos', [PosController::class, 'index'])

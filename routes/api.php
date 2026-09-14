@@ -29,6 +29,14 @@ Route::prefix('v1')->group(function () {
         }
 
         Route::middleware('auth')->group(function () {
+        Route::prefix('deposit-controls')->middleware('role:cashier|admin|auditor')->group(function () {
+            Route::get('/', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'index']);
+            Route::middleware('role:cashier|admin')->group(function () {
+                Route::post('/', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'store']);
+                Route::post('/{depositControl}/close', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'close']);
+                Route::post('/{depositControl}/reconcile', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'reconcile']);
+            });
+        });
         Route::post('/categories', [CategoryController::class, 'store']);
         Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
 

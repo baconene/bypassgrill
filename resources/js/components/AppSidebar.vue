@@ -30,6 +30,10 @@ const mainNavItems = computed<NavItem[]>(() => {
         items.push({ title: 'Point of Sale', href: '/pos', icon: ShoppingCart })
     }
 
+    if (hasRole('cashier', 'admin', 'auditor')) {
+        items.push({ title: 'Deposit Control', href: '/deposit-control', icon: DollarSign })
+    }
+
     if (hasRole('cashier', 'kitchen', 'auditor', 'admin')) {
         items.push({ title: 'Parcels', href: '/parcels', icon: Archive })
     }
