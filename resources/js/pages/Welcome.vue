@@ -18,6 +18,8 @@ interface Product {
     price: number;
     description: string | null;
     image: string | null;
+    soldOut: boolean;
+    lowStock: boolean;
 }
 interface Category {
     name: string;
@@ -47,6 +49,9 @@ const products = computed(() =>
 const signature = computed(() =>
     products.value.find((p) => /rib/i.test(p.name)),
 );
+const soldOutIds = computed(
+    () => new Set(products.value.filter((p) => p.soldOut).map((p) => p.id)),
+);
 const visibleProducts = computed(() =>
     category.value === 'All'
         ? products.value
@@ -55,7 +60,7 @@ const visibleProducts = computed(() =>
 );
 const bag = computed(() =>
     products.value
-        .filter((p) => quantities.value[p.id] > 0)
+        .filter((p) => !p.soldOut && quantities.value[p.id] > 0)
         .map((p) => ({ ...p, quantity: quantities.value[p.id] })),
 );
 const itemCount = computed(() =>
@@ -94,6 +99,10 @@ let observer: IntersectionObserver | undefined;
 let copyTimer: ReturnType<typeof setTimeout> | undefined;
 let dialog: HTMLDialogElement | null = null;
 function updateQuantity(id: number, amount: number) {
+    if (amount > 0 && soldOutIds.value.has(id)) {
+        return;
+    }
+
     quantities.value[id] = Math.min(
         99,
         Math.max(0, (quantities.value[id] ?? 0) + amount),
@@ -320,6 +329,7 @@ onBeforeUnmount(() => {
                         v-for="product in visibleProducts"
                         :key="product.id"
                         class="product-card"
+                        :class="{ 'is-sold-out': product.soldOut }"
                     >
                         <div class="product-image">
                             <img
@@ -350,6 +360,17 @@ onBeforeUnmount(() => {
                                 class="product-tag"
                                 >MONSTER APPETITE</span
                             >
+                            <div
+                                v-if="product.soldOut"
+                                class="sold-out-banner"
+                            >
+                                <span>SOLD OUT</span>
+                            </div>
+                            <span
+                                v-else-if="product.lowStock"
+                                class="low-stock-banner"
+                                >LOW STOCK · ORDER SOON</span
+                            >
                         </div>
                         <div class="product-info">
                             <div class="product-title">
@@ -363,11 +384,20 @@ onBeforeUnmount(() => {
                                 }}
                             </p>
                             <div class="product-bottom">
-                                <span v-if="quantities[product.id]"
+                                <span v-if="product.soldOut"
+                                    >Back soon — check again later</span
+                                ><span v-else-if="quantities[product.id]"
                                     >{{ quantities[product.id] }} in your
                                     order</span
                                 ><span v-else>Made for your next craving</span
                                 ><button
+                                    v-if="product.soldOut"
+                                    disabled
+                                    :aria-label="`${product.name} is sold out`"
+                                >
+                                    Sold out</button
+                                ><button
+                                    v-else
                                     :aria-label="`Add ${product.name} to your order`"
                                     @click="updateQuantity(product.id, 1)"
                                 >
@@ -1091,6 +1121,48 @@ h2 em {
     padding: 8px 12px;
     font-size: 11px;
     font-weight: 700;
+}
+.product-bottom button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+.sold-out-banner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #24231e8c;
+}
+.sold-out-banner span {
+    background: var(--orange);
+    color: #fff;
+    font-family: Impact, 'Arial Narrow', sans-serif;
+    font-size: 30px;
+    letter-spacing: 2px;
+    padding: 8px 60px;
+    transform: rotate(-8deg);
+    box-shadow: 0 6px 20px #0004;
+}
+.low-stock-banner {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #f2c230;
+    color: var(--ink);
+    text-align: center;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    padding: 9px;
+}
+.product-card.is-sold-out:hover {
+    transform: none;
+    box-shadow: none;
+}
+.product-card.is-sold-out .product-image img {
+    filter: grayscale(0.8);
 }
 .product-placeholder {
     height: 100%;
