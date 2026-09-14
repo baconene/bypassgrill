@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePoll } from '@inertiajs/vue3';
 import {
     ArrowDown,
     ArrowUpRight,
@@ -52,10 +52,17 @@ const signature = computed(() =>
 const soldOutIds = computed(
     () => new Set(products.value.filter((p) => p.soldOut).map((p) => p.id)),
 );
+// Keep stock banners and availability in sync with the inventory
+usePoll(10000, { only: ['categories'] });
+const activeCategory = computed(() =>
+    menuCategories.value.some((c) => c.name === category.value)
+        ? category.value
+        : 'All',
+);
 const visibleProducts = computed(() =>
-    category.value === 'All'
+    activeCategory.value === 'All'
         ? products.value
-        : (menuCategories.value.find((c) => c.name === category.value)
+        : (menuCategories.value.find((c) => c.name === activeCategory.value)
               ?.products ?? []),
 );
 const bag = computed(() =>
@@ -309,16 +316,16 @@ onBeforeUnmount(() => {
                     aria-label="Menu categories"
                 >
                     <button
-                        :class="{ active: category === 'All' }"
-                        :aria-pressed="category === 'All'"
+                        :class="{ active: activeCategory === 'All' }"
+                        :aria-pressed="activeCategory === 'All'"
                         @click="category = 'All'"
                     >
                         All on the grill</button
                     ><button
                         v-for="c in menuCategories"
                         :key="c.name"
-                        :class="{ active: category === c.name }"
-                        :aria-pressed="category === c.name"
+                        :class="{ active: activeCategory === c.name }"
+                        :aria-pressed="activeCategory === c.name"
                         @click="category = c.name"
                     >
                         {{ c.name }}

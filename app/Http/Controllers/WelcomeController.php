@@ -15,7 +15,8 @@ class WelcomeController extends Controller
     {
         $active = Advertisement::active()->get();
 
-        $categories = Category::with(['products' => function ($q) {
+        // Lazy so the welcome page's polling partial reloads only rebuild the menu
+        $categories = fn () => Category::with(['products' => function ($q) {
             $q->where('is_active', true)
               ->with('recipes.ingredient')
               ->orderBy('display_order')
