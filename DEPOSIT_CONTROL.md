@@ -6,6 +6,8 @@ Open **Deposit Control** in the sidebar (`/deposit-control`). Cashiers and admin
 2. At shift end, record and sync all payments and deductions, then select **Close shift & view breakdown**. The closing snapshot is permanent, and the report appears immediately.
 3. Enter the four actual amounts below, then select **Save actual balances & complete report**. Saved counts are final.
 
+Select **Previous snapshots** to open `/deposit-control/history`. Completed snapshots appear in a paginated table with cashier, closing time, drawer cash, shift GCash, expected net, lockbox, total GCash, and both variances. Select **View** to show a saved breakdown below the table. The current-shift page keeps previous reports out of the working area; the newly completed report remains visible immediately after saving.
+
 | Field | What to enter |
 | --- | --- |
 | Cash in the drawer | This shift's net cash before transferring it into the lockbox. Exclude any opening float. |
