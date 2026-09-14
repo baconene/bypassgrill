@@ -110,8 +110,14 @@ class ToolsController extends Controller
             return 'Empty query.';
         }
 
-        // Block multiple statements (a semicolon followed by more SQL)
-        if (preg_match('/;\s*\S/', $sql)) {
+        // Block multiple statements — strip string literals first so a semicolon
+        // inside a quoted value (e.g. 'foo; bar') does not trigger a false positive.
+        $stripped = preg_replace([
+            "/'(?:[^'\\\\]|\\\\.)*'/s",
+            '/"(?:[^"\\\\]|\\\\.)*"/s',
+            '/`[^`]*`/',
+        ], ["''", '""', '``'], $sql);
+        if (preg_match('/;\s*\S/', $stripped)) {
             return 'Only a single statement is allowed.';
         }
 
