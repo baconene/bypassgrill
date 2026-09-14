@@ -63,13 +63,14 @@ class DepositControlTest extends TestCase
         $this->assertEquals(1000, $shift->fresh()->opening_snapshot['running_balance']);
         $this->assertEquals(1525, $shift->fresh()->closing_snapshot['running_balance']);
         $this->postJson("/api/v1/deposit-controls/{$shift->id}/close")->assertConflict();
-        $payload = ['lockbox_amount' => 1000, 'lockbox_tender_id' => $cash->id, 'tenders' => [
-            ['id' => $cash->id, 'amount' => 320], ['id' => $gcash->id, 'amount' => 200],
-        ], 'notes' => 'Drawer counted twice'];
+        $payload = ['drawer_cash' => 320, 'shift_gcash' => 200, 'lockbox_total' => 1320,
+            'total_gcash' => 200, 'notes' => 'Drawer transferred into lockbox'];
         $this->postJson("/api/v1/deposit-controls/{$shift->id}/reconcile", $payload)->assertOk()
-            ->assertJsonPath('reconciliation.actual_total', 1520)
+            ->assertJsonPath('reconciliation.shift_actual', 520)
+            ->assertJsonPath('reconciliation.shift_variance', -5)
+            ->assertJsonPath('reconciliation.overall_actual', 1520)
             ->assertJsonPath('reconciliation.overall_variance', -5)
-            ->assertJsonPath('reconciliation.system_shift_change', 525);
+            ->assertJsonPath('reconciliation.shift_net', 525);
         $this->postJson("/api/v1/deposit-controls/{$shift->id}/reconcile", $payload)->assertConflict();
         $this->postJson('/api/v1/deposit-controls')->assertCreated();
     }
@@ -81,14 +82,19 @@ class DepositControlTest extends TestCase
         $cash = PaymentTender::create(['name' => 'Cash']);
         $this->actingAs($owner)->postJson('/api/v1/deposit-controls')->assertCreated();
         $id = DepositControl::firstOrFail()->id;
-        $payload = ['lockbox_amount' => 0, 'lockbox_tender_id' => $cash->id, 'tenders' => [['id' => $cash->id, 'amount' => 0]]];
+        $payload = ['drawer_cash' => 0, 'shift_gcash' => 0, 'lockbox_total' => 0, 'total_gcash' => 0];
         $this->postJson("/api/v1/deposit-controls/$id/reconcile", $payload)->assertConflict();
         $this->actingAs($other)->postJson("/api/v1/deposit-controls/$id/close")->assertForbidden();
         $this->actingAs($owner)->postJson("/api/v1/deposit-controls/$id/close")->assertOk();
-        $this->postJson("/api/v1/deposit-controls/$id/reconcile", array_replace($payload, ['tenders' => []]))->assertUnprocessable();
-        $this->postJson("/api/v1/deposit-controls/$id/reconcile", array_replace($payload, ['lockbox_amount' => -1]))->assertUnprocessable();
-        $this->postJson("/api/v1/deposit-controls/$id/reconcile", array_replace($payload, ['tenders' => [['id' => 999999, 'amount' => 0]]]))->assertUnprocessable();
-        $this->postJson("/api/v1/deposit-controls/$id/reconcile", array_replace($payload, ['tenders' => [$payload['tenders'][0], $payload['tenders'][0]]]))->assertUnprocessable();
+        foreach (array_keys($payload) as $field) {
+            $missing = $payload;
+            unset($missing[$field]);
+            $this->postJson("/api/v1/deposit-controls/$id/reconcile", $missing)->assertUnprocessable();
+            foreach ([-1, 'invalid', '0.001', 10000000000] as $value) {
+                $this->postJson("/api/v1/deposit-controls/$id/reconcile", array_replace($payload, [$field => $value]))->assertUnprocessable();
+            }
+        }
+        $this->postJson("/api/v1/deposit-controls/$id/reconcile", array_replace($payload, ['drawer_cash' => 100, 'lockbox_total' => 50]))->assertUnprocessable();
         $this->actingAs($other)->postJson("/api/v1/deposit-controls/$id/reconcile", $payload)->assertForbidden();
         Role::findOrCreate('auditor', 'web');
         $auditor = User::factory()->create()->assignRole('auditor');
@@ -110,9 +116,32 @@ class DepositControlTest extends TestCase
         $this->postJson("/api/v1/deposit-controls/$id/close")->assertOk()
             ->assertJsonPath('closing_snapshot.net_balance', 50.15);
         $this->postJson("/api/v1/deposit-controls/$id/reconcile", [
-            'lockbox_amount' => 100, 'lockbox_tender_id' => $cash->id,
-            'tenders' => [['id' => $cash->id, 'amount' => 50.40]],
-        ])->assertOk()->assertJsonPath('reconciliation.system_shift_change', 50.15)
+            'drawer_cash' => 50.15, 'shift_gcash' => 0,
+            'lockbox_total' => 150.40, 'total_gcash' => 0,
+        ])->assertOk()->assertJsonPath('reconciliation.shift_net', 50.15)
+            ->assertJsonPath('reconciliation.shift_variance', 0)
             ->assertJsonPath('reconciliation.overall_variance', 0);
+    }
+
+    public function test_cleanup_removes_only_legacy_deposit_controls_and_is_safe_to_repeat(): void
+    {
+        $user = $this->cashier();
+        $cash = PaymentTender::create(['name' => 'Cash']);
+        $entry = $this->transaction($user, $cash, 'payment', 100);
+        $this->actingAs($user)->postJson('/api/v1/deposit-controls')->assertCreated();
+        $current = DepositControl::firstOrFail();
+        $legacy = $current->replicate();
+        $legacy->active_slot = null;
+        $snapshot = $legacy->opening_snapshot;
+        unset($snapshot['version']);
+        $legacy->opening_snapshot = $snapshot;
+        $legacy->save();
+        $migration = require database_path('migrations/2026_09_14_000002_clean_up_legacy_deposit_controls.php');
+        $migration->up();
+        $migration->up();
+        $this->assertDatabaseMissing('deposit_controls', ['id' => $legacy->id]);
+        $this->assertDatabaseHas('deposit_controls', ['id' => $current->id, 'active_slot' => 1]);
+        $this->assertDatabaseHas('financial_transactions', ['id' => $entry->id, 'amount' => 100]);
+        $this->assertDatabaseHas('users', ['id' => $user->id]);
     }
 }

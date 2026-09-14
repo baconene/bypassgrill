@@ -1,28 +1,59 @@
 # Deposit Control
 
-Open **Deposit Control** in the sidebar (`/deposit-control`). Cashiers and admins can start a shift; auditors can review snapshots and completed counts. Only the user who starts a shift can close it and submit counts.
+Open **Deposit Control** in the sidebar (`/deposit-control`). Cashiers and admins can start a shift; auditors can review reports. Only the user who starts a shift can close it and save its actual balances.
 
-1. Sync offline transactions, then select **Start shift & snapshot**.
-2. At shift end, record and sync all transactions, then select **Capture closing snapshot**.
-3. Enter the lockbox amount, select its tender, and enter each tender's balance **outside the lockbox**. Enter zero explicitly for empty tenders. Review and submit the counts.
+1. Sync pending payments, then select **Start shift**. The opening financial snapshot is saved, and its breakdown stays hidden while the shift is open.
+2. At shift end, record and sync all payments and deductions, then select **Close shift & view breakdown**. The closing snapshot is permanent, and the report appears immediately.
+3. Enter the four actual amounts below, then select **Save actual balances & complete report**. Saved counts are final.
 
-For example, a PHP 1,000 lockbox, PHP 320 cash drawer, and PHP 200 GCash wallet produce PHP 1,520 actual overall funds. The lockbox is included in the selected tender exactly once.
+| Field | What to enter |
+| --- | --- |
+| Cash in the drawer | This shift's net cash before transferring it into the lockbox. Exclude any opening float. |
+| GCash amount for this shift | This shift's net GCash collections after deductions, excluding the prior wallet balance. |
+| Manually counted lockbox total | Count the entire lockbox **after adding the drawer cash**. Include funds from prior shifts. |
+| Total GCash wallet value | The full GCash wallet balance at closing, including funds from prior shifts. |
 
-Snapshots permanently save the running balance, calendar-day net balance, payment income, expense, income adjustments, payroll deductions, asset deductions, payout shares, and cumulative balances by tender. Calendar days use the application's Asia/Manila timezone. Amounts follow the financial ledger's sign conventions and include all deductions. Untagged transactions remain visible and contribute to the overall system balance.
+The actual fields start blank. Enter zero explicitly for an empty balance. The system never fills actual counts from expected amounts. The lockbox total must include, and therefore cannot be less than, the transferred drawer cash.
 
-Reconciliation formulas:
+## Two separate comparisons
 
-- Actual overall funds = lockbox + all tender balances outside the lockbox.
-- Overall variance = actual overall funds − closing running balance.
-- Tender variance = actual tender funds including its lockbox allocation − closing system tender balance.
-- System shift change = closing running balance − opening running balance.
+**This shift's net balance** shows payment income, income adjustments, expenses, payroll deductions, asset deductions, and payout shares between the opening and closing snapshots.
 
-Positive variance means over; negative means short. System shift change includes backdated entries and edits between snapshots, and works across midnight. A shift-only physical variance cannot be established without an opening physical count, so it is not presented as a measured shortage. This release records discrepancies; it does not post automatic balancing adjustments.
+- Expected shift net = closing running balance minus opening running balance.
+- Actual combined shift net = drawer cash + this shift's GCash amount.
+- Shift over/short = actual combined shift net minus expected shift net.
 
-There is one active shift for the shared POS ledger, including shifts awaiting final counts. Closing snapshots and submitted counts cannot be replaced. Later ledger edits do not alter saved snapshots. Sales are not blocked by this feature: coordinate the snapshot with the end of cashier activity. Offline transactions on other devices must also be synchronized first.
+**Overall balance** compares all accumulated funds at closing.
 
-## Setup and verification
+- Expected overall balance = closing running balance.
+- Actual overall balance = manually counted lockbox total + total GCash wallet value.
+- Overall over/short = actual overall balance minus expected overall balance.
 
-Install project dependencies (`composer install`, `npm ci`), run `php artisan migrate`, and build assets with `npm run build` using the project's supported PHP and Node versions. The migration adds `deposit_controls` and does not change ledger entries.
+Drawer cash is already inside the lockbox total. Shift GCash is already inside the wallet total. Neither is added to overall funds again.
 
-Run `php artisan test --filter=DepositControlTest` for workflow, authorization, validation, immutable snapshots, lockbox allocation, and overnight reconciliation coverage. The existing migration `2026_06_28_000001_add_product_sales_pct_to_incentive_rules.php` contains MySQL-specific SQL; the default SQLite test setup may need that pre-existing compatibility issue resolved before feature tests can run.
+Example: expected shift net PHP 500, drawer PHP 300, and shift GCash PHP 190 produce a PHP 10 shift shortage. A lockbox total of PHP 1,000 and total GCash value of PHP 520 produce PHP 1,520 overall funds. Against a PHP 1,500 running balance, that is PHP 20 over overall. These are separate comparisons, not two amounts to combine.
+
+The shift comparison relies on entering only this shift's net collections. An opening float or prior wallet funds entered there would inflate the shift actual. Snapshots include all ledger tenders and untagged entries; actual counts cover Cash and GCash. Other tenders remain visible in the expandable system breakdown but are not counted as actual funds in this workflow. Backdated entries and edits between snapshots affect the shift difference. Overnight shifts use the snapshot difference, not a calendar-day total.
+
+One shared POS shift may be open or awaiting counts at a time. Sales are not blocked during closing, so coordinate counting and synchronize offline payments on every device. Later ledger edits do not change saved snapshots. No automatic balancing transaction is posted.
+
+## Automatic one-time cleanup on deployment
+
+`database/migrations/2026_09_14_000002_clean_up_legacy_deposit_controls.php` is the deployment cleanup script. It runs automatically with the deployment's normal migration command:
+
+```sh
+php artisan migrate --force
+```
+
+It permanently deletes **legacy Deposit Control records**, both completed and unfinished, from `deposit_controls`. It does not delete orders, payments, financial transactions, users, or tender definitions. New opening snapshots carry `version: 2`; those records are preserved even if the cleanup migration is rerun. Laravel records the migration as completed so later deployments do not repeat it. Rolling back cannot restore deleted records.
+
+Run migrations before reopening the updated application to cashiers. The repository has CI checks but no production deployment workflow; the deployment process must invoke `php artisan migrate --force` for automatic cleanup. Uploading code alone does not execute it. Build updated assets with `npm run build` after installing project dependencies.
+
+## Verification
+
+```sh
+php artisan test --filter=DepositReconciliationTest
+php artisan test --filter=DepositControlTest
+```
+
+Tests cover separate shift/overall variances, decimal arithmetic, frozen snapshots, required counts, ownership, overnight shifts, and cleanup repeatability. The existing migration `2026_06_28_000001_add_product_sales_pct_to_incentive_rules.php` contains MySQL-specific SQL; the default SQLite feature-test setup needs that pre-existing compatibility issue resolved before all migrations can run.

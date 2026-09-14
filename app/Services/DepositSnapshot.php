@@ -38,6 +38,7 @@ class DepositSnapshot
         $tenders[] = ['id' => null, 'name' => 'Untagged', 'balance' => ($balances['untagged'] ?? 0) / 100];
 
         return [
+            'version' => 2,
             'captured_at' => $at->toIso8601String(),
             'business_date' => $at->toDateString(),
             'running_balance' => array_sum($balances) / 100,
