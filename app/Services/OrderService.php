@@ -135,7 +135,7 @@ class OrderService
     public function deleteOrder(Order $order): void
     {
         DB::transaction(function () use ($order) {
-            $this->inventoryService->restoreDeletedOrder($order);
+            $this->inventoryService->restoreOrderStock($order, 'delete');
 
             $paymentIds = $order->payments()->pluck('id');
 
@@ -150,10 +150,7 @@ class OrderService
     public function cancelOrder(Order $order, ?string $reason = null): Order
     {
         return DB::transaction(function () use ($order, $reason) {
-            $order->load('items');
-            foreach ($order->items as $item) {
-                $this->inventoryService->restoreForOrder($item);
-            }
+            $this->inventoryService->restoreOrderStock($order, 'cancel');
 
             $order->items()->update(['status' => 'cancelled']);
             $order->update([

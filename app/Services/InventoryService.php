@@ -141,57 +141,27 @@ class InventoryService
     }
 
     /**
-     * Restore ingredients consumed by an order item (called on cancellation).
+     * Return the stock an order actually consumed when it is cancelled or deleted.
+     * Uses the order's own inventory history, so stock is never returned twice and
+     * never-deducted orders restore nothing. No expense is recorded, since the stock
+     * was already paid for when it was purchased.
      */
-    public function restoreForOrder(OrderItem $orderItem): void
+    public function restoreOrderStock(Order $order, string $action): void
     {
-        $product = $orderItem->product;
-        $recipes = $product->recipes()->with('ingredient')->get();
-
-        $order = Order::find($orderItem->order_id);
-        $orderTypeLabel = match($order?->order_type) {
-            'dine_in'  => 'Dine In',
-            'takeout'  => 'Takeout',
-            'delivery' => 'Delivery',
-            default    => $order?->order_type ?? 'Order',
+        $label = match ($action) {
+            'cancel' => 'Cancelled',
+            'delete' => 'Deleted',
         };
-        $tableInfo = $order?->table_number ? " · Table {$order->table_number}" : '';
-        $notes = "Cancelled Order #{$orderItem->order_id} · {$orderTypeLabel}{$tableInfo} · {$product->name} ×{$orderItem->quantity}";
 
-        foreach ($recipes as $recipe) {
-            $ingredient = $recipe->ingredient;
-
-            if (! $ingredient || ! $ingredient->track_inventory) {
-                continue;
-            }
-
-            $quantity = (float) $recipe->quantity * (int) $orderItem->quantity;
-
-            $this->recordTransaction(
-                $ingredient,
-                $quantity,
-                InventoryTransactionType::STOCK_IN,
-                'order_' . $orderItem->order_id . '_cancel',
-                $notes,
-            );
-        }
-    }
-
-    /**
-     * Return the stock an order actually consumed, before the order is deleted.
-     * Uses the order's own inventory history, so cancelled or never-deducted orders
-     * restore nothing, and no expense is recorded since the stock was already paid for.
-     */
-    public function restoreDeletedOrder(Order $order): void
-    {
-        $sumByIngredient = fn (string $reference, InventoryTransactionType $type) => InventoryTransaction::where('reference', $reference)
+        $sumByIngredient = fn (array $references, InventoryTransactionType $type) => InventoryTransaction::whereIn('reference', $references)
             ->where('type', $type->value)
             ->selectRaw('ingredient_id, SUM(quantity) as total')
             ->groupBy('ingredient_id')
             ->pluck('total', 'ingredient_id');
 
-        $deducted = $sumByIngredient('order_' . $order->id, InventoryTransactionType::STOCK_OUT);
-        $restored = $sumByIngredient('order_' . $order->id . '_cancel', InventoryTransactionType::STOCK_IN);
+        $prefix   = 'order_' . $order->id;
+        $deducted = $sumByIngredient([$prefix], InventoryTransactionType::STOCK_OUT);
+        $restored = $sumByIngredient([$prefix . '_cancel', $prefix . '_delete'], InventoryTransactionType::STOCK_IN);
 
         foreach ($deducted as $ingredientId => $total) {
             $quantity = round((float) $total - (float) ($restored[$ingredientId] ?? 0), 3);
@@ -205,8 +175,8 @@ class InventoryService
                 $ingredient,
                 $quantity,
                 InventoryTransactionType::STOCK_IN,
-                'order_' . $order->id . '_delete',
-                "Deleted Order #{$order->id}",
+                $prefix . '_' . $action,
+                "{$label} Order #{$order->id}",
                 recordExpense: false,
             );
         }

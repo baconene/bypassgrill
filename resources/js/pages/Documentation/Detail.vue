@@ -707,6 +707,11 @@ const allModules: Record<string, ModuleDoc> = {
                         desc: 'Deletes order and payment FinancialTransaction records whose order no longer exists. Orders deleted before deletions were linked to the financial ledger left these entries behind with an empty order_id, and orphaned payments still count toward the balance. The command lists the affected records with the payment total, prompts for confirmation, and deletes them in a single database transaction.',
                     },
                     {
+                        name: 'ft:purge-cancel-expenses',
+                        flags: ['--dry-run'],
+                        desc: 'Deletes inventory expenses that were wrongly recorded when cancelled orders returned their stock. Cancellations used to return ingredients as a normal stock-in, which also created an "Inventory Stock In" expense even though nothing was purchased. These expenses have no direct link to the order, so each one is matched to its cancellation stock-in (reference order_{id}_cancel) by user, ingredient name and a creation time within two seconds. The command lists every match with its total, prompts for confirmation (default no), and deletes them in a single database transaction. Review the dry-run list before applying, since matching is based on timing.',
+                    },
+                    {
                         name: 'kitchen:clear',
                         flags: ['--except=id1,id2,...', '--dry-run'],
                         desc: 'Batch-completes all active kitchen orders — those with status pending, preparing, or ready. Useful for end-of-day cleanup when orders need to be closed out without individually completing them in the monitor, or after testing when the board is cluttered. The --except flag accepts comma-separated order IDs to skip. --dry-run shows which orders would be affected without making changes.',
@@ -730,6 +735,7 @@ const allModules: Record<string, ModuleDoc> = {
                     'php artisan ft:sync-orders --dry-run',
                     'php artisan ft:sync-orders --order=848',
                     'php artisan ft:purge-orphans --dry-run',
+                    'php artisan ft:purge-cancel-expenses --dry-run',
                     'php artisan kitchen:clear --except=101,102 --dry-run',
                     'php artisan inventory:backfill-deductions --date=2026-07-12',
                 ],
