@@ -36,15 +36,22 @@ const copyError = ref('');
 const paused = ref(false);
 const activeShot = ref(0);
 const root = ref<HTMLElement | null>(null);
-const products = computed(() => props.categories.flatMap((c) => c.products));
+const menuCategories = computed(() =>
+    props.categories.filter(
+        (c) => !/\b(accessor(?:y|ies)|drinks?|beverages?)\b/i.test(c.name),
+    ),
+);
+const products = computed(() =>
+    menuCategories.value.flatMap((c) => c.products),
+);
 const signature = computed(() =>
     products.value.find((p) => /rib/i.test(p.name)),
 );
 const visibleProducts = computed(() =>
     category.value === 'All'
         ? products.value
-        : (props.categories.find((c) => c.name === category.value)?.products ??
-          []),
+        : (menuCategories.value.find((c) => c.name === category.value)
+              ?.products ?? []),
 );
 const bag = computed(() =>
     products.value
@@ -123,8 +130,8 @@ onMounted(() => {
         window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
         !('IntersectionObserver' in window)
     ) {
-return;
-}
+        return;
+    }
 
     observer = new IntersectionObserver(
         (entries) => {
@@ -299,7 +306,7 @@ onBeforeUnmount(() => {
                     >
                         All on the grill</button
                     ><button
-                        v-for="c in categories"
+                        v-for="c in menuCategories"
                         :key="c.name"
                         :class="{ active: category === c.name }"
                         :aria-pressed="category === c.name"
