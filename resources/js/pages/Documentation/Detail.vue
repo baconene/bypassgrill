@@ -702,6 +702,11 @@ const allModules: Record<string, ModuleDoc> = {
                         desc: 'Finds all order-type FinancialTransaction records whose amount no longer matches the linked order total_amount. This can happen when a discount is changed on an order after the original FT was created. The command shows a diff table of affected records (order ID, current FT amount, correct amount), prompts for confirmation, and updates all records in a single database transaction. Use --order to target a single order by ID.',
                     },
                     {
+                        name: 'ft:purge-orphans',
+                        flags: ['--dry-run'],
+                        desc: 'Deletes order and payment FinancialTransaction records whose order no longer exists. Orders deleted before deletions were linked to the financial ledger left these entries behind with an empty order_id, and orphaned payments still count toward the balance. The command lists the affected records with the payment total, prompts for confirmation, and deletes them in a single database transaction.',
+                    },
+                    {
                         name: 'kitchen:clear',
                         flags: ['--except=id1,id2,...', '--dry-run'],
                         desc: 'Batch-completes all active kitchen orders — those with status pending, preparing, or ready. Useful for end-of-day cleanup when orders need to be closed out without individually completing them in the monitor, or after testing when the board is cluttered. The --except flag accepts comma-separated order IDs to skip. --dry-run shows which orders would be affected without making changes.',
@@ -724,6 +729,7 @@ const allModules: Record<string, ModuleDoc> = {
                 items: [
                     'php artisan ft:sync-orders --dry-run',
                     'php artisan ft:sync-orders --order=848',
+                    'php artisan ft:purge-orphans --dry-run',
                     'php artisan kitchen:clear --except=101,102 --dry-run',
                     'php artisan inventory:backfill-deductions --date=2026-07-12',
                 ],

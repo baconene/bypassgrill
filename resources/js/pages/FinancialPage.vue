@@ -39,7 +39,7 @@ interface PaymentTender {
 interface FtTransaction {
     id: number; type: string; amount: number; description: string; notes: string | null
     transacted_at: string; financial_balance: number | null
-    payment_tender_id: number | null
+    payment_tender_id: number | null; order_id: number | null
     user?: { name: string }; tender?: { id: number; name: string }
     order?: { customer_name: string | null; id: number } | null
 }
@@ -496,7 +496,11 @@ const saveEdit = async () => {
 }
 
 const deleteTransaction = async (tx: FtTransaction) => {
-    if (!confirm(`Delete transaction?\n${tx.description}\nAmount: ${fmt(tx.amount)}`)) return
+    const orderNote = tx.order_id && ['order', 'payment'].includes(tx.type)
+        ? `\n\nThis will also delete Order #${tx.order_id} and all of its payments and transactions.`
+        : ''
+
+    if (!confirm(`Delete transaction?\n${tx.description}\nAmount: ${fmt(tx.amount)}${orderNote}`)) return
     ftDeleting.value = tx.id
     try {
         await api.delete(`/api/v1/financial-transactions/${tx.id}`)

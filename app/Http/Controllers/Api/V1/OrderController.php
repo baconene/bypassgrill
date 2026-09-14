@@ -148,7 +148,7 @@ class OrderController extends Controller
     public function destroy(Order $order): Response
     {
         $this->checkPermission('delete orders');
-        $order->delete();
+        $this->orderService->deleteOrder($order);
         return response()->noContent();
     }
 

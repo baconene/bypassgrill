@@ -127,6 +127,26 @@ class OrderService
         return ($latest?->number ?? 0) + 1;
     }
 
+    /**
+     * Delete an order together with every financial transaction tied to it or its payments,
+     * returning the stock it consumed. Payments, items and modifiers are removed by their
+     * cascading foreign keys.
+     */
+    public function deleteOrder(Order $order): void
+    {
+        DB::transaction(function () use ($order) {
+            $this->inventoryService->restoreDeletedOrder($order);
+
+            $paymentIds = $order->payments()->pluck('id');
+
+            \App\Models\FinancialTransaction::where('order_id', $order->id)
+                ->orWhereIn('payment_id', $paymentIds)
+                ->delete();
+
+            $order->delete();
+        });
+    }
+
     public function cancelOrder(Order $order, ?string $reason = null): Order
     {
         return DB::transaction(function () use ($order, $reason) {

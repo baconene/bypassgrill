@@ -2,6 +2,7 @@
 namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\FinancialTransaction;
+use App\Services\OrderService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -245,7 +246,7 @@ class FinancialTransactionController extends Controller {
         return response()->json($financialTransaction->fresh()->load(['tender', 'user']));
     }
 
-    public function destroy(FinancialTransaction $financialTransaction): JsonResponse {
+    public function destroy(FinancialTransaction $financialTransaction, OrderService $orderService): JsonResponse {
         $user = auth()->user();
 
         if (! $user?->hasAnyRole('admin', 'auditor')) abort(403);
@@ -254,7 +255,14 @@ class FinancialTransactionController extends Controller {
             abort(422, 'Only manually created entries can be deleted.');
         }
 
-        $financialTransaction->delete();
+        // Order and payment entries belong to an order: remove the order with all its entries
+        $order = in_array($financialTransaction->type, ['order', 'payment']) ? $financialTransaction->order : null;
+
+        if ($order) {
+            $orderService->deleteOrder($order);
+        } else {
+            $financialTransaction->delete();
+        }
 
         return response()->json(null, 204);
     }

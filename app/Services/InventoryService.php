@@ -58,6 +58,7 @@ class InventoryService
         InventoryTransactionType $type,
         ?string $reference = null,
         ?string $notes = null,
+        bool $recordExpense = true,
     ): InventoryTransaction {
         $oldQuantity = (float) $ingredient->current_quantity;
 
@@ -84,7 +85,7 @@ class InventoryService
 
         // Record a financial expense for stock purchases and positive adjustments
         $costPerUnit = (float) $ingredient->cost_per_unit;
-        if ($costPerUnit > 0) {
+        if ($recordExpense && $costPerUnit > 0) {
             $costDelta = match ($type) {
                 InventoryTransactionType::STOCK_IN   => $quantity * $costPerUnit,
                 InventoryTransactionType::ADJUSTMENT => max(0.0, ($newQuantity - $oldQuantity)) * $costPerUnit,
@@ -172,6 +173,41 @@ class InventoryService
                 InventoryTransactionType::STOCK_IN,
                 'order_' . $orderItem->order_id . '_cancel',
                 $notes,
+            );
+        }
+    }
+
+    /**
+     * Return the stock an order actually consumed, before the order is deleted.
+     * Uses the order's own inventory history, so cancelled or never-deducted orders
+     * restore nothing, and no expense is recorded since the stock was already paid for.
+     */
+    public function restoreDeletedOrder(Order $order): void
+    {
+        $sumByIngredient = fn (string $reference, InventoryTransactionType $type) => InventoryTransaction::where('reference', $reference)
+            ->where('type', $type->value)
+            ->selectRaw('ingredient_id, SUM(quantity) as total')
+            ->groupBy('ingredient_id')
+            ->pluck('total', 'ingredient_id');
+
+        $deducted = $sumByIngredient('order_' . $order->id, InventoryTransactionType::STOCK_OUT);
+        $restored = $sumByIngredient('order_' . $order->id . '_cancel', InventoryTransactionType::STOCK_IN);
+
+        foreach ($deducted as $ingredientId => $total) {
+            $quantity = round((float) $total - (float) ($restored[$ingredientId] ?? 0), 3);
+            $ingredient = Ingredient::find($ingredientId);
+
+            if ($quantity <= 0 || ! $ingredient) {
+                continue;
+            }
+
+            $this->recordTransaction(
+                $ingredient,
+                $quantity,
+                InventoryTransactionType::STOCK_IN,
+                'order_' . $order->id . '_delete',
+                "Deleted Order #{$order->id}",
+                recordExpense: false,
             );
         }
     }

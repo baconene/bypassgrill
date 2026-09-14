@@ -42,7 +42,7 @@ interface FtSummary {
 }
 interface FtTransaction {
     id: number; type: string; amount: number; description: string; transacted_at: string
-    financial_balance?: number | null; notes: string | null
+    financial_balance?: number | null; notes: string | null; order_id?: number | null
     user?: { name: string }; tender?: { name: string }
 }
 interface OrderRow {
@@ -691,7 +691,7 @@ const editOrder = (order: OrderRow) =>
     router.visit(`/orders/${order.id}?back=${encodeURIComponent(buildOrdBackUrl())}`)
 
 const deleteOrder = async (order: OrderRow) => {
-    if (!confirm(`Delete Order #${order.id}?\nThis cannot be undone.`)) return
+    if (!confirm(`Delete Order #${order.id}?\nIts payments and financial transactions will also be deleted.\nThis cannot be undone.`)) return
     ordDeleting.value = order.id
     try {
         await api.delete(`/api/v1/orders/${order.id}`)
@@ -841,7 +841,11 @@ const generateReport = async () => {
 }
 
 const deleteEntry = async (tx: FtTransaction) => {
-    if (!confirm(`Delete "${tx.description}"? This cannot be undone.`)) return
+    const orderNote = tx.order_id && ['order', 'payment'].includes(tx.type)
+        ? `\n\nThis will also delete Order #${tx.order_id} and all of its payments and transactions.`
+        : ''
+
+    if (!confirm(`Delete "${tx.description}"? This cannot be undone.${orderNote}`)) return
     ftDeleting.value = tx.id
     try {
         await api.delete(`/api/v1/financial-transactions/${tx.id}`)
