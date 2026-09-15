@@ -169,6 +169,28 @@ const addToCart = () => {
     if (window.innerWidth < 1024) cartOpen.value = true
 }
 
+const cartQtyFor = (productId: number): number =>
+    cartStore.items.filter(i => i.product_id === productId).reduce((sum, i) => sum + i.quantity, 0)
+
+const quickAdd = (product: Product) => {
+    if (product.modifiers?.length) {
+        openProduct(product)
+        return
+    }
+    cartStore.addItem(product, 1, [])
+    toast.success(`${product.name} added`)
+}
+
+const quickRemove = (product: Product) => {
+    const item = cartStore.items.find(i => i.product_id === product.id && i.modifiers.length === 0)
+    if (!item) return
+    if (item.quantity <= 1) {
+        cartStore.removeItem(item.id)
+    } else {
+        cartStore.updateQuantity(item.id, item.quantity - 1)
+    }
+}
+
 const loadTenders = async () => {
     if (tenders.value.length > 0) return
     try {
@@ -575,20 +597,52 @@ onMounted(() => { loadTenders(); loadUnpaidOrders() })
 
             <!-- Products Grid -->
             <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
-                <button
+                <div
                     v-for="product in filteredProducts"
                     :key="product.id"
-                    @click="openProduct(product)"
-                    class="flex flex-col items-start rounded-xl border bg-card p-3 text-left shadow-sm transition hover:shadow-md hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                    role="button"
+                    tabindex="0"
+                    @click="quickAdd(product)"
+                    @keydown.enter.prevent="quickAdd(product)"
+                    @keydown.space.prevent="quickAdd(product)"
+                    class="flex flex-col items-start rounded-xl border bg-card p-3 text-left shadow-sm transition hover:shadow-md cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-primary"
+                    :class="cartQtyFor(product.id) > 0 ? 'border-primary/60' : ''"
                 >
-                    <div class="mb-2 h-20 w-full rounded-lg bg-muted flex items-center justify-center overflow-hidden">
+                    <div class="relative mb-2 h-20 w-full rounded-lg bg-muted flex items-center justify-center overflow-hidden">
                         <img v-if="product.image" :src="product.image" :alt="product.name" class="h-full w-full object-cover" />
                         <ShoppingCart v-else class="h-8 w-8 text-muted-foreground/40" />
+                        <span
+                            v-if="cartQtyFor(product.id) > 0"
+                            class="absolute top-1 right-1 min-w-[1.25rem] h-5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold flex items-center justify-center px-1 leading-none shadow"
+                        >
+                            {{ cartQtyFor(product.id) }}
+                        </span>
                     </div>
                     <p class="text-xs text-muted-foreground mb-0.5">{{ product.category?.name }}</p>
                     <h3 class="text-sm font-semibold leading-tight line-clamp-2">{{ product.name }}</h3>
                     <p class="mt-1 text-base font-bold text-primary">{{ formatPrice(product.price) }}</p>
-                </button>
+
+                    <!-- Inline qty controls — only for products without modifiers -->
+                    <div
+                        v-if="cartQtyFor(product.id) > 0 && !product.modifiers?.length"
+                        class="mt-2 w-full flex items-center gap-1"
+                        @click.stop
+                    >
+                        <button
+                            class="flex-1 rounded bg-muted py-0.5 hover:bg-muted/80 flex items-center justify-center"
+                            @click.stop="quickRemove(product)"
+                        >
+                            <Minus class="h-3.5 w-3.5" />
+                        </button>
+                        <span class="text-sm font-bold w-6 text-center tabular-nums">{{ cartQtyFor(product.id) }}</span>
+                        <button
+                            class="flex-1 rounded bg-primary/10 py-0.5 hover:bg-primary/20 flex items-center justify-center"
+                            @click.stop="quickAdd(product)"
+                        >
+                            <Plus class="h-3.5 w-3.5 text-primary" />
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <p v-if="filteredProducts.length === 0" class="text-center text-muted-foreground py-10 text-sm">
