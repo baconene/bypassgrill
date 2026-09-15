@@ -22,15 +22,20 @@ class DepositControlController extends Controller
 
     public function store(Request $request, DepositSnapshot $snapshots)
     {
-        return DB::transaction(function () use ($request, $snapshots) {
+        $data = $request->validate([
+            'opening_cash' => 'required|numeric|min:0|max:9999999999.99',
+        ]);
+
+        return DB::transaction(function () use ($request, $snapshots, $data) {
             // Serialize starts, including the empty-table case; unique active_slot is a backstop.
             User::orderBy('id')->lockForUpdate()->firstOrFail();
             abort_if(DepositControl::where('active_slot', 1)->exists(), 409, 'A shift is already active. Complete its counts first.');
             $at = now();
+            $snapshot = array_merge($snapshots->capture($at), ['opening_cash' => (float) $data['opening_cash']]);
 
             return response()->json(DepositControl::create([
                 'user_id' => $request->user()->id, 'active_slot' => 1,
-                'opened_at' => $at, 'opening_snapshot' => $snapshots->capture($at),
+                'opened_at' => $at, 'opening_snapshot' => $snapshot,
             ]), 201);
         });
     }

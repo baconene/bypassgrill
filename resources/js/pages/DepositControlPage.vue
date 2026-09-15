@@ -9,6 +9,7 @@ interface Snapshot {
     running_balance: number;
     cumulative_totals: Record<string, number>;
     balance_by_tender: { id: number | null; name: string; balance: number }[];
+    opening_cash?: number;
 }
 interface Counts {
     drawer_cash: string;
@@ -60,6 +61,8 @@ const freshCounts = (): Counts => ({
 });
 const counts = ref<Counts>(freshCounts());
 const notes = ref('');
+const openingCash = ref('');
+const openingCashValid = computed(() => validAmount(openingCash.value));
 const canStart = computed(() =>
     page.props.auth.roles.some((role) => ['cashier', 'admin'].includes(role)),
 );
@@ -156,12 +159,13 @@ async function act(action: 'start' | 'close' | 'reconcile') {
             action === 'start'
                 ? '/api/v1/deposit-controls'
                 : `/api/v1/deposit-controls/${active.value?.id}/${action}`;
-        const { data } = await api.post(
-            url,
+        const payload =
             action === 'reconcile'
                 ? { ...counts.value, notes: notes.value }
-                : {},
-        );
+                : action === 'start'
+                  ? { opening_cash: openingCash.value }
+                  : {};
+        const { data } = await api.post(url, payload);
 
         if (action === 'reconcile' && active.value) {
 completed.value = { ...data, user: active.value.user };
@@ -169,6 +173,7 @@ completed.value = { ...data, user: active.value.user };
 
         if (action === 'start') {
 completed.value = null;
+openingCash.value = '';
 }
 
         counts.value = freshCounts();
@@ -229,17 +234,32 @@ onMounted(() => refresh());
             <template v-if="!active">
                 <h2 class="text-lg font-semibold">Start of shift</h2>
                 <p class="my-3 text-sm text-muted-foreground">
-                    Sync pending payments, then save your opening snapshot. The
-                    report appears after closing.
+                    Count the cash in the drawer, enter the amount below, then
+                    save your opening snapshot. The report appears after closing.
                 </p>
-                <button
-                    v-if="canStart"
-                    class="rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50"
-                    :disabled="busy"
-                    @click="act('start')"
-                >
-                    Start shift
-                </button>
+                <div v-if="canStart" class="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <div class="w-full max-w-xs">
+                        <label class="mb-1 block text-sm font-medium" for="opening-cash">
+                            Cash in drawer
+                        </label>
+                        <input
+                            id="opening-cash"
+                            v-model="openingCash"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        />
+                    </div>
+                    <button
+                        class="rounded-lg bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50"
+                        :disabled="busy || !openingCashValid"
+                        @click="act('start')"
+                    >
+                        Start shift
+                    </button>
+                </div>
             </template>
             <template v-else>
                 <h2 class="text-lg font-semibold">
@@ -247,6 +267,9 @@ onMounted(() => refresh());
                 </h2>
                 <p class="mt-1 text-sm text-muted-foreground">
                     Opened {{ date(active.opened_at) }}. Opening snapshot saved.
+                    <span v-if="active.opening_snapshot.opening_cash != null">
+                        Cash in drawer at start: <strong>{{ money(active.opening_snapshot.opening_cash) }}</strong>.
+                    </span>
                 </p>
                 <p v-if="!isOwner" class="mt-3 text-sm">
                     This shift must be completed by {{ active.user.name }}.
