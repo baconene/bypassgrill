@@ -178,7 +178,6 @@ const quickAdd = (product: Product) => {
         return
     }
     cartStore.addItem(product, 1, [])
-    toast.success(`${product.name} added`)
 }
 
 const quickRemove = (product: Product) => {
