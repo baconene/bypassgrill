@@ -26,7 +26,7 @@ export function savePrintSettings(patch: Partial<PrintSettings>): void {
 
 export interface ReceiptData {
     orderId: number
-    queueNumber: number | null
+    queueNumber: number | string | null
     orderType: string
     tableNumber: string | null
     customerName: string | null
