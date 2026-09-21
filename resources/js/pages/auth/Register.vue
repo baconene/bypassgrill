@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, Head } from '@inertiajs/vue3';
+import { ArrowUpRight } from 'lucide-vue-next';
 import InputError from '@/components/InputError.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
 import TextLink from '@/components/TextLink.vue';
@@ -12,8 +13,9 @@ import { store } from '@/routes/register';
 
 defineOptions({
     layout: {
-        title: 'Create an account',
-        description: 'Enter your details below to create your account',
+        title: 'Welcome to the grill.',
+        description:
+            'Create your Bypass Grill account. Start with a few details below.',
     },
 });
 </script>
@@ -91,7 +93,12 @@ defineOptions({
                 data-test="register-user-button"
             >
                 <Spinner v-if="processing" />
-                Create account
+                {{ processing ? 'Creating account…' : 'Create account' }}
+                <ArrowUpRight
+                    v-if="!processing"
+                    class="size-4"
+                    aria-hidden="true"
+                />
             </Button>
         </div>
 

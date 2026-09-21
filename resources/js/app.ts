@@ -5,6 +5,7 @@ import { createPinia } from 'pinia';
 import { initializeTheme } from '@/composables/useAppearance';
 import AppLayout from '@/layouts/AppLayout.vue';
 import AuthLayout from '@/layouts/AuthLayout.vue';
+import GrillAuthLayout from '@/layouts/auth/GrillAuthLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { initializeFlashToast } from '@/lib/flashToast';
 import VueApexCharts from 'vue3-apexcharts';
@@ -25,6 +26,8 @@ createInertiaApp({
                 return null;
             case name === 'HiTan':
                 return null;
+            case name === 'auth/Login' || name === 'auth/Register':
+                return GrillAuthLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):

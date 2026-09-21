@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, Head } from '@inertiajs/vue3';
+import { ArrowUpRight } from 'lucide-vue-next';
 import InputError from '@/components/InputError.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
 import TextLink from '@/components/TextLink.vue';
@@ -14,8 +15,9 @@ import { request } from '@/routes/password';
 
 defineOptions({
     layout: {
-        title: 'Log in to your account',
-        description: 'Enter your email and password below to log in',
+        title: 'Welcome back.',
+        description:
+            'Log in to your Bypass Grill account. Let’s get you back to it.',
     },
 });
 
@@ -31,6 +33,7 @@ defineProps<{
 
     <div
         v-if="status"
+        role="status"
         class="mb-4 text-center text-sm font-medium text-green-600"
     >
         {{ status }}
@@ -96,7 +99,12 @@ defineProps<{
                 data-test="login-button"
             >
                 <Spinner v-if="processing" />
-                Log in
+                {{ processing ? 'Logging in…' : 'Log in' }}
+                <ArrowUpRight
+                    v-if="!processing"
+                    class="size-4"
+                    aria-hidden="true"
+                />
             </Button>
         </div>
 
