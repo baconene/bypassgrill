@@ -25,15 +25,9 @@ class RealignBalance extends Command
         $adjustments = [
             [
                 'tender_name' => 'Cash',
-                'type'        => 'income_adjustment',
-                'amount'      => 1928.58,
-                'description' => 'Balance realignment – cash count 2026-09-21',
-            ],
-            [
-                'tender_name' => 'GCash',
                 'type'        => 'expense',
-                'amount'      => 2216.63,
-                'description' => 'Balance realignment – GCash count 2026-09-21',
+                'amount'      => 288.05,
+                'description' => 'Cash short – Sep 21 2026',
             ],
         ];
 
@@ -76,7 +70,7 @@ class RealignBalance extends Command
             }
         });
 
-        $this->info('Done. Net effect on running balance: −₱288.05');
+        $this->info('Done. Cash expense −₱288.05 recorded.');
 
         return self::SUCCESS;
     }
