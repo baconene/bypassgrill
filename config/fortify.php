@@ -144,7 +144,7 @@ return [
     */
 
     'features' => [
-        Features::registration(),
+        // Public sign-up is off: admins create staff accounts in Settings → User management.
         Features::resetPasswords(),
         Features::emailVerification(),
         Features::twoFactorAuthentication([

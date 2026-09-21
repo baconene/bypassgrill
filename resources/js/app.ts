@@ -26,7 +26,7 @@ createInertiaApp({
                 return null;
             case name === 'HiTan':
                 return null;
-            case name === 'auth/Login' || name === 'auth/Register':
+            case name === 'auth/Login':
                 return GrillAuthLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;

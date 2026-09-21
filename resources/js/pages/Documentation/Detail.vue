@@ -783,7 +783,7 @@ const allModules: Record<string, ModuleDoc> = {
                     '/menu/{id} — Digital menu (content from products catalogue)',
                     '/public/orders/{token} — Customer order status page (QR code from receipt)',
                     '/printing-architecture — Static page documenting the print pipeline',
-                    'Standard auth pages: /login, /register, /forgot-password, etc.',
+                    'Standard auth pages: /login, /forgot-password, etc. There is no public sign-up; admins create staff accounts in Settings → User management.',
                 ],
             },
             {

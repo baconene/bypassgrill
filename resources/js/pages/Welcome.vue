@@ -532,11 +532,8 @@ onBeforeUnmount(() => {
             <div>
                 <button :aria-pressed="paused" @click="paused = !paused">
                     {{ paused ? 'Resume motion' : 'Pause motion' }}</button
-                ><Link
-                    :href="$page.props.auth?.user ? '/dashboard' : '/login'"
-                    >{{
-                        $page.props.auth?.user ? 'Dashboard' : 'Staff login'
-                    }}</Link
+                ><Link v-if="$page.props.auth?.user" href="/dashboard"
+                    >Dashboard</Link
                 >
             </div>
         </footer>
