@@ -11,12 +11,17 @@ use Illuminate\Support\Facades\DB;
 class RealignBalance extends Command
 {
     protected $signature = 'balance:realign
-                            {--dry-run : Preview without writing}';
+                            {--dry-run : Preview without writing}
+                            {--revert : Delete the two realignment entries created on Sep 22}';
 
     protected $description = 'One-time balance realignment: cash income adjustment + GCash expense to match physical counts (Sep 21 2026)';
 
     public function handle(): int
     {
+        if ($this->option('revert')) {
+            return $this->revert();
+        }
+
         $adjustments = [
             [
                 'tender_name' => 'Cash',
@@ -72,6 +77,40 @@ class RealignBalance extends Command
         });
 
         $this->info('Done. Net effect on running balance: −₱288.05');
+
+        return self::SUCCESS;
+    }
+
+    private function revert(): int
+    {
+        $descriptions = [
+            'Balance realignment – cash count 2026-09-21',
+            'Balance realignment – GCash count 2026-09-21',
+        ];
+
+        $entries = FinancialTransaction::whereIn('description', $descriptions)->get();
+
+        if ($entries->isEmpty()) {
+            $this->warn('No realignment entries found — nothing to revert.');
+            return self::SUCCESS;
+        }
+
+        $this->table(['ID', 'Type', 'Amount', 'Description'], $entries->map(fn ($e) => [
+            $e->id, $e->type, number_format($e->amount, 2), $e->description,
+        ])->toArray());
+
+        if ($this->option('dry-run')) {
+            $this->info('Dry run — nothing deleted.');
+            return self::SUCCESS;
+        }
+
+        if (! $this->confirm('Delete these entries?', false)) {
+            return self::SUCCESS;
+        }
+
+        DB::transaction(fn () => $entries->each->delete());
+
+        $this->info("{$entries->count()} entr" . ($entries->count() === 1 ? 'y' : 'ies') . ' deleted.');
 
         return self::SUCCESS;
     }
