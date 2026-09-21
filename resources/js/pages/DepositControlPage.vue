@@ -31,6 +31,14 @@ interface Snapshot {
     cumulative_totals: Record<string, number>;
     balance_by_tender: { id: number | null; name: string; balance: number }[];
     opening_cash?: number;
+    business_date?: string;
+    income?: number;
+    income_adjustment?: number;
+    expense?: number;
+    payroll_deductions?: number;
+    asset_deductions?: number;
+    payout_shares?: number;
+    net_balance?: number;
 }
 interface Counts {
     drawer_cash: string;
@@ -226,6 +234,41 @@ const historyStats = computed(() => ({
             (shift.reconciliation?.overall_variance ?? 0) < 0,
     ).length,
 }));
+
+const opening = computed(() => {
+    const snapshot = active.value?.opening_snapshot;
+
+    if (!snapshot) {
+        return null;
+    }
+
+    const max = Math.max(
+        1,
+        ...snapshot.balance_by_tender.map((t) => Math.abs(t.balance)),
+    );
+
+    return {
+        tenders: snapshot.balance_by_tender.map((t) => ({
+            ...t,
+            share: Math.round((Math.abs(t.balance) / max) * 100),
+        })),
+        // Business-day figures recorded before the shift started (v2 snapshots).
+        earlierToday:
+            snapshot.net_balance == null
+                ? null
+                : {
+                      income:
+                          (snapshot.income ?? 0) +
+                          (snapshot.income_adjustment ?? 0),
+                      deductions:
+                          (snapshot.expense ?? 0) +
+                          (snapshot.payroll_deductions ?? 0) +
+                          (snapshot.asset_deductions ?? 0) +
+                          (snapshot.payout_shares ?? 0),
+                      net: snapshot.net_balance,
+                  },
+    };
+});
 
 watch(counts, () => (confirmSave.value = false), { deep: true });
 
@@ -596,6 +639,120 @@ onUnmounted(() => clearInterval(clock));
                     }}</strong
                     ><span>All funds recorded at opening</span>
                 </article>
+            </section>
+
+            <section
+                v-if="active && !active.closed_at && opening"
+                class="panel"
+                aria-labelledby="opening-snapshot-title"
+            >
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">OPENING SNAPSHOT</p>
+                        <h2 id="opening-snapshot-title">
+                            Balances when the shift started
+                        </h2>
+                        <p class="panel-sub">
+                            Saved
+                            {{ date(active.opening_snapshot.captured_at) }} ·
+                            Shift #{{ active.id }}
+                        </p>
+                    </div>
+                    <span class="pill pill-balanced saved-pill"
+                        ><Check :size="12" aria-hidden="true" />Saved</span
+                    >
+                </div>
+                <div class="snapshot-grid">
+                    <div>
+                        <h3 class="snapshot-title">Balance by tender</h3>
+                        <ul class="tender-bars">
+                            <li
+                                v-for="t in opening.tenders"
+                                :key="t.id ?? 'untagged'"
+                                :class="{
+                                    'is-zero': t.balance === 0,
+                                    negative: t.balance < 0,
+                                }"
+                            >
+                                <div>
+                                    <span>{{ t.name }}</span
+                                    ><strong>{{ money(t.balance) }}</strong>
+                                </div>
+                                <span class="bar" aria-hidden="true"
+                                    ><span :style="{ width: `${t.share}%` }"
+                                /></span>
+                            </li>
+                        </ul>
+                        <div class="tender-total">
+                            <span>Opening running balance</span
+                            ><strong>{{
+                                money(active.opening_snapshot.running_balance)
+                            }}</strong>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="snapshot-title">
+                            {{
+                                opening.earlierToday
+                                    ? 'Earlier today, before this shift'
+                                    : 'Snapshot details'
+                            }}
+                        </h3>
+                        <dl class="summary-list">
+                            <div v-if="active.opening_snapshot.business_date">
+                                <dt>Business date</dt>
+                                <dd>
+                                    {{ active.opening_snapshot.business_date }}
+                                </dd>
+                            </div>
+                            <template v-if="opening.earlierToday">
+                                <div>
+                                    <dt>Income &amp; adjustments</dt>
+                                    <dd>
+                                        {{ money(opening.earlierToday.income) }}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt>Expenses &amp; deductions</dt>
+                                    <dd>
+                                        {{
+                                            money(
+                                                opening.earlierToday.deductions
+                                                    ? -opening.earlierToday
+                                                          .deductions
+                                                    : 0,
+                                            )
+                                        }}
+                                    </dd>
+                                </div>
+                                <div class="summary-total">
+                                    <dt>Net before this shift</dt>
+                                    <dd>
+                                        {{ money(opening.earlierToday.net) }}
+                                    </dd>
+                                </div>
+                            </template>
+                            <div v-else class="summary-total">
+                                <dt>Opening cash in drawer</dt>
+                                <dd>
+                                    {{
+                                        active.opening_snapshot.opening_cash !=
+                                        null
+                                            ? money(
+                                                  active.opening_snapshot
+                                                      .opening_cash,
+                                              )
+                                            : '—'
+                                    }}
+                                </dd>
+                            </div>
+                        </dl>
+                    </div>
+                </div>
+                <p class="card-note">
+                    When you close the shift, everything recorded after this
+                    snapshot becomes this shift's net balance.
+                </p>
             </section>
 
             <section v-if="!active && !completed" class="panel empty-state">
@@ -1898,6 +2055,74 @@ tr.selected td:first-child {
     margin-top: 10px;
 }
 
+/* Opening snapshot */
+.saved-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.snapshot-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 26px;
+}
+.snapshot-title {
+    font-size: 11px;
+    font-weight: 800;
+    color: #68665f;
+    margin-bottom: 8px;
+}
+.tender-bars {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.tender-bars li {
+    padding: 9px 0;
+    border-bottom: 1px solid #ece5da;
+}
+.tender-bars li > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+.tender-bars strong {
+    font-variant-numeric: tabular-nums;
+}
+.tender-bars .bar {
+    display: block;
+    height: 5px;
+    border-radius: 3px;
+    background: #efeadf;
+    overflow: hidden;
+}
+.tender-bars .bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: #c3441c;
+}
+.tender-bars li.is-zero {
+    color: #aaa294;
+}
+.tender-bars li.negative strong {
+    color: #9c3028;
+}
+.tender-bars li.negative .bar > span {
+    background: #c0392b;
+}
+.tender-total {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 11px;
+    font-size: 13px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
 /* Counts form */
 .counts-form {
     border-top: 1px solid #ece5da;
@@ -2139,7 +2364,8 @@ textarea:focus {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .check-grid,
-    .count-grid {
+    .count-grid,
+    .snapshot-grid {
         grid-template-columns: 1fr;
     }
     .page-heading {
@@ -2157,16 +2383,61 @@ textarea:focus {
     .intro {
         font-size: 12px;
     }
+    /* Horizontal timeline: dots joined by a progress line, labels below. */
     .stepper {
-        grid-template-columns: 1fr;
-        gap: 6px;
+        gap: 0;
+        padding: 14px 4px 12px;
+        background: #fffcf6;
+        border: 1px solid #ded7cb;
+        border-radius: 6px;
     }
-    .stepper li {
-        padding: 10px 12px;
+    .stepper li,
+    .stepper li.current {
+        position: relative;
+        flex-direction: column;
+        gap: 7px;
+        padding: 0 4px;
+        border: 0;
+        background: none;
+        box-shadow: none;
+        text-align: center;
     }
-    .stepper li.upcoming small,
-    .stepper li.done small {
+    .stepper li:not(:first-child)::before {
+        content: '';
+        position: absolute;
+        top: 14px;
+        right: calc(50% + 15px);
+        width: calc(100% - 30px);
+        height: 2px;
+        border-radius: 2px;
+        background: #ded7cb;
+    }
+    .stepper li.done::before {
+        background: #6f9a5d;
+    }
+    .stepper li.current::before {
+        background: linear-gradient(90deg, #6f9a5d, #c3441c);
+    }
+    .step-dot {
+        background: #fffcf6;
+    }
+    .stepper li.current .step-dot {
+        box-shadow: 0 0 0 4px #c3441c26;
+    }
+    .stepper strong {
+        font-size: 11px;
+        line-height: 1.3;
+    }
+    .stepper li.current strong {
+        color: #a23817;
+    }
+    .stepper small {
         display: none;
+    }
+    .stepper li.current small {
+        display: block;
+        font-size: 9px;
+        margin-top: 2px;
     }
     .view-tabs {
         width: 100%;

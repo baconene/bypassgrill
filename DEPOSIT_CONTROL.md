@@ -4,7 +4,7 @@ Open **Deposit Control** in the sidebar (`/deposit-control`). Cashiers and admin
 
 A three-step tracker at the top shows where the shift is, and the dark action bar always holds the next thing to do.
 
-1. Sync pending payments, count the cash already in the drawer, enter it, then select **Start shift**. The opening financial snapshot is saved, and its breakdown stays hidden while the shift is open.
+1. Sync pending payments, count the cash already in the drawer, enter it, then select **Start shift**. The opening financial snapshot is saved. While the shift is open, the page shows it: the balance in each tender, the opening running balance, and the business day's income and deductions recorded before the shift.
 2. At shift end, record and sync all payments and deductions, then select **Close shift** and confirm with **Yes, close shift**. The closing snapshot is permanent, and the report appears immediately with the count form in focus.
 3. Enter the four actual amounts. Each check shows expected, counted, and over/short while you type. Select **Review & save**, check the summary, then select **Save final counts**. Saved counts are final.
 
