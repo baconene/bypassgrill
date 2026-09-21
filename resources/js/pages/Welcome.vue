@@ -396,7 +396,8 @@ onBeforeUnmount(() => {
                                 ><span v-else-if="quantities[product.id]"
                                     >{{ quantities[product.id] }} in your
                                     order</span
-                                ><span v-else>Made for your next craving</span
+                                ><span v-else class="product-hint"
+                                    >Made for your next craving</span
                                 ><button
                                     v-if="product.soldOut"
                                     disabled
@@ -1600,7 +1601,8 @@ h2 em {
         text-align: left;
     }
     h1 {
-        font-size: clamp(80px, 21vw, 115px);
+        /* Scales with the screen so "MONSTER." fits down to 320px phones. */
+        font-size: clamp(56px, 20vw, 115px);
         letter-spacing: -2px;
     }
     .headline-spark {
@@ -1616,17 +1618,29 @@ h2 em {
     }
     .hero-visual {
         margin-top: 30px;
+        /* Room for the rotated back cards and stamp so the page never crops them. */
+        padding: 0 14px;
     }
     .photo-stack {
-        height: 440px;
+        height: min(440px, 112vw);
         max-width: 420px;
         margin: auto;
+    }
+    .rib-stamp {
+        right: 0;
     }
     .photo-controls {
         margin-top: 20px;
     }
+    .photo-controls > span {
+        text-align: right;
+        line-height: 1.5;
+    }
     .orbit-text {
-        right: 5%;
+        /* In the flow above the photos, so it never sits on top of them. */
+        position: relative;
+        margin: 0 4px 18px 0;
+        text-align: right;
         font-size: 9px;
     }
     .ticker-track > span {
@@ -1649,14 +1663,94 @@ h2 em {
     .section-heading > p {
         font-size: 12px;
     }
+    /* Category chips run edge to edge, with a fade that shows they scroll. */
+    .menu-tabs {
+        margin: 0 -7vw 24px;
+        padding: 5px 7vw;
+        scroll-padding: 0 7vw;
+        mask-image: linear-gradient(90deg, #000 82%, transparent);
+    }
+    /* Compact menu rows: photo on the left, details on the right, so several
+       items fit on one screen instead of one tall card each. */
     .product-grid {
         grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    .product-card {
+        display: grid;
+        grid-template-columns: 108px minmax(0, 1fr);
     }
     .product-image {
-        aspect-ratio: 1.5;
+        aspect-ratio: auto;
+        height: 100%;
+        min-height: 132px;
+    }
+    .product-placeholder {
+        gap: 0;
+    }
+    .product-placeholder svg {
+        width: 36px;
+        height: 36px;
+    }
+    .product-placeholder span {
+        display: none;
+    }
+    .product-tag {
+        top: 6px;
+        left: 6px;
+        padding: 3px 5px;
+        font-size: 6.5px;
+    }
+    .image-note {
+        right: 4px;
+        bottom: 4px;
+        font-size: 7px;
+    }
+    .sold-out-banner span {
+        padding: 4px 10px;
+        font-size: 13px;
+        letter-spacing: 1px;
+    }
+    .low-stock-banner {
+        padding: 4px 3px;
+        font-size: 8px;
+        letter-spacing: 0.5px;
     }
     .product-info {
-        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        padding: 14px;
+    }
+    .product-title {
+        flex-direction: column;
+        gap: 3px;
+    }
+    .product-title h3 {
+        font-size: 15px;
+    }
+    .product-title span {
+        font-size: 14px;
+    }
+    .product-info > p {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+        min-height: 0;
+        margin: 6px 0 10px;
+        font-size: 12px;
+        line-height: 1.5;
+    }
+    .product-bottom {
+        margin-top: auto;
+    }
+    .product-bottom .product-hint {
+        visibility: hidden;
+    }
+    .product-bottom button {
+        flex-shrink: 0;
+        padding: 7px 11px;
     }
     .signature-feature {
         grid-template-columns: 1fr;
