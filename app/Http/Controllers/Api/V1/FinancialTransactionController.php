@@ -120,6 +120,13 @@ class FinancialTransactionController extends Controller {
             ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
             ->value('bal') ?? 0.0);
 
+        // Balance brought forward: everything before the period, so opening + net = closing.
+        $openingBalance = (float) (FinancialTransaction::where('type', '!=', 'order')
+            ->when(! $includeAssetDeductions, $noAssetDeductions)
+            ->whereDate('transacted_at', '<', $start->toDateString())
+            ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
+            ->value('bal') ?? 0.0);
+
         // Running balance per tender as of end date (cumulative, not period-only).
         $balByTender = FinancialTransaction::where('type', '!=', 'order')
             ->when(! $includeAssetDeductions, $noAssetDeductions)
@@ -147,11 +154,88 @@ class FinancialTransactionController extends Controller {
             'asset_deductions'        => ['total' => $assetDeductions,  'count' => (int) ($rows['asset_deduction']?->count  ?? 0)],
             'net'                     => $payments + $incomeAdj - $expenses - $payroll - $assetDeductions - $payoutShare,
             'payout_shares'           => ['total' => $payoutShare, 'count' => (int) ($rows['payout_share']?->count ?? 0)],
+            'opening_balance'         => $openingBalance,
             'balance_as_of_end'       => $balanceAsOfEnd,
             'balance_by_tender'       => $balByTender,
             'by_tender'               => $byTender,
             'net_by_tender'           => $netByTender,
             'include_asset_deductions' => $includeAssetDeductions,
+        ]);
+    }
+
+    /**
+     * The selected period and the ones before it, back to back, with a balance carried forward:
+     * each period's opening is the previous period's closing. A whole or month-to-date calendar
+     * month steps by calendar months; any other range steps by its own length in days.
+     */
+    public function periods(Request $request): JsonResponse {
+        $this->checkReports();
+        $data = $request->validate([
+            'start_date' => 'required|date',
+            'end_date'   => 'required|date|after_or_equal:start_date',
+            'count'      => 'nullable|integer|min:2|max:12',
+        ]);
+        $includeAssetDeductions = $request->boolean('include_asset_deductions', true);
+        $count = (int) ($data['count'] ?? 6);
+        $start = Carbon::parse($data['start_date'])->startOfDay();
+        $end   = Carbon::parse($data['end_date'])->startOfDay();
+
+        $monthly = $start->day === 1 && $start->isSameMonth($end)
+            && ($end->isSameDay($start->copy()->endOfMonth()) || $end->isToday());
+        $days = (int) abs($start->diffInDays($end)) + 1;
+
+        $ranges = [];
+        for ($i = 0; $i < $count; $i++) {
+            if ($monthly) {
+                $s = $start->copy()->subMonthsNoOverflow($i);
+                $e = $i === 0 ? $end->copy() : $s->copy()->endOfMonth()->startOfDay();
+            } else {
+                $e = $end->copy()->subDays($days * $i);
+                $s = $e->copy()->subDays($days - 1);
+            }
+            $ranges[] = [$s, $e];
+        }
+        $ranges = array_reverse($ranges);
+
+        $base = fn () => FinancialTransaction::where('type', '!=', 'order')
+            ->when(! $includeAssetDeductions, fn ($q) => $q->where('type', '!=', 'asset_deduction'));
+
+        $balance = round((float) ($base()
+            ->whereDate('transacted_at', '<', $ranges[0][0]->toDateString())
+            ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as bal")
+            ->value('bal') ?? 0), 2);
+
+        $rows = [];
+        foreach ($ranges as $index => [$s, $e]) {
+            $totals = $base()
+                ->whereDate('transacted_at', '>=', $s->toDateString())
+                ->whereDate('transacted_at', '<=', $e->toDateString())
+                ->selectRaw("COALESCE(SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END), 0) as money_in,
+                    COALESCE(SUM(CASE WHEN type IN ('payment','income_adjustment') THEN 0 ELSE amount END), 0) as money_out,
+                    COUNT(*) as cnt")
+                ->first();
+            $in  = round((float) $totals->money_in, 2);
+            $out = round((float) $totals->money_out, 2);
+            $net = round($in - $out, 2);
+
+            $rows[] = [
+                'start'      => $s->toDateString(),
+                'end'        => $e->toDateString(),
+                'opening'    => $balance,
+                'money_in'   => $in,
+                'money_out'  => $out,
+                'net'        => $net,
+                'closing'    => round($balance + $net, 2),
+                'count'      => (int) $totals->cnt,
+                'is_current' => $index === count($ranges) - 1,
+            ];
+            $balance = round($balance + $net, 2);
+        }
+
+        return response()->json([
+            'granularity' => $monthly ? 'month' : ($days === 1 ? 'day' : ($days === 7 ? 'week' : 'period')),
+            'period_days' => $days,
+            'rows'        => $rows,
         ]);
     }
 

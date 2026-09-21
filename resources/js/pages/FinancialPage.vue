@@ -42,6 +42,7 @@ interface FtSummary {
     asset_deductions: { total: number; count: number };
     payout_shares: { total: number; count: number };
     net: number;
+    opening_balance: number;
     balance_as_of_end: number;
     balance_by_tender: { tender: string; balance: number; count: number }[];
     by_tender: { tender: string; total: number; count: number }[];
@@ -165,31 +166,101 @@ const dailyData = ref<
     { date: string; income: number; expense: number; balance: number }[]
 >([]);
 const prevSummary = ref<FtSummary | null>(null);
+
+interface PeriodRow {
+    start: string;
+    end: string;
+    opening: number;
+    money_in: number;
+    money_out: number;
+    net: number;
+    closing: number;
+    count: number;
+    is_current: boolean;
+}
+const periodHistory = ref<{
+    granularity: 'day' | 'week' | 'month' | 'period';
+    period_days: number;
+    rows: PeriodRow[];
+} | null>(null);
+const historyTitle = computed(() => {
+    const h = periodHistory.value;
+
+    if (!h) {
+        return 'Period by period';
+    }
+
+    return {
+        day: 'Day by day',
+        week: 'Week by week',
+        month: 'Month by month',
+        period: `${h.period_days}-day periods`,
+    }[h.granularity];
+});
+const periodRowLabel = (row: PeriodRow) => {
+    const g = periodHistory.value?.granularity;
+    const start = parseYmd(row.start);
+
+    if (g === 'month') {
+        const month = start.toLocaleDateString('en-PH', {
+            month: 'long',
+            year: 'numeric',
+        });
+        const monthEnd = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+
+        return row.end === ymd(monthEnd)
+            ? month
+            : `${month} (to ${parseYmd(row.end).getDate()})`;
+    }
+
+    if (g === 'day') {
+        return start.toLocaleDateString('en-PH', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+        });
+    }
+
+    return `${fmtDay(row.start)} – ${fmtDay(row.end)}`;
+};
+const historyMaxNet = computed(() =>
+    Math.max(
+        1,
+        ...(periodHistory.value?.rows ?? []).map((r) => Math.abs(r.net)),
+    ),
+);
 const perfLoading = ref(false);
 const perfStale = ref(true);
 const hoveredDayIdx = ref<number | null>(null);
 const showComparisonHelp = ref(false);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const fmt = (v: number | string | null | undefined) =>
-    '₱' +
-    parseFloat(String(v ?? 0)).toLocaleString('en-PH', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    });
+// Negative amounts read "−₱849.67", not "₱-849.67".
+const fmt = (v: number | string | null | undefined) => {
+    const n = parseFloat(String(v ?? 0)) || 0;
+
+    return (
+        (n < 0 ? '−' : '') +
+        '₱' +
+        Math.abs(n).toLocaleString('en-PH', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })
+    );
+};
 
 const fmtDatetime = (s: string) => {
     if (!s) {
-return '—';
-}
+        return '—';
+    }
 
     // MySQL returns "YYYY-MM-DD HH:MM:SS" (space separator); Safari rejects that format.
     // Replace the space with T so all browsers get a valid ISO-8601 string.
     const d = new Date(s.replace(' ', 'T'));
 
     if (isNaN(d.getTime())) {
-return s;
-}
+        return s;
+    }
 
     return (
         d.toLocaleDateString('en-PH', {
@@ -244,8 +315,8 @@ const setPreset = (key: Preset) => {
     activePreset.value = key;
 
     if (key === 'custom') {
-return;
-}
+        return;
+    }
 
     const now = new Date();
     const ranges: Record<Exclude<Preset, 'custom'>, [Date, Date]> = {
@@ -299,8 +370,8 @@ const periodLabel = computed(() =>
 // ── Computed ─────────────────────────────────────────────────────────────────────
 const periodIncome = computed(() => {
     if (!ftSummary.value) {
-return 0;
-}
+        return 0;
+    }
 
     return (
         ftSummary.value.payments.total +
@@ -310,8 +381,8 @@ return 0;
 
 const periodExpenses = computed(() => {
     if (!ftSummary.value) {
-return 0;
-}
+        return 0;
+    }
 
     const s = ftSummary.value;
 
@@ -325,8 +396,8 @@ return 0;
 
 const comparisonRows = computed(() => {
     if (!ftSummary.value) {
-return [];
-}
+        return [];
+    }
 
     const s = ftSummary.value;
     const p = prevSummary.value;
@@ -379,8 +450,8 @@ return [];
 // Every movement type in the period, sized against the largest, for the overview bars.
 const typeRows = computed(() => {
     if (!ftSummary.value) {
-return [];
-}
+        return [];
+    }
 
     const s = ftSummary.value;
     const rows = [
@@ -426,8 +497,8 @@ const tenderRows = computed(() => {
     const s = ftSummary.value;
 
     if (!s) {
-return [];
-}
+        return [];
+    }
 
     const balances = new Map(
         s.balance_by_tender.map((b) => [b.tender, b.balance]),
@@ -458,8 +529,8 @@ const lineChart = computed(() => {
     const data = dailyData.value;
 
     if (!data.length) {
-return null;
-}
+        return null;
+    }
 
     const n = data.length;
     const VW = 600,
@@ -507,12 +578,12 @@ return null;
         const s = v < 0 ? '-' : '';
 
         if (abs >= 1_000_000) {
-return s + (abs / 1_000_000).toFixed(1) + 'M';
-}
+            return s + (abs / 1_000_000).toFixed(1) + 'M';
+        }
 
         if (abs >= 1_000) {
-return s + (abs / 1_000).toFixed(0) + 'k';
-}
+            return s + (abs / 1_000).toFixed(0) + 'k';
+        }
 
         return v.toFixed(0);
     };
@@ -590,34 +661,34 @@ const activeFilters = computed(() => {
     const list: { key: 'type' | 'tender' | 'search'; label: string }[] = [];
 
     if (ftTypeFilter.value) {
-list.push({
+        list.push({
             key: 'type',
             label:
                 typeOptions.find((o) => o.value === ftTypeFilter.value)
                     ?.label ?? ftTypeFilter.value,
         });
-}
+    }
 
     if (ftTenderFilter.value !== '') {
-list.push({
+        list.push({
             key: 'tender',
             label:
                 tenders.value.find((t) => t.id === ftTenderFilter.value)
                     ?.name ?? 'Tender',
         });
-}
+    }
 
     if (ftSearch.value.trim()) {
-list.push({ key: 'search', label: `“${ftSearch.value.trim()}”` });
-}
+        list.push({ key: 'search', label: `“${ftSearch.value.trim()}”` });
+    }
 
     return list;
 });
 
 const toggleSort = (key: typeof ftSortKey.value) => {
     if (ftSortKey.value === key) {
-ftSortDir.value = ftSortDir.value === 'asc' ? 'desc' : 'asc';
-} else {
+        ftSortDir.value = ftSortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
         ftSortKey.value = key;
         ftSortDir.value = 'desc';
     }
@@ -692,7 +763,7 @@ const loadPerformance = async () => {
         const start = parseYmd(ftStartDate.value);
         const prevEnd = addDays(start, -1);
         const prevStart = addDays(prevEnd, -(periodDays.value - 1));
-        const [dailyRes, prevRes] = await Promise.all([
+        const [dailyRes, prevRes, periodsRes] = await Promise.all([
             api.get('/api/v1/financial-transactions/daily', {
                 params: { days: 30 },
             }),
@@ -703,9 +774,18 @@ const loadPerformance = async () => {
                     include_asset_deductions: includeAssetDeductions.value,
                 },
             }),
+            api.get('/api/v1/financial-transactions/periods', {
+                params: {
+                    start_date: ftStartDate.value,
+                    end_date: ftEndDate.value,
+                    count: 6,
+                    include_asset_deductions: includeAssetDeductions.value,
+                },
+            }),
         ]);
         dailyData.value = dailyRes.data;
         prevSummary.value = prevRes.data;
+        periodHistory.value = periodsRes.data;
         perfStale.value = false;
     } catch {
         toast.error('Failed to load performance data.');
@@ -720,8 +800,8 @@ const reload = async (page = 1) => {
     await loadFinancial(page);
 
     if (activeTab.value === 'performance') {
-await loadPerformance();
-}
+        await loadPerformance();
+    }
 };
 
 const refreshAll = async () => {
@@ -744,8 +824,8 @@ const switchTab = (tab: Tab) => {
     }
 
     if (tab === 'performance' && perfStale.value) {
-loadPerformance();
-}
+        loadPerformance();
+    }
 };
 
 // Jump from an overview figure to the matching ledger rows.
@@ -768,10 +848,10 @@ const clearFilter = (key: 'type' | 'tender' | 'search') => {
     }
 
     if (key === 'type') {
-ftTypeFilter.value = '';
-} else {
-ftTenderFilter.value = '';
-}
+        ftTypeFilter.value = '';
+    } else {
+        ftTenderFilter.value = '';
+    }
 
     loadFinancial();
 };
@@ -784,16 +864,16 @@ const clearAllFilters = () => {
 
 const onChartTouch = (e: TouchEvent) => {
     if (!lineChart.value || !dailyData.value.length) {
-return;
-}
+        return;
+    }
 
     const target = e.currentTarget as SVGSVGElement;
     const rect = target.getBoundingClientRect();
     const touch = e.touches[0];
 
     if (!touch) {
-return;
-}
+        return;
+    }
 
     const relX = touch.clientX - rect.left;
     const chart = lineChart.value;
@@ -838,8 +918,8 @@ const closeSheet = () => {
 
 const saveEntry = async () => {
     if (!entryValid.value) {
-return;
-}
+        return;
+    }
 
     entrySaving.value = true;
     const recordedDate = entryForm.value.transacted_at.substring(0, 10);
@@ -867,12 +947,12 @@ return;
             recordedDate > ftEndDate.value
         ) {
             if (recordedDate < ftStartDate.value) {
-ftStartDate.value = recordedDate;
-}
+                ftStartDate.value = recordedDate;
+            }
 
             if (recordedDate > ftEndDate.value) {
-ftEndDate.value = recordedDate;
-}
+                ftEndDate.value = recordedDate;
+            }
 
             activePreset.value = 'custom';
         }
@@ -904,8 +984,8 @@ const startEdit = (tx: FtTransaction) => {
 
 const saveEdit = async () => {
     if (!editingTx.value) {
-return;
-}
+        return;
+    }
 
     editSaving.value = true;
 
@@ -946,8 +1026,8 @@ const deleteTransaction = async (tx: FtTransaction) => {
             `Delete transaction?\n${tx.description}\nAmount: ${fmt(tx.amount)}${orderNote}`,
         )
     ) {
-return;
-}
+        return;
+    }
 
     ftDeleting.value = tx.id;
 
@@ -956,8 +1036,8 @@ return;
         toast.success('Transaction deleted.');
 
         if (editingTx.value?.id === tx.id) {
-closeSheet();
-}
+            closeSheet();
+        }
 
         await reload(ftPage.value);
     } catch (err: any) {
@@ -992,16 +1072,16 @@ onMounted(async () => {
         await Promise.all([loadFinancial(), loadTenders()]);
 
         if (activeTab.value === 'performance') {
-await loadPerformance();
-}
+            await loadPerformance();
+        }
     } finally {
         loading.value = false;
     }
 });
 onBeforeUnmount(() => {
     if (originalOverflow !== null) {
-document.body.style.overflow = originalOverflow;
-}
+        document.body.style.overflow = originalOverflow;
+    }
 });
 </script>
 
@@ -1089,15 +1169,26 @@ document.body.style.overflow = originalOverflow;
 
         <!-- ── KPI strip ────────────────────────────────────────────────────── -->
         <section class="fin-kpis" aria-label="Period totals">
+            <!-- Balance forward: opening + money in − money out = closing -->
             <template v-if="ftSummary">
                 <article class="fin-kpi">
+                    <p>
+                        <Wallet :size="13" aria-hidden="true" />Opening balance
+                    </p>
+                    <strong>{{ fmt(ftSummary.opening_balance ?? 0) }}</strong>
+                    <span
+                        >Brought forward from before
+                        {{ fmtDay(ftSummary.period.start) }}</span
+                    >
+                </article>
+                <article class="fin-kpi" data-op="+">
                     <p>
                         <ArrowDownLeft :size="13" aria-hidden="true" />Money in
                     </p>
                     <strong class="is-in">{{ fmt(periodIncome) }}</strong>
                     <span>Payments + income adjustments</span>
                 </article>
-                <article class="fin-kpi">
+                <article class="fin-kpi" data-op="−">
                     <p>
                         <ArrowUpRight :size="13" aria-hidden="true" />Money out
                     </p>
@@ -1108,26 +1199,18 @@ document.body.style.overflow = originalOverflow;
                         }}, payouts</span
                     >
                 </article>
-                <article
-                    class="fin-kpi"
-                    :class="ftSummary.net >= 0 ? 'is-surplus' : 'is-deficit'"
-                >
-                    <p>Net cash</p>
-                    <strong
-                        >{{ ftSummary.net < 0 ? '−' : ''
-                        }}{{ fmt(Math.abs(ftSummary.net)) }}</strong
-                    >
-                    <span
-                        >{{ ftSummary.net >= 0 ? 'Surplus' : 'Deficit' }} for
-                        the period</span
-                    >
-                </article>
-                <article class="fin-kpi fin-kpi-dark">
-                    <p><Wallet :size="13" aria-hidden="true" />Balance</p>
+                <article class="fin-kpi fin-kpi-dark" data-op="=">
+                    <p>
+                        <Wallet :size="13" aria-hidden="true" />Closing balance
+                    </p>
                     <strong>{{ fmt(ftSummary.balance_as_of_end ?? 0) }}</strong>
                     <span
-                        >All funds as of
-                        {{ fmtDay(ftSummary.period.end) }}</span
+                        >As of {{ fmtDay(ftSummary.period.end) }} ·
+                        <b :class="ftSummary.net >= 0 ? 'net-up' : 'net-down'"
+                            >{{ ftSummary.net >= 0 ? '▲' : '▼' }}
+                            {{ fmt(ftSummary.net) }}
+                            {{ ftSummary.net >= 0 ? 'surplus' : 'deficit' }}</b
+                        ></span
                     >
                 </article>
             </template>
@@ -1745,6 +1828,137 @@ document.body.style.overflow = originalOverflow;
                 Loading performance data…
             </p>
             <template v-else-if="ftSummary">
+                <section v-if="periodHistory?.rows.length" class="fin-panel">
+                    <div class="fin-panel-head">
+                        <div>
+                            <p class="fin-kicker">BALANCE CARRIED FORWARD</p>
+                            <h2>{{ historyTitle }}</h2>
+                        </div>
+                        <small
+                            >Each closing balance becomes the next opening
+                            balance</small
+                        >
+                    </div>
+                    <div
+                        class="fin-table-scroll"
+                        tabindex="0"
+                        role="region"
+                        aria-label="Balance carried forward by period"
+                    >
+                        <table class="fin-table fin-history">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Period</th>
+                                    <th scope="col" class="num">Opening</th>
+                                    <th scope="col" class="num">Money in</th>
+                                    <th scope="col" class="num">Money out</th>
+                                    <th scope="col">Net</th>
+                                    <th scope="col" class="num">Closing</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="(row, i) in periodHistory.rows"
+                                    :key="row.start"
+                                    :class="{ 'is-current': row.is_current }"
+                                >
+                                    <td>
+                                        <strong>{{
+                                            periodRowLabel(row)
+                                        }}</strong
+                                        ><small
+                                            >{{ row.count }} txn{{
+                                                row.count !== 1 ? 's' : ''
+                                            }}{{
+                                                row.is_current
+                                                    ? ' · selected period'
+                                                    : ''
+                                            }}</small
+                                        >
+                                    </td>
+                                    <td class="num fin-muted-cell">
+                                        {{ fmt(row.opening) }}
+                                    </td>
+                                    <td class="num is-in">
+                                        +{{ fmt(row.money_in) }}
+                                    </td>
+                                    <td class="num is-out">
+                                        −{{ fmt(row.money_out) }}
+                                    </td>
+                                    <td class="fin-net-cell">
+                                        <span
+                                            class="fin-net-bar"
+                                            :class="
+                                                row.net >= 0
+                                                    ? 'bar-in'
+                                                    : 'bar-out'
+                                            "
+                                            :style="{
+                                                width:
+                                                    Math.max(
+                                                        3,
+                                                        (Math.abs(row.net) /
+                                                            historyMaxNet) *
+                                                            100,
+                                                    ) + '%',
+                                            }"
+                                            aria-hidden="true"
+                                        />
+                                        <span
+                                            class="fin-strong"
+                                            :class="
+                                                row.net >= 0
+                                                    ? 'is-in'
+                                                    : 'is-out'
+                                            "
+                                            >{{ row.net >= 0 ? '+' : ''
+                                            }}{{ fmt(row.net) }}</span
+                                        >
+                                        <small
+                                            v-if="i > 0"
+                                            class="fin-vs-prev"
+                                            :class="
+                                                row.net >=
+                                                periodHistory.rows[i - 1].net
+                                                    ? 'is-in'
+                                                    : 'is-out'
+                                            "
+                                            >{{
+                                                row.net >=
+                                                periodHistory.rows[i - 1].net
+                                                    ? '▲'
+                                                    : '▼'
+                                            }}
+                                            {{
+                                                fmt(
+                                                    Math.abs(
+                                                        row.net -
+                                                            periodHistory.rows[
+                                                                i - 1
+                                                            ].net,
+                                                    ),
+                                                )
+                                            }}
+                                            vs before</small
+                                        >
+                                    </td>
+                                    <td class="num fin-strong">
+                                        {{ fmt(row.closing) }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="fin-muted fin-history-note">
+                        Opening + money in − money out = closing. Balances cover
+                        every tender and untagged entry{{
+                            includeAssetDeductions
+                                ? ''
+                                : ', excluding asset deductions'
+                        }}.
+                    </p>
+                </section>
+
                 <section class="fin-panel">
                     <div class="fin-panel-head">
                         <div>
@@ -3351,6 +3565,63 @@ document.body.style.overflow = originalOverflow;
 }
 .fin-chart-readout strong {
     color: var(--ink);
+}
+
+/* Balance forward */
+.fin-kpi b {
+    font-weight: 800;
+}
+.fin-kpi-dark .net-up {
+    color: #a9d894;
+}
+.fin-kpi-dark .net-down {
+    color: #ffa684;
+}
+@media (min-width: 1101px) {
+    .fin-kpi[data-op] {
+        position: relative;
+    }
+    .fin-kpi[data-op]::before {
+        content: attr(data-op);
+        position: absolute;
+        top: 50%;
+        left: -18px;
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--cream);
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 1;
+        transform: translateY(-50%);
+    }
+}
+.fin-history tr.is-current {
+    background: #f4dfcf;
+}
+.fin-history tr.is-current td:first-child {
+    box-shadow: inset 3px 0 0 var(--orange);
+    padding-left: 10px;
+}
+.fin-net-cell {
+    min-width: 170px;
+}
+.fin-net-bar {
+    display: block;
+    height: 5px;
+    margin-bottom: 5px;
+    border-radius: 3px;
+}
+.fin-vs-prev {
+    font-weight: 700;
+}
+.fin-history-note {
+    margin-top: 12px;
 }
 
 .fin-footer {
