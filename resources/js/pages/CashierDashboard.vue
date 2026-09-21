@@ -519,8 +519,9 @@ const closeAndClear = () => {
     const o = completedOrder.value
     const isExisting = pendingOrder.value?._isExistingOrder ?? false
     const queueOrId = o?.queueNumber ?? o?.orderId
-    if (o?.paid) toast.success(`Order #${queueOrId} paid! Thank you.`)
-    else toast.success(`Order #${queueOrId} placed. Payment pending.`)
+    // Shown at the top so it doesn't cover the cart's Place Order button.
+    if (o?.paid) toast.success(`Order #${queueOrId} paid! Thank you.`, { position: 'top-center' })
+    else toast.success(`Order #${queueOrId} placed. Payment pending.`, { position: 'top-center' })
     if (!isExisting) cartStore.clear()
     paymentOpen.value = false
     pendingOrder.value = null
@@ -740,21 +741,6 @@ onBeforeUnmount(() => {
             <div class="p-4 border-b flex items-center gap-2">
                 <ShoppingCart class="h-5 w-5" />
                 <h2 class="font-bold text-base">{{ cartStore.editingOrderId ? `Editing #${cartStore.editingOrderId}` : 'Current order' }}</h2>
-                <div class="ml-auto flex items-center gap-2">
-                    <button
-                        @click="unpaidOrdersOpen = true; loadUnpaidOrders()"
-                        class="pos-pending-pill"
-                    >
-                        <ClipboardList class="h-3 w-3" />
-                        Pending
-                        <span v-if="unpaidOrders.length > 0">
-                            {{ unpaidOrders.length }}
-                        </span>
-                    </button>
-                    <span v-if="cartStore.items.length > 0" class="text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">
-                        {{ cartItemCount }}
-                    </span>
-                </div>
             </div>
 
             <!-- Order type collapsible -->
@@ -944,16 +930,12 @@ onBeforeUnmount(() => {
                     <button
                         @click="cartOpen = false; unpaidOrdersOpen = true; loadUnpaidOrders()"
                         class="pos-pending-pill"
+                        :aria-label="`Pending payments: ${unpaidOrders.length}`"
                     >
                         <ClipboardList class="h-3 w-3" />
                         Pending
-                        <span v-if="unpaidOrders.length > 0">
-                            {{ unpaidOrders.length }}
-                        </span>
+                        <span>{{ unpaidOrders.length }}</span>
                     </button>
-                    <span v-if="cartStore.items.length > 0" class="text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">
-                        {{ cartItemCount }}
-                    </span>
                     <button aria-label="Close current order" @click="cartOpen = false" class="ml-1 rounded-full p-1 hover:bg-muted">
                         <X class="h-4 w-4" />
                     </button>
