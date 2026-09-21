@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, usePoll } from '@inertiajs/vue3';
+import { Head, Link, usePage, usePoll } from '@inertiajs/vue3';
 import {
     ArrowDown,
     ArrowUpRight,
@@ -29,6 +29,9 @@ const props = withDefaults(
     defineProps<{ categories?: Category[]; canRegister?: boolean }>(),
     { categories: () => [], canRegister: false },
 );
+// The logo uploaded in Settings → Logo; the header shows no icon when none is set.
+const page = usePage<{ logoUrl?: string | null }>();
+const logoUrl = computed(() => page.props.logoUrl ?? null);
 const facebook = 'https://www.facebook.com/profile.php?id=61588899475779';
 const category = ref('All');
 const quantities = ref<Record<number, number>>({});
@@ -187,9 +190,14 @@ onBeforeUnmount(() => {
         </div>
         <header class="site-header">
             <a href="#" class="brand" aria-label="Bypass Grill home"
-                ><span class="brand-mark"
-                    ><Flame :size="28" :stroke-width="2.4" /></span
-                ><span
+                ><img
+                    v-if="logoUrl"
+                    :src="logoUrl"
+                    alt=""
+                    class="brand-logo"
+                    width="48"
+                    height="48"
+                /><span
                     >BYPASS<span class="brand-sub"
                         >GRILL / GOOD FOOD. GOOD MOOD.</span
                     ></span
@@ -367,10 +375,7 @@ onBeforeUnmount(() => {
                                 class="product-tag"
                                 >MONSTER APPETITE</span
                             >
-                            <div
-                                v-if="product.soldOut"
-                                class="sold-out-banner"
-                            >
+                            <div v-if="product.soldOut" class="sold-out-banner">
                                 <span>SOLD OUT</span>
                             </div>
                             <span
@@ -700,11 +705,11 @@ onBeforeUnmount(() => {
     letter-spacing: -1px;
     text-decoration: none;
 }
-.brand-mark {
-    background: var(--orange);
-    padding: 8px;
-    color: var(--cream);
-    border-radius: 50%;
+.brand-logo {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
 }
 .brand-sub {
     display: block;
@@ -1583,6 +1588,10 @@ h2 em {
     }
     .brand {
         font-size: 21px;
+    }
+    .brand-logo {
+        width: 40px;
+        height: 40px;
     }
     .brand-sub {
         font-size: 6px;
