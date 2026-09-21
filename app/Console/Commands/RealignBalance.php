@@ -11,10 +11,11 @@ use Illuminate\Support\Facades\DB;
 class RealignBalance extends Command
 {
     protected $signature = 'balance:realign
-                            {--dry-run : Preview without writing}
-                            {--revert : Delete the two realignment entries created on Sep 22}';
+                            {--dry-run    : Preview without writing}
+                            {--revert     : Delete the realignment entries created on Sep 22}
+                            {--per-tender : Two entries: cash income adj + GCash expense (per-tender balancing)}';
 
-    protected $description = 'One-time balance realignment: cash income adjustment + GCash expense to match physical counts (Sep 21 2026)';
+    protected $description = 'One-time balance realignment for Sep 21 2026 physical count';
 
     public function handle(): int
     {
@@ -22,14 +23,29 @@ class RealignBalance extends Command
             return $this->revert();
         }
 
-        $adjustments = [
-            [
-                'tender_name' => 'Cash',
-                'type'        => 'expense',
-                'amount'      => 288.05,
-                'description' => 'Cash short – Sep 21 2026',
-            ],
-        ];
+        $adjustments = $this->option('per-tender')
+            ? [
+                [
+                    'tender_name' => 'Cash',
+                    'type'        => 'income_adjustment',
+                    'amount'      => 1928.58,
+                    'description' => 'Balance realignment – cash count 2026-09-21',
+                ],
+                [
+                    'tender_name' => 'GCash',
+                    'type'        => 'expense',
+                    'amount'      => 2216.63,
+                    'description' => 'Balance realignment – GCash count 2026-09-21',
+                ],
+            ]
+            : [
+                [
+                    'tender_name' => 'Cash',
+                    'type'        => 'expense',
+                    'amount'      => 288.05,
+                    'description' => 'Cash short – Sep 21 2026',
+                ],
+            ];
 
         $this->table(
             ['Tender', 'Type', 'Amount', 'Description'],
@@ -70,7 +86,9 @@ class RealignBalance extends Command
             }
         });
 
-        $this->info('Done. Cash expense −₱288.05 recorded.');
+        $this->info($this->option('per-tender')
+            ? 'Done. Per-tender entries recorded (net effect: −₱288.05).'
+            : 'Done. Cash expense −₱288.05 recorded.');
 
         return self::SUCCESS;
     }
