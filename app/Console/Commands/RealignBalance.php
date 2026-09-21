@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\FinancialTransaction;
 use App\Models\PaymentTender;
+use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -45,7 +46,9 @@ class RealignBalance extends Command
             return self::SUCCESS;
         }
 
-        DB::transaction(function () use ($adjustments) {
+        $admin = User::role('admin')->orderBy('id')->firstOrFail();
+
+        DB::transaction(function () use ($adjustments, $admin) {
             foreach ($adjustments as $adj) {
                 $tender = PaymentTender::whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($adj['tender_name']) . '%'])->first();
 
@@ -60,7 +63,7 @@ class RealignBalance extends Command
                     'description'       => $adj['description'],
                     'payment_tender_id' => $tender->id,
                     'transacted_at'     => now(),
-                    'user_id'           => null,
+                    'user_id'           => $admin->id,
                 ]);
 
                 $sign = $adj['type'] === 'income_adjustment' ? '+' : '-';
