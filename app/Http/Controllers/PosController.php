@@ -20,8 +20,9 @@ class PosController extends Controller
                 'description' => $c->description,
             ]);
 
-        $products = Product::where('is_active', true)
-            ->with(['category', 'modifiers' => fn ($q) => $q->where('is_active', true)])
+        // Lazy so the POS polling partial reloads only rebuild the product list
+        $products = fn () => Product::where('is_active', true)
+            ->with(['category', 'recipes.ingredient', 'modifiers' => fn ($q) => $q->where('is_active', true)])
             ->orderBy('display_order')
             ->get()
             ->map(fn ($p) => [
@@ -37,6 +38,7 @@ class PosController extends Controller
                     'name' => $m->name,
                     'price' => (float) $m->price,
                 ]),
+                ...$p->stockStatus(),
             ]);
 
         return Inertia::render('CashierDashboard', [

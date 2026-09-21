@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { Head, Link as InertiaLink, usePage } from '@inertiajs/vue3'
+import { Head, Link as InertiaLink, usePage, usePoll } from '@inertiajs/vue3'
 import { useCartStore } from '@/stores/cartStore'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { ShoppingCart, X, Plus, Minus, Search, CreditCard, Banknote, CheckCircle2, Printer, ClipboardList, ChevronDown, Copy, Check, Flame, Wallet, ArrowUpRight } from 'lucide-vue-next'
+import { ShoppingCart, X, Plus, Minus, Search, CreditCard, Banknote, CheckCircle2, Printer, ClipboardList, ChevronDown, Copy, Check, Flame, Wallet, ArrowUpRight, TriangleAlert } from 'lucide-vue-next'
 import { printReceipt as doPrint } from '@/utils/printReceipt'
 import { queueOrder, queuePayment } from '@/utils/offlineQueue'
 import { refreshCount } from '@/utils/offlineSync'
@@ -24,6 +24,7 @@ interface Modifier { id: number; name: string; price: number }
 interface Product {
     id: number; name: string; description: string; price: number; image: string | null
     category_id: number; category: { id: number; name: string } | null; modifiers: Modifier[]
+    soldOut: boolean; lowStock: boolean
 }
 interface Category { id: number; name: string }
 interface Tender { id: number; name: string; is_active: boolean; display_order: number }
@@ -206,7 +207,19 @@ const addToCart = () => {
 const cartQtyFor = (productId: number): number =>
     cartStore.items.filter(i => i.product_id === productId).reduce((sum, i) => sum + i.quantity, 0)
 
+// Keep stock banners in sync with the inventory, as the welcome page does
+usePoll(10000, { only: ['products'] })
+const stockSummary = computed(() => {
+    const out = props.products.filter(p => p.soldOut).length
+    const low = props.products.filter(p => p.lowStock).length
+    return [out && `${out} out of stock`, low && `${low} low on stock`].filter(Boolean).join(' · ')
+})
+
 const quickAdd = (product: Product) => {
+    if (product.soldOut) {
+        toast.error(`${product.name} is out of stock.`)
+        return
+    }
     if (product.modifiers?.length) {
         openProduct(product)
         return
@@ -680,7 +693,7 @@ onBeforeUnmount(() => {
                     {{ cat.name }}
                 </button>
             </div>
-            <div class="pos-catalog-caption"><span>{{ filteredProducts.length }} products</span><span>Tap to add · customize items with add-ons</span></div>
+            <div class="pos-catalog-caption"><span>{{ filteredProducts.length }} products<b v-if="stockSummary" class="pos-stock-summary"><TriangleAlert :size="11" aria-hidden="true" />{{ stockSummary }}</b></span><span>Tap to add · customize items with add-ons</span></div>
             </div>
 
             <!-- Products Grid -->
@@ -689,12 +702,14 @@ onBeforeUnmount(() => {
                     v-for="product in filteredProducts"
                     :key="product.id"
                     class="pos-product-card flex flex-col items-start rounded-xl border bg-card text-left transition select-none"
-                    :class="{ 'is-selected': cartQtyFor(product.id) > 0 }"
+                    :class="{ 'is-selected': cartQtyFor(product.id) > 0, 'is-sold-out': product.soldOut }"
                 >
-                    <button class="pos-product-pick" :aria-label="`${product.modifiers?.length ? 'Customize' : 'Add'} ${product.name}, ${formatPrice(product.price)}`" @click="quickAdd(product)">
+                    <button class="pos-product-pick" :disabled="product.soldOut" :aria-label="product.soldOut ? `${product.name} is out of stock` : `${product.modifiers?.length ? 'Customize' : 'Add'} ${product.name}, ${formatPrice(product.price)}${product.lowStock ? ', low stock' : ''}`" @click="quickAdd(product)">
                     <div class="relative mb-2 h-20 w-full rounded-lg bg-muted flex items-center justify-center overflow-hidden">
                         <img v-if="product.image" :src="product.image" alt="" loading="lazy" class="h-full w-full object-cover" />
                         <Flame v-else class="h-8 w-8 text-muted-foreground/40" aria-hidden="true" />
+                        <div v-if="product.soldOut" class="pos-sold-out-banner" aria-hidden="true"><span>OUT OF STOCK</span></div>
+                        <span v-else-if="product.lowStock" class="pos-low-stock-banner" aria-hidden="true"><TriangleAlert :size="11" />LOW STOCK</span>
                         <span
                             v-if="cartQtyFor(product.id) > 0"
                             class="absolute top-1 right-1 min-w-[1.25rem] h-5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold flex items-center justify-center px-1 leading-none shadow"
@@ -705,7 +720,8 @@ onBeforeUnmount(() => {
                     <p class="text-xs text-muted-foreground mb-0.5">{{ product.category?.name }}</p>
                     <h3 class="text-sm font-semibold leading-tight line-clamp-2">{{ product.name }}</h3>
                     <p class="mt-1 text-base font-bold text-primary">{{ formatPrice(product.price) }}</p>
-                    <span class="pos-add-label"><Plus :size="13" aria-hidden="true" />{{ product.modifiers?.length ? 'Customize' : 'Add to order' }}</span>
+                    <span v-if="product.soldOut" class="pos-add-label is-unavailable">Unavailable</span>
+                    <span v-else class="pos-add-label"><Plus :size="13" aria-hidden="true" />{{ product.modifiers?.length ? 'Customize' : 'Add to order' }}</span>
                     </button>
 
                     <!-- Inline qty controls — only for products without modifiers -->
@@ -723,6 +739,7 @@ onBeforeUnmount(() => {
                         </button>
                         <span class="text-sm font-bold w-6 text-center tabular-nums">{{ cartQtyFor(product.id) }}</span>
                         <button
+                            :disabled="product.soldOut"
                             :aria-label="`Add one ${product.name}`"
                             class="flex-1 rounded bg-primary/10 py-0.5 hover:bg-primary/20 flex items-center justify-center"
                             @click.stop="quickAdd(product)"
@@ -1667,8 +1684,78 @@ onBeforeUnmount(() => {
     letter-spacing: 0.3px;
     color: #ad3b19;
 }
+.pos-add-label.is-unavailable {
+    color: #9c3028;
+}
+/* Stock banners, same look as the welcome page menu */
+.pos-sold-out-banner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #24231e8c;
+}
+.pos-sold-out-banner span {
+    padding: 4px 18px;
+    background: #c3441c;
+    color: #fff;
+    font-family: Impact, 'Arial Narrow', sans-serif;
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    transform: rotate(-6deg);
+    box-shadow: 0 4px 12px #0004;
+    white-space: nowrap;
+}
+.pos-low-stock-banner {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px;
+    background: #f2c230;
+    color: #24231e;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: 1.5px;
+}
+.pos-product-card.is-sold-out {
+    background: #f6f2e9;
+}
+.pos-product-card.is-sold-out:hover {
+    border-color: #ded7cb;
+    box-shadow: none;
+}
+.pos-product-card.is-sold-out .pos-product-pick {
+    cursor: not-allowed;
+}
+.pos-product-card.is-sold-out .pos-product-pick:active {
+    transform: none;
+}
+.pos-product-card.is-sold-out h3,
+.pos-product-card.is-sold-out .text-primary {
+    color: #93897b;
+}
+.pos-stock-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    border-radius: 20px;
+    padding: 2px 8px;
+    background: #fbf4e2;
+    color: #7b5815;
+}
 .pos-product-quantity {
     padding: 0 12px 12px;
+}
+.pos-product-quantity button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 .pos-product-quantity button {
     padding: 5px 0;

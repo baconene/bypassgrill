@@ -29,23 +29,14 @@ class WelcomeController extends Controller
             ->get()
             ->map(fn ($cat) => [
                 'name'     => $cat->name,
-                'products' => $cat->products->map(function ($p) {
-                    $tracked = $p->recipes->filter(fn ($r) => $r->ingredient?->track_inventory);
-
-                    // Sold out: an ingredient is at zero or can't cover a single serving
-                    $soldOut = $tracked->contains(fn ($r) => (float) $r->ingredient->current_quantity <= 0
-                        || (float) $r->ingredient->current_quantity < (float) $r->quantity);
-
-                    return [
-                        'id'          => $p->id,
-                        'name'        => $p->name,
-                        'price'       => (float) $p->price,
-                        'description' => $p->description,
-                        'image'       => $p->image ? '/storage/' . $p->image : null,
-                        'soldOut'     => $soldOut,
-                        'lowStock'    => ! $soldOut && $tracked->contains(fn ($r) => $r->ingredient->isLowStock()),
-                    ];
-                })->values(),
+                'products' => $cat->products->map(fn ($p) => [
+                    'id'          => $p->id,
+                    'name'        => $p->name,
+                    'price'       => (float) $p->price,
+                    'description' => $p->description,
+                    'image'       => $p->image ? '/storage/' . $p->image : null,
+                    ...$p->stockStatus(),
+                ])->values(),
             ]);
 
         $sections = PageSection::where('is_active', true)
