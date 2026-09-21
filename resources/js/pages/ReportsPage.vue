@@ -1,4 +1,4 @@
-[Resource from github at repo://baconene/theboys/sha/211bce34bbe2d1d9feac064618dd09ac3e2d48cc/contents/resources/js/pages/ReportsPage.vue] <script setup lang="ts">
+<script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
@@ -7,7 +7,8 @@ import {
     BarChart3, Download, RefreshCw, TrendingUp, TrendingDown,
     DollarSign, Plus, X, Search, ChevronLeft, ChevronRight, ChevronDown,
     ShoppingBag, ClipboardList, Package, Trash2, Pencil, CalendarDays,
-    ArrowUp, ArrowDown, ChevronsUpDown,
+    ArrowUp, ArrowDown, ChevronsUpDown, CalendarRange, Flame, Printer,
+    Receipt, Scale, Timer,
 } from 'lucide-vue-next'
 import AnalyticsTab from '@/pages/reports/AnalyticsTab.vue'
 import ServingTimeTab from '@/pages/reports/ServingTimeTab.vue'
@@ -71,19 +72,30 @@ type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'product
 const tab = ref<Tab>('orders')
 const loading = ref(false)
 
-const tabs: { key: Tab; label: string; hidden?: boolean }[] = [
-    { key: 'orders',    label: 'Orders' },
-    { key: 'analytics', label: 'Trend Analytics' },
-    { key: 'inventory', label: 'Inventory' },
-    { key: 'financial', label: 'Financial', hidden: true },
-    { key: 'daily',     label: 'Daily Sales' },
-    { key: 'monthly',   label: 'Monthly Sales' },
-    { key: 'products',  label: 'Product Sales' },
-    { key: 'pl',        label: 'P&L' },
-    { key: 'bills',     label: 'Bills' },
-    { key: 'heatmap',   label: '🔥 Peak Hours' },
-    { key: 'serving',   label: '⏱ Serving Time' },
+// Reports grouped by the question they answer. 'financial' has no entry: the Financial
+// page replaced it, but its tab still works when opened by URL.
+const tabGroups = [
+    { label: 'Sales', tabs: [
+        { key: 'orders' as Tab,    label: 'Orders',        icon: ClipboardList, hint: 'Every order in a date range. Search, filter by product, and open any order.' },
+        { key: 'daily' as Tab,     label: 'Daily sales',   icon: CalendarDays,  hint: 'One day at a glance, with income and expenses for the last few weeks.' },
+        { key: 'monthly' as Tab,   label: 'Monthly sales', icon: CalendarRange, hint: 'A month at a glance, set against the rest of the year.' },
+        { key: 'products' as Tab,  label: 'Products',      icon: ShoppingBag,   hint: 'Best sellers by revenue. Open a product to see its daily sales.' },
+        { key: 'analytics' as Tab, label: 'Trends',        icon: TrendingUp,    hint: 'Sales trends over time.' },
+    ] },
+    { label: 'Money', tabs: [
+        { key: 'pl' as Tab,    label: 'Profit & loss', icon: Scale,   hint: 'Revenue, costs and profit for any period, compared with the period before.' },
+        { key: 'bills' as Tab, label: 'Bills',         icon: Receipt, hint: 'Recurring bills and payment plans, with what is due next.' },
+    ] },
+    { label: 'Operations', tabs: [
+        { key: 'inventory' as Tab, label: 'Inventory',    icon: Package, hint: 'Every stock movement: deliveries, usage, waste and counts.' },
+        { key: 'heatmap' as Tab,   label: 'Peak hours',   icon: Flame,   hint: 'When orders come in, by day of the week and hour.' },
+        { key: 'serving' as Tab,   label: 'Serving time', icon: Timer,   hint: 'How long orders take from placing to serving.' },
+    ] },
 ]
+const allTabs = tabGroups.flatMap((g) => g.tabs)
+const activeTabInfo = computed(() =>
+    allTabs.find((t) => t.key === tab.value) ?? { hint: 'Income, expenses and ledger entries.' },
+)
 
 // ── Daily / Monthly ────────────────────────────────────────────────────────────
 const toManilaDate = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
@@ -99,7 +111,7 @@ const monthlyReport = ref<MonthlyReport | null>(null)
 // ── FT Breakdown (daily + monthly) ────────────────────────────────────────────
 interface FtBreakdownType  { type: string; total: number; count: number }
 interface FtBreakdownTender { tender: string; total_in: number; total_out: number; net: number; count: number }
-interface FtBreakdown { by_type: FtBreakdownType[]; by_tender: FtBreakdownTender[] }
+interface FtBreakdown { period: { start: string; end: string }; by_type: FtBreakdownType[]; by_tender: FtBreakdownTender[] }
 const ftBreakdown = ref<FtBreakdown | null>(null)
 
 const ftTypeLabel: Record<string, string> = {
@@ -227,6 +239,7 @@ interface PL {
     expenses: { total: number; count: number; breakdown: PLBreakdownItem[] }
     inventory_purchases: { total: number; count: number; included_in_expenses: boolean; breakdown: PLBreakdownItem[] }
     payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
+    payout_share?: { total: number; count: number; breakdown: PLBreakdownItem[] }
     net_profit: number; net_margin: number
     include_cogs?: boolean
     unpaid_completed?: { total: number; count: number }
@@ -261,32 +274,166 @@ const plEndDate = ref(manilaToday())
 const plIncludeCogs = ref(true)
 const plReport     = ref<PL | null>(null)
 
-// Which P&L sections are collapsed (all open by default)
-const plCollapsed = ref<Record<string, boolean>>({
-    revenue:      false,
-    cogs:         false,
-    inventory:    false,
-    other_income: false,
-    expenses:     false,
-    payroll:      false,
+// ── P&L period, comparison and statement ──────────────────────────────────────
+type PlPreset = 'month' | 'lastMonth' | '30d' | 'quarter' | 'year' | 'custom'
+const plPresets: { key: PlPreset; label: string }[] = [
+    { key: 'month', label: 'This month' },
+    { key: 'lastMonth', label: 'Last month' },
+    { key: '30d', label: 'Last 30 days' },
+    { key: 'quarter', label: 'This quarter' },
+    { key: 'year', label: 'This year' },
+    { key: 'custom', label: 'Custom' },
+]
+const plPreset = ref<PlPreset>('month')
+const plCompare = ref(true)
+const plPrev = ref<PL | null>(null)
+const plOpen = ref<Record<string, boolean>>({})
+const plSpendActive = ref<string | null>(null)
+
+// Calendar maths on plain Y-M-D values, independent of the browser's timezone.
+const parseYmd = (s: string) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d) }
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
+const round2 = (v: number) => Math.round(v * 100) / 100
+
+const setPlPreset = (key: PlPreset) => {
+    plPreset.value = key
+    if (key === 'custom') return
+    const today = parseYmd(manilaToday())
+    const y = today.getFullYear(), m = today.getMonth()
+    const ranges: Record<Exclude<PlPreset, 'custom'>, [Date, Date]> = {
+        month: [new Date(y, m, 1), today],
+        lastMonth: [new Date(y, m - 1, 1), new Date(y, m, 0)],
+        '30d': [addDays(today, -29), today],
+        quarter: [new Date(y, Math.floor(m / 3) * 3, 1), today],
+        year: [new Date(y, 0, 1), today],
+    }
+    plStartDate.value = ymd(ranges[key][0])
+    plEndDate.value = ymd(ranges[key][1])
+    generateReport()
+}
+
+// The period to compare with: the same days of the previous month when the range
+// starts on the 1st within one month, otherwise the same number of days just before.
+const plPrevRange = (start: string, end: string): [string, string] => {
+    const s = parseYmd(start), e = parseYmd(end)
+    if (s.getDate() === 1 && s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+        const ps = new Date(s.getFullYear(), s.getMonth() - 1, 1)
+        const lastPrev = new Date(s.getFullYear(), s.getMonth(), 0).getDate()
+        const wholeMonth = e.getDate() === new Date(e.getFullYear(), e.getMonth() + 1, 0).getDate()
+        return [ymd(ps), ymd(new Date(ps.getFullYear(), ps.getMonth(), wholeMonth ? lastPrev : Math.min(e.getDate(), lastPrev)))]
+    }
+    const days = Math.round((e.getTime() - s.getTime()) / 864e5) + 1
+    return [ymd(addDays(s, -days)), ymd(addDays(s, -1))]
+}
+
+interface PLRow {
+    key: string
+    label: string
+    kind: 'line' | 'less' | 'subtotal' | 'total' | 'memo'
+    cur: number
+    prev: number | null
+    higherIsBetter: boolean
+    note?: string
+    items?: PLBreakdownItem[]
+}
+
+// Revenue the order totals don't explain: partial payments, tax, refunds.
+const otherCollections = (r: PL) => round2(r.revenue.net_revenue - (r.revenue.gross_sales - r.revenue.discounts))
+const plCosts = (r: PL) =>
+    (plIncludeCogs.value ? r.cogs.total : 0) + r.expenses.total + (r.payroll?.total ?? 0) + (r.payout_share?.total ?? 0)
+
+const plRows = computed<PLRow[]>(() => {
+    const r = plReport.value
+    if (!r) return []
+    const p = plPrev.value
+    const rows: PLRow[] = [
+        { key: 'gross', label: 'Gross sales', note: `${r.revenue.order_count} paid order${r.revenue.order_count !== 1 ? 's' : ''}`, kind: 'line', cur: r.revenue.gross_sales, prev: p?.revenue.gross_sales ?? null, higherIsBetter: true },
+        { key: 'discounts', label: 'Discounts', kind: 'less', cur: r.revenue.discounts, prev: p?.revenue.discounts ?? null, higherIsBetter: false },
+    ]
+    if (Math.abs(otherCollections(r)) >= 0.01 || (p && Math.abs(otherCollections(p)) >= 0.01)) {
+        rows.push({ key: 'collections', label: 'Other collections', note: 'Partial payments, tax and refunds', kind: 'line', cur: otherCollections(r), prev: p ? otherCollections(p) : null, higherIsBetter: true })
+    }
+    rows.push({ key: 'net_revenue', label: 'Net revenue', kind: 'subtotal', cur: r.revenue.net_revenue, prev: p?.revenue.net_revenue ?? null, higherIsBetter: true })
+    if (plIncludeCogs.value) {
+        rows.push({ key: 'cogs', label: 'Cost of goods sold', note: r.cogs.has_data ? undefined : 'No product costs set yet', kind: 'less', cur: r.cogs.total, prev: p?.cogs.total ?? null, higherIsBetter: false })
+        rows.push({ key: 'gross_profit', label: 'Gross profit', note: `${r.gross_margin}% margin`, kind: 'subtotal', cur: r.gross_profit, prev: p?.gross_profit ?? null, higherIsBetter: true })
+    }
+    rows.push(
+        { key: 'other_income', label: 'Other income', kind: 'line', cur: r.income_adjustments?.total ?? 0, prev: p ? (p.income_adjustments?.total ?? 0) : null, higherIsBetter: true, items: r.income_adjustments?.breakdown },
+        { key: 'expenses', label: 'Operating expenses', note: plIncludeCogs.value ? undefined : 'Includes inventory purchases', kind: 'less', cur: r.expenses.total, prev: p?.expenses.total ?? null, higherIsBetter: false, items: r.expenses.breakdown },
+        { key: 'payroll', label: 'Payroll', kind: 'less', cur: r.payroll?.total ?? 0, prev: p ? (p.payroll?.total ?? 0) : null, higherIsBetter: false, items: r.payroll?.breakdown },
+        { key: 'payouts', label: 'Profit payouts', kind: 'less', cur: r.payout_share?.total ?? 0, prev: p ? (p.payout_share?.total ?? 0) : null, higherIsBetter: false, items: r.payout_share?.breakdown },
+        { key: 'net_profit', label: r.net_profit >= 0 ? 'Net profit' : 'Net loss', note: `${r.net_margin}% margin`, kind: 'total', cur: r.net_profit, prev: p?.net_profit ?? null, higherIsBetter: true },
+    )
+    if ((r.inventory_purchases?.total ?? 0) > 0 || (p?.inventory_purchases?.total ?? 0) > 0) {
+        rows.push({
+            key: 'inventory', label: 'Memo: inventory purchases',
+            note: r.inventory_purchases.included_in_expenses ? 'Already inside operating expenses' : 'Stock bought, not deducted',
+            kind: 'memo', cur: r.inventory_purchases.total, prev: p ? (p.inventory_purchases?.total ?? 0) : null,
+            higherIsBetter: false, items: r.inventory_purchases.breakdown,
+        })
+    }
+    return rows
 })
 
-// Sales = COGS + Gross Profit breakdown for the stacked bar
-const salesChart = computed(() => {
+const plKpis = computed(() => {
     const r = plReport.value
-    if (!r || !r.include_cogs || r.revenue.net_revenue <= 0) return null
-    const revenue     = r.revenue.net_revenue
-    const cogs        = r.cogs.total
-    const grossProfit = Math.max(0, r.gross_profit)
-    const denominator = Math.max(revenue, cogs + grossProfit, 0.01)
-    return {
-        revenue,
-        cogs,
-        cogsH:        Math.min(100, (cogs        / denominator) * 100),
-        grossProfit,
-        grossH:       Math.min(100, (grossProfit / denominator) * 100),
-        grossMargin:  r.gross_margin,
+    if (!r) return []
+    const p = plPrev.value
+    const kpis = [
+        { label: 'Net revenue', value: r.revenue.net_revenue, prev: p?.revenue.net_revenue ?? 0, higherIsBetter: true, note: `${r.revenue.order_count} paid orders`, tone: '' },
+    ]
+    if (plIncludeCogs.value) {
+        kpis.push({ label: 'Gross profit', value: r.gross_profit, prev: p?.gross_profit ?? 0, higherIsBetter: true, note: `${r.gross_margin}% margin`, tone: '' })
     }
+    kpis.push(
+        { label: 'Total costs', value: plCosts(r), prev: p ? plCosts(p) : 0, higherIsBetter: false, note: plIncludeCogs.value ? 'COGS, expenses, payroll, payouts' : 'Expenses, payroll, payouts', tone: '' },
+        { label: r.net_profit >= 0 ? 'Net profit' : 'Net loss', value: r.net_profit, prev: p?.net_profit ?? 0, higherIsBetter: true, note: `${r.net_margin}% margin`, tone: r.net_profit >= 0 ? 'is-surplus' : 'is-deficit' },
+    )
+    return kpis
+})
+
+// Income split into costs and profit, in pesos per ₱100.
+const plSpend = computed(() => {
+    const r = plReport.value
+    if (!r) return null
+    const income = r.revenue.net_revenue + (r.income_adjustments?.total ?? 0)
+    const costs = [
+        { key: 'cogs', label: 'Cost of goods', value: plIncludeCogs.value ? r.cogs.total : 0 },
+        { key: 'expenses', label: 'Expenses', value: r.expenses.total },
+        { key: 'payroll', label: 'Payroll', value: r.payroll?.total ?? 0 },
+        { key: 'payouts', label: 'Payouts', value: r.payout_share?.total ?? 0 },
+    ]
+    const totalCosts = costs.reduce((s, c) => s + c.value, 0)
+    if (income <= 0 && totalCosts <= 0) return null
+    const loss = totalCosts > income
+    const base = loss ? totalCosts : income
+    const segments = [...costs, ...(loss ? [] : [{ key: 'profit', label: 'Profit kept', value: income - totalCosts }])]
+        .filter((s) => s.value > 0.004)
+        .map((s) => ({ ...s, per100: (s.value / base) * 100 }))
+    return { segments, loss }
+})
+
+const fmtSigned = (v: number) => (v < 0 ? '−' : '') + fmt(Math.abs(v))
+const fmtLine = (row: PLRow, v: number) => (row.kind === 'less' && v > 0 ? '−' + fmt(v) : fmtSigned(v))
+const amountTone = (row: PLRow) => (row.kind === 'total' ? (row.cur >= 0 ? 'is-in' : 'is-out') : '')
+const deltaText = (cur: number, prev: number) => {
+    const diff = round2(cur - prev)
+    if (Math.abs(diff) < 0.005) return 'No change'
+    const pct = prev !== 0 ? Math.round((diff / Math.abs(prev)) * 100) : null
+    return `${diff > 0 ? '+' : '−'}${fmt(Math.abs(diff))}${pct !== null ? ` (${pct > 0 ? '+' : pct < 0 ? '−' : ''}${Math.abs(pct)}%)` : ''}`
+}
+const deltaTone = (diff: number, higherIsBetter: boolean) =>
+    Math.abs(diff) < 0.005 ? 'is-flat' : (higherIsBetter ? diff > 0 : diff < 0) ? 'is-good' : 'is-bad'
+const fmtRange = (start: string, end: string) => {
+    const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+    const s = parseYmd(start).toLocaleDateString('en-PH', opts)
+    return start === end ? s : `${s} – ${parseYmd(end).toLocaleDateString('en-PH', opts)}`
+}
+
+watch([plIncludeCogs, plCompare], () => {
+    if (tab.value === 'pl') generateReport()
 })
 
 // ── Daily chart ────────────────────────────────────────────────────────────────
@@ -318,7 +465,7 @@ interface HeatmapData {
     insights: HeatmapInsights
 }
 
-const hmDateFrom  = ref(new Date(new Date().setDate(new Date().getDate() - 89)).toISOString().slice(0, 10))
+const hmDateFrom  = ref(daysAgo(89))
 const hmDateTo    = ref(manilaToday())
 const hmData      = ref<HeatmapData | null>(null)
 const hmLoading   = ref(false)
@@ -334,7 +481,7 @@ const hmMax = computed(() => {
 
 // Returns a Tailwind-compatible inline style for the cell background
 function cellStyle(orders: number): string {
-    if (orders === 0) return 'background:#1a1a1a'
+    if (orders === 0) return 'background:#efeadf'
     const ratio = orders / hmMax.value
     // Interpolate from #431407 (very dark) → #f97316 (orange-500) → #fef08a (yellow-200)
     if (ratio < 0.25)  return `background:rgba(249,115,22,${0.15 + ratio * 0.6})`
@@ -345,7 +492,7 @@ function cellStyle(orders: number): string {
 
 function cellText(orders: number): string {
     const ratio = orders / hmMax.value
-    return ratio > 0.4 ? 'text-white' : orders > 0 ? 'text-orange-200' : 'text-zinc-700'
+    return ratio > 0.4 ? 'text-white' : orders > 0 ? 'text-orange-950' : 'text-stone-400'
 }
 
 function hmFmtHour(h: number): string {
@@ -430,38 +577,38 @@ const fmtDatetime = (s: string) => {
 }
 
 const statusBadge = (s: string) => ({
-    pending:   'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    preparing: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    ready:     'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    cancelled: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    pending:   'bg-yellow-100 text-yellow-700',
+    preparing: 'bg-blue-100 text-blue-700',
+    ready:     'bg-purple-100 text-purple-700',
+    completed: 'bg-green-100 text-green-700',
+    cancelled: 'bg-red-100 text-red-700',
 }[s] ?? 'bg-muted text-muted-foreground')
 
 const payBadge = (s: string) => ({
-    paid:     'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    pending:  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    refunded: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    voided:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+    paid:     'bg-green-100 text-green-700',
+    pending:  'bg-yellow-100 text-yellow-700',
+    refunded: 'bg-purple-100 text-purple-700',
+    voided:   'bg-red-100 text-red-700',
 }[s] ?? 'bg-muted text-muted-foreground')
 
 const invTypeBadge = (t: string) => ({
-    stock_in:   'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    stock_out:  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    adjustment: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    waste:      'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-    usage:      'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    purchase:   'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    stock_in:   'bg-green-100 text-green-700',
+    stock_out:  'bg-red-100 text-red-700',
+    adjustment: 'bg-blue-100 text-blue-700',
+    waste:      'bg-orange-100 text-orange-700',
+    usage:      'bg-yellow-100 text-yellow-700',
+    purchase:   'bg-purple-100 text-purple-700',
 }[t] ?? 'bg-muted text-muted-foreground')
 
 const typeLabel = (t: string) => ({
     order: 'Order', payment: 'Payment', expense: 'Expense', income_adjustment: 'Income Adj.', payroll: 'Payroll',
 }[t] ?? t)
 const typeBadgeClass = (t: string) => ({
-    order:             'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    payment:           'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    expense:           'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    income_adjustment: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
-    payroll:           'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+    order:             'bg-blue-100 text-blue-700',
+    payment:           'bg-green-100 text-green-700',
+    expense:           'bg-red-100 text-red-700',
+    income_adjustment: 'bg-teal-100 text-teal-700',
+    payroll:           'bg-purple-100 text-purple-700',
 }[t] ?? 'bg-muted text-muted-foreground')
 const isCredit = (t: string) => t === 'payment' || t === 'income_adjustment'
 
@@ -473,10 +620,10 @@ const frequencyLabel = (f: string) => ({
 }[f] ?? f)
 
 const billStatusBadge = (s: string) => ({
-    overdue:   'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    due_today: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-    upcoming:  'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    scheduled: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    overdue:   'bg-red-100 text-red-700',
+    due_today: 'bg-orange-100 text-orange-700',
+    upcoming:  'bg-yellow-100 text-yellow-700',
+    scheduled: 'bg-blue-100 text-blue-700',
     inactive:  'bg-muted text-muted-foreground',
 }[s] ?? 'bg-muted text-muted-foreground')
 
@@ -528,7 +675,7 @@ const toggleProduct = (id: number) => {
 
 const setProductRange = async (preset: '7d' | '30d' | '90d' | 'ytd') => {
     const today = new Date()
-    const fmt = (d: Date) => d.toISOString().slice(0, 10)
+    const fmt = (d: Date) => toManilaDate(d)
     if (preset === '7d')       { const f = new Date(today); f.setDate(f.getDate() - 6);  prodDateFrom.value = fmt(f); prodDateTo.value = fmt(today) }
     else if (preset === '30d') { const f = new Date(today); f.setDate(f.getDate() - 29); prodDateFrom.value = fmt(f); prodDateTo.value = fmt(today) }
     else if (preset === '90d') { const f = new Date(today); f.setDate(f.getDate() - 89); prodDateFrom.value = fmt(f); prodDateTo.value = fmt(today) }
@@ -763,10 +910,17 @@ const loadFinancial = async (page = 1) => {
 }
 
 const loadPL = async () => {
-    const res = await api.get('/api/v1/reports/profit-loss', {
-        params: { start_date: plStartDate.value, end_date: plEndDate.value, include_cogs: plIncludeCogs.value },
-    })
-    plReport.value = res.data
+    const fetchPL = (start: string, end: string) =>
+        api.get('/api/v1/reports/profit-loss', {
+            params: { start_date: start, end_date: end, include_cogs: plIncludeCogs.value ? 1 : 0 },
+        })
+    const prev = plCompare.value ? plPrevRange(plStartDate.value, plEndDate.value) : null
+    const [cur, before] = await Promise.all([
+        fetchPL(plStartDate.value, plEndDate.value),
+        prev ? fetchPL(prev[0], prev[1]) : Promise.resolve(null),
+    ])
+    plReport.value = cur.data
+    plPrev.value = before?.data ?? null
 }
 
 const loadChartData = async () => {
@@ -1062,6 +1216,21 @@ const exportCSV = () => {
         ]
     }
 
+    if (tab.value === 'pl' && plReport.value) {
+        const signed = (row: PLRow, v: number) => String(row.kind === 'less' ? -v : v)
+        filename = `profit-and-loss-${plStartDate.value}-to-${plEndDate.value}`
+        rows = [
+            ['Line', 'This period', ...(plPrev.value ? ['Previous', 'Change'] : [])],
+            ...plRows.value.map((row) => [
+                row.label,
+                signed(row, row.cur),
+                ...(plPrev.value
+                    ? [row.prev == null ? '' : signed(row, row.prev), row.prev == null ? '' : signed(row, round2(row.cur - row.prev))]
+                    : []),
+            ]),
+        ]
+    }
+
     if (rows.length === 0) { toast.info('No data to export'); return }
 
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -1074,8 +1243,14 @@ const exportCSV = () => {
 
 const printReport = () => window.print()
 
+const canExport = computed(() => ['orders', 'inventory', 'products', 'financial', 'pl'].includes(tab.value))
+
+// Keep the open report in the URL so refresh and shared links land on it.
 const switchTab = (t: Tab) => {
     tab.value = t
+    const url = new URL(window.location.href)
+    url.search = `?tab=${t}`
+    window.history.replaceState(window.history.state, '', url)
     generateReport()
 }
 
@@ -1094,6 +1269,8 @@ onMounted(async () => {
         if (urlParams.get('pg')) ordPage.value = parseInt(urlParams.get('pg')!)
         if (urlParams.get('sb')) ordSortBy.value = urlParams.get('sb')!
         if (urlParams.get('sd')) ordSortDir.value = urlParams.get('sd')! as 'asc' | 'desc'
+    } else if (restoredTab && (restoredTab === 'financial' || allTabs.some((t) => t.key === restoredTab))) {
+        tab.value = restoredTab
     }
 
     // Pre-load ingredient list for the inventory filter dropdown
@@ -1120,29 +1297,46 @@ onMounted(async () => {
 <template>
     <Head title="Reports" />
 
-    <div class="space-y-5">
-        <!-- Tab bar — horizontally scrollable so tabs never wrap on mobile -->
-        <div class="overflow-x-auto rounded-xl border bg-card shadow-sm scrollbar-none">
-            <div class="flex gap-1 p-1.5 w-max">
-                <button
-                    v-for="t in tabs.filter(t => !t.hidden)" :key="t.key"
-                    @click="switchTab(t.key)"
-                    :class="[
-                        'rounded-lg px-4 py-2 text-sm font-medium transition whitespace-nowrap',
-                        tab === t.key
-                            ? 'bg-primary text-primary-foreground shadow-sm'
-                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                    ]"
-                >{{ t.label }}</button>
+    <div class="rpt-theme rpt-page space-y-5">
+        <header class="rpt-heading">
+            <div>
+                <p class="rpt-eyebrow"><span aria-hidden="true" />BYPASS GRILL / REPORTS</p>
+                <h1>THE NUMBERS <span>BEHIND THE GRILL.</span></h1>
+                <p class="rpt-intro">{{ activeTabInfo.hint }}</p>
             </div>
-        </div>
+            <div class="rpt-heading-actions">
+                <button class="rpt-ghost-btn" :disabled="!canExport" @click="exportCSV"><Download :size="15" aria-hidden="true" />Export CSV</button>
+                <button class="rpt-ghost-btn" @click="printReport"><Printer :size="15" aria-hidden="true" />Print</button>
+            </div>
+        </header>
+
+        <!-- Grouped report navigation -->
+        <nav class="rpt-nav" aria-label="Reports">
+            <div v-for="group in tabGroups" :key="group.label" class="rpt-nav-group">
+                <p>{{ group.label }}</p>
+                <div role="tablist" :aria-label="group.label">
+                    <button
+                        v-for="t in group.tabs"
+                        :key="t.key"
+                        role="tab"
+                        :aria-selected="tab === t.key"
+                        @click="switchTab(t.key)"
+                    >
+                        <component :is="t.icon" :size="15" aria-hidden="true" />{{ t.label }}
+                    </button>
+                </div>
+            </div>
+        </nav>
 
         <!-- Self-contained tabs -->
         <AnalyticsTab v-if="tab === 'analytics'" />
         <ServingTimeTab v-if="tab === 'serving'" />
 
         <!-- Filters bar -->
-        <div v-if="tab !== 'analytics' && tab !== 'serving'" class="rounded-xl border bg-card shadow-sm p-4">
+        <div v-if="tab !== 'analytics' && tab !== 'serving'" class="rpt-filters">
+            <div v-if="tab === 'pl'" class="rpt-presets" role="group" aria-label="Quick periods">
+                <button v-for="p in plPresets" :key="p.key" :aria-pressed="plPreset === p.key" @click="setPlPreset(p.key)">{{ p.label }}</button>
+            </div>
             <div class="flex flex-wrap gap-3 items-end">
 
                 <!-- Orders filters -->
@@ -1260,17 +1454,20 @@ onMounted(async () => {
 
                 <!-- P&L date range -->
                 <template v-if="tab === 'pl'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="plStartDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="plEndDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div class="flex items-center gap-2">
-                        <input v-model="plIncludeCogs" type="checkbox" id="pl_cogs_toggle" class="rounded border-gray-300" />
-                        <label for="pl_cogs_toggle" class="text-xs font-medium text-muted-foreground">
-                            Include COGS
-                            <span class="opacity-60 font-normal">— when ON: restocking is an asset (not opex); consumed cost flows via COGS</span>
-                        </label>
-                    </div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1" for="pl-from">From</label>
+                        <input id="pl-from" v-model="plStartDate" type="date" :max="plEndDate" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" @change="plPreset = 'custom'" /></div>
+                    <div><label class="text-xs font-medium text-muted-foreground block mb-1" for="pl-to">To</label>
+                        <input id="pl-to" v-model="plEndDate" type="date" :min="plStartDate" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" @change="plPreset = 'custom'" /></div>
+                    <label class="rpt-switch">
+                        <input v-model="plIncludeCogs" type="checkbox" />
+                        <span class="rpt-switch-track" aria-hidden="true"><span /></span>
+                        <span>Include COGS<small>{{ plIncludeCogs ? 'Stock bought is an asset; its cost counts when sold' : 'Stock bought counts as an expense when bought' }}</small></span>
+                    </label>
+                    <label class="rpt-switch">
+                        <input v-model="plCompare" type="checkbox" />
+                        <span class="rpt-switch-track" aria-hidden="true"><span /></span>
+                        <span>Compare<small>{{ plCompare ? 'With the period before' : 'Off' }}</small></span>
+                    </label>
                 </template>
 
                 <!-- Bills forecast months -->
@@ -1313,16 +1510,10 @@ onMounted(async () => {
                         </select></div>
                 </template>
 
-                <button @click="generateReport" :disabled="loading"
-                    class="rounded-lg bg-primary px-5 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5">
-                    <RefreshCw v-if="loading" class="h-3.5 w-3.5 animate-spin" />
-                    <BarChart3 v-else class="h-3.5 w-3.5" />
-                    Generate
+                <button @click="generateReport" :disabled="loading" class="rpt-primary-btn">
+                    <RefreshCw :size="15" :class="{ 'animate-spin': loading }" aria-hidden="true" />
+                    {{ loading ? 'Loading…' : 'Update report' }}
                 </button>
-                <button @click="exportCSV" class="rounded-lg border bg-background px-4 py-2 text-sm font-medium hover:bg-muted flex items-center gap-1.5">
-                    <Download class="h-3.5 w-3.5" /> Export CSV
-                </button>
-                <button @click="printReport" class="rounded-lg border bg-background px-4 py-2 text-sm font-medium hover:bg-muted">Print</button>
             </div>
         </div>
 
@@ -1565,7 +1756,7 @@ onMounted(async () => {
                             <div class="mt-2 text-sm">
                                 <p>Total orders: <strong>{{ hmData.insights.total_orders }}</strong></p>
                                 <p class="mt-1">Peak day: <strong>{{ hmData.insights.peak_day.day }}</strong> ({{ hmData.insights.peak_day.total_orders }})</p>
-                                <p class="mt-1">Peak hour: <strong>{{ hmData.insights.peak_hour.hour }}</strong> ({{ hmData.insights.peak_hour.total_orders }})</p>
+                                <p class="mt-1">Peak hour: <strong>{{ hmFmtHour(hmData.insights.peak_hour.hour) }}</strong> ({{ hmData.insights.peak_hour.total_orders }})</p>
                             </div>
                         </div>
 
@@ -1574,7 +1765,7 @@ onMounted(async () => {
                             <div class="mt-2 flex flex-col gap-2">
                                 <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-orange-500"></div><span class="text-xs text-muted-foreground">High</span></div>
                                 <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-amber-400"></div><span class="text-xs text-muted-foreground">Medium</span></div>
-                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm bg-zinc-800"></div><span class="text-xs text-muted-foreground">Low / None</span></div>
+                                <div class="flex items-center gap-2"><div class="h-3 w-6 rounded-sm" style="background:#efeadf"></div><span class="text-xs text-muted-foreground">None</span></div>
                             </div>
                         </div>
                     </div>
@@ -1724,9 +1915,9 @@ onMounted(async () => {
                     <p class="text-2xl font-black">{{ ftSummary.payroll?.count ?? 0 }}</p>
                     <p class="text-sm font-semibold text-purple-600 mt-0.5">{{ fmt(ftSummary.payroll?.total ?? 0) }}</p>
                 </div>
-                <div :class="['rounded-xl border p-4 shadow-sm', ftSummary.net >= 0 ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800']">
+                <div :class="['rounded-xl border p-4 shadow-sm', ftSummary.net >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200']">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><DollarSign class="h-3 w-3" /> Net Cash</p>
-                    <p class="text-2xl font-black" :class="ftSummary.net >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600'">{{ fmt(ftSummary.net) }}</p>
+                    <p class="text-2xl font-black" :class="ftSummary.net >= 0 ? 'text-green-700' : 'text-red-600'">{{ fmt(ftSummary.net) }}</p>
                     <p class="text-xs text-muted-foreground mt-0.5">Payments + Adj. − Expenses − Payroll</p>
                 </div>
             </div>
@@ -1761,7 +1952,7 @@ onMounted(async () => {
                         :class="[
                             'flex-1 rounded-lg border-2 py-2 text-sm font-semibold transition',
                             entryForm.type === 'expense'
-                                ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400'
+                                ? 'border-red-500 bg-red-50 text-red-700'
                                 : 'border-border text-muted-foreground hover:bg-muted',
                         ]"
                     >
@@ -1772,7 +1963,7 @@ onMounted(async () => {
                         :class="[
                             'flex-1 rounded-lg border-2 py-2 text-sm font-semibold transition',
                             entryForm.type === 'income_adjustment'
-                                ? 'border-teal-500 bg-teal-50 text-teal-700 dark:bg-teal-950/20 dark:text-teal-400'
+                                ? 'border-teal-500 bg-teal-50 text-teal-700'
                                 : 'border-border text-muted-foreground hover:bg-muted',
                         ]"
                     >
@@ -1887,13 +2078,13 @@ onMounted(async () => {
                                 </span>
                                 <div class="flex items-center gap-1 mt-1">
                                     <button v-if="tx.type !== 'order'" @click="openEditFt(tx)"
-                                        class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition"
+                                        class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 transition"
                                         title="Edit entry">
                                         <Pencil class="h-3.5 w-3.5" />
                                     </button>
                                     <button v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
                                         @click="deleteEntry(tx)" :disabled="ftDeleting === tx.id"
-                                        class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition"
+                                        class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 disabled:opacity-40 transition"
                                         title="Delete entry">
                                         <Trash2 class="h-3.5 w-3.5" />
                                     </button>
@@ -1934,13 +2125,13 @@ onMounted(async () => {
                                 <td class="px-4 py-2 text-center">
                                     <div class="flex items-center justify-center gap-1">
                                         <button v-if="tx.type !== 'order'" @click="openEditFt(tx)"
-                                            class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition"
+                                            class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 transition"
                                             title="Edit entry">
                                             <Pencil class="h-3.5 w-3.5" />
                                         </button>
                                         <button v-if="tx.type === 'expense' || tx.type === 'income_adjustment'"
                                             @click="deleteEntry(tx)" :disabled="ftDeleting === tx.id"
-                                            class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition"
+                                            class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 disabled:opacity-40 transition"
                                             title="Delete entry">
                                             <Trash2 class="h-3.5 w-3.5" />
                                         </button>
@@ -1972,353 +2163,132 @@ onMounted(async () => {
 
         <!-- ── Profit & Loss ─────────────────────────────────────────────────── -->
         <template v-if="tab === 'pl'">
-            <div v-if="plReport" class="space-y-4">
-                <p class="text-sm text-muted-foreground">
-                    Period: <strong>{{ plReport.period.start }}</strong> to <strong>{{ plReport.period.end }}</strong>
-                </p>
+            <div v-if="plReport" class="rpt-stack">
+                <!-- Headline figures with change vs the comparison period -->
+                <section class="rpt-kpis" aria-label="Profit and loss headline figures">
+                    <article v-for="k in plKpis" :key="k.label" class="rpt-kpi" :class="k.tone">
+                        <p>{{ k.label }}</p>
+                        <strong>{{ fmtSigned(k.value) }}</strong>
+                        <span v-if="k.note">{{ k.note }}</span>
+                        <span v-if="plPrev" class="rpt-delta" :class="deltaTone(k.value - k.prev, k.higherIsBetter)">
+                            {{ deltaText(k.value, k.prev) }}
+                        </span>
+                    </article>
+                </section>
 
-                <!-- P&L Statement -->
-                <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                    <div class="p-4 border-b bg-muted/30">
-                        <h2 class="font-bold text-base flex items-center gap-2"><TrendingUp class="h-4 w-4" /> Profit & Loss Statement</h2>
+                <!-- Where each peso went -->
+                <section v-if="plSpend" class="rpt-panel">
+                    <div class="rpt-panel-head">
+                        <div>
+                            <p class="rpt-kicker">WHERE EACH ₱100 WENT</p>
+                            <h2>{{ plSpend.loss ? 'Costs ran past income' : 'Income, split by where it went' }}</h2>
+                        </div>
+                        <small>Hover or tap a segment</small>
                     </div>
-                    <div class="divide-y">
+                    <div class="rpt-spend-bar" role="list">
+                        <button
+                            v-for="seg in plSpend.segments"
+                            :key="seg.key"
+                            role="listitem"
+                            class="rpt-spend-seg"
+                            :class="[`seg-${seg.key}`, { 'is-active': plSpendActive === seg.key }]"
+                            :style="{ flexGrow: seg.value }"
+                            :aria-label="`${seg.label}: ${fmt(seg.value)}, ${seg.per100.toFixed(0)} pesos of every 100`"
+                            @mouseenter="plSpendActive = seg.key"
+                            @focus="plSpendActive = seg.key"
+                            @click="plSpendActive = seg.key"
+                        >
+                            <span v-if="seg.per100 >= 8">{{ seg.per100.toFixed(0) }}</span>
+                        </button>
+                    </div>
+                    <div class="rpt-spend-legend">
+                        <button
+                            v-for="seg in plSpend.segments"
+                            :key="seg.key"
+                            :class="{ 'is-active': plSpendActive === seg.key }"
+                            @mouseenter="plSpendActive = seg.key"
+                            @click="plSpendActive = seg.key"
+                        >
+                            <i :class="`seg-${seg.key}`" aria-hidden="true" />{{ seg.label }}
+                            <strong>₱{{ seg.per100.toFixed(0) }}</strong>
+                        </button>
+                    </div>
+                    <p v-if="plSpendActive && plSpend.segments.find((s) => s.key === plSpendActive)" class="rpt-spend-note" aria-live="polite">
+                        <template v-for="seg in plSpend.segments.filter((s) => s.key === plSpendActive)" :key="seg.key">
+                            <strong>{{ seg.label }}</strong> took {{ fmt(seg.value) }}: ₱{{ seg.per100.toFixed(2) }} of every ₱100 of {{ plSpend.loss ? 'total costs' : 'income' }}.
+                        </template>
+                    </p>
+                </section>
 
-                        <!-- ── Revenue ──────────────────────────────────────────── -->
-                        <div class="px-5 py-3">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.revenue = !plCollapsed.revenue">
-                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                                    Revenue
-                                </span>
-                                <ChevronDown v-if="!plCollapsed.revenue" class="h-3.5 w-3.5 text-muted-foreground" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                            <div v-show="!plCollapsed.revenue" class="mt-2 space-y-1.5">
-                                <div class="flex justify-between text-sm">
-                                    <span class="text-muted-foreground">Gross Sales ({{ plReport.revenue.order_count }} orders)</span>
-                                    <span class="font-semibold">{{ fmt(plReport.revenue.gross_sales) }}</span>
-                                </div>
-                                <div v-if="plReport.revenue.discounts > 0" class="flex justify-between text-sm">
-                                    <span class="text-muted-foreground pl-4">— Discounts</span>
-                                    <span class="text-red-500">−{{ fmt(plReport.revenue.discounts) }}</span>
-                                </div>
-                            </div>
-                            <div class="flex justify-between text-sm font-bold border-t mt-2 pt-2">
-                                <span>Net Revenue</span>
-                                <span class="text-green-600">{{ fmt(plReport.revenue.net_revenue) }}</span>
-                            </div>
+                <!-- The statement -->
+                <section class="rpt-panel rpt-statement">
+                    <div class="rpt-panel-head">
+                        <div>
+                            <p class="rpt-kicker">PROFIT &amp; LOSS STATEMENT</p>
+                            <h2>{{ fmtRange(plReport.period.start, plReport.period.end) }}</h2>
                         </div>
-
-                        <!-- ── COGS ─────────────────────────────────────────────── -->
-                        <div v-if="plIncludeCogs" class="px-5 py-3">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.cogs = !plCollapsed.cogs">
-                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                                    Cost of Goods Sold (COGS)
-                                </span>
-                                <ChevronDown v-if="!plCollapsed.cogs" class="h-3.5 w-3.5 text-muted-foreground" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                            <div v-show="!plCollapsed.cogs" class="mt-2 space-y-1.5">
-                                <div v-if="!plReport.cogs.has_data"
-                                    class="text-xs text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg px-3 py-2">
-                                    No cost data — set ingredient costs and product recipes to enable COGS tracking.
-                                </div>
-                                <div class="flex justify-between text-sm">
-                                    <span class="text-muted-foreground">Total COGS</span>
-                                    <span class="font-semibold text-red-500">−{{ fmt(plReport.cogs.total) }}</span>
-                                </div>
-                            </div>
-                            <div class="flex justify-between text-sm font-bold border-t mt-2 pt-2">
-                                <span>Gross Profit <span class="text-xs font-normal text-muted-foreground">({{ plReport.gross_margin }}% margin)</span></span>
-                                <span :class="plReport.gross_profit >= 0 ? 'text-green-600' : 'text-red-600'">{{ fmt(plReport.gross_profit) }}</span>
-                            </div>
-                        </div>
-
-                        <!-- ── Inventory Purchases ───────────────────────────────── -->
-                        <div v-if="(plReport.inventory_purchases?.total ?? 0) > 0"
-                            class="px-5 py-3 bg-amber-50/40 dark:bg-amber-950/10">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.inventory = !plCollapsed.inventory">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 group-hover:text-amber-900 dark:group-hover:text-amber-300 transition-colors">
-                                        Inventory Purchases ({{ plReport.inventory_purchases.count }})
-                                    </span>
-                                    <span :class="[
-                                        'text-[10px] font-semibold px-2 py-0.5 rounded-full',
-                                        plReport.inventory_purchases.included_in_expenses
-                                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-                                    ]">
-                                        {{ plReport.inventory_purchases.included_in_expenses ? 'In opex' : 'Asset — excluded' }}
-                                    </span>
-                                </div>
-                                <ChevronDown v-if="!plCollapsed.inventory" class="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                            </button>
-                            <div v-show="!plCollapsed.inventory" class="mt-2 space-y-1.5">
-                                <p class="text-[11px] text-muted-foreground leading-relaxed">
-                                    <template v-if="plReport.inventory_purchases.included_in_expenses">
-                                        COGS is OFF — restock counted as operating expense (cash-basis view).
-                                    </template>
-                                    <template v-else>
-                                        COGS is ON — restock moves Cash→Inventory (asset). Cost flows via COGS when sold.
-                                        Excluded from opex to prevent double-counting.
-                                    </template>
-                                </p>
-                                <div v-for="inv in plReport.inventory_purchases.breakdown" :key="inv.transacted_at + inv.description"
-                                    class="flex justify-between text-xs text-muted-foreground pl-2">
-                                    <span class="truncate max-w-xs">{{ inv.description }} <span class="opacity-60">— {{ inv.transacted_at?.slice(0, 10) }}</span></span>
-                                    <span class="shrink-0 ml-4 text-amber-600">
-                                        {{ plReport.inventory_purchases.included_in_expenses ? '−' : '' }}{{ fmt(inv.amount) }}
-                                    </span>
-                                </div>
-                            </div>
-                            <div class="flex justify-between text-sm font-semibold border-t border-amber-200 dark:border-amber-800 mt-2 pt-2">
-                                <span class="text-amber-700 dark:text-amber-400">Total Inventory Purchases</span>
-                                <span class="text-amber-700 dark:text-amber-400">{{ fmt(plReport.inventory_purchases.total) }}</span>
-                            </div>
-                        </div>
-
-                        <!-- ── Other Income ──────────────────────────────────────── -->
-                        <div v-if="(plReport.income_adjustments?.total ?? 0) > 0" class="px-5 py-3">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.other_income = !plCollapsed.other_income">
-                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                                    Other Income / Adjustments ({{ plReport.income_adjustments.count }})
-                                </span>
-                                <ChevronDown v-if="!plCollapsed.other_income" class="h-3.5 w-3.5 text-muted-foreground" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                            <div v-show="!plCollapsed.other_income" class="mt-2 space-y-1">
-                                <div v-for="adj in plReport.income_adjustments.breakdown" :key="adj.transacted_at + adj.description"
-                                    class="flex justify-between text-xs text-muted-foreground pl-2">
-                                    <span class="truncate max-w-xs">{{ adj.description }} <span class="opacity-60">— {{ adj.transacted_at?.slice(0, 10) }}</span></span>
-                                    <span class="shrink-0 ml-4 text-teal-600">+{{ fmt(adj.amount) }}</span>
-                                </div>
-                            </div>
-                            <div class="flex justify-between text-sm font-semibold border-t mt-2 pt-2">
-                                <span>Total Other Income</span>
-                                <span class="text-teal-600">+{{ fmt(plReport.income_adjustments.total) }}</span>
-                            </div>
-                        </div>
-
-                        <!-- ── Operating Expenses ───────────────────────────────── -->
-                        <div class="px-5 py-3">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.expenses = !plCollapsed.expenses">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                                        Operating Expenses ({{ plReport.expenses.count }})
-                                    </span>
-                                    <span v-if="plIncludeCogs" class="text-[10px] text-muted-foreground opacity-60">
-                                        COGS &amp; restock excluded
-                                    </span>
-                                </div>
-                                <ChevronDown v-if="!plCollapsed.expenses" class="h-3.5 w-3.5 text-muted-foreground" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                            <div v-show="!plCollapsed.expenses" class="mt-2 space-y-1">
-                                <template v-if="plReport.expenses.breakdown.length > 0">
-                                    <div v-for="exp in plReport.expenses.breakdown" :key="exp.transacted_at + exp.description"
-                                        class="flex justify-between text-xs text-muted-foreground pl-2">
-                                        <span class="truncate max-w-xs">{{ exp.description }} <span class="opacity-60">— {{ exp.transacted_at?.slice(0, 10) }}</span></span>
-                                        <span class="shrink-0 ml-4">−{{ fmt(exp.amount) }}</span>
-                                    </div>
+                        <small v-if="plPrev">Compared with {{ fmtRange(plPrev.period.start, plPrev.period.end) }}</small>
+                    </div>
+                    <div class="rpt-table-scroll" tabindex="0" role="region" aria-label="Profit and loss statement">
+                        <table class="rpt-pl-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Line</th>
+                                    <th scope="col" class="num">This period</th>
+                                    <th v-if="plPrev" scope="col" class="num">Previous</th>
+                                    <th v-if="plPrev" scope="col" class="num">Change</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template v-for="row in plRows" :key="row.key">
+                                    <tr :class="[`row-${row.kind}`, { 'is-open': plOpen[row.key] }]">
+                                        <th scope="row">
+                                            <button v-if="row.items?.length" class="rpt-line-toggle" :aria-expanded="!!plOpen[row.key]" @click="plOpen[row.key] = !plOpen[row.key]">
+                                                <ChevronRight :size="14" aria-hidden="true" />{{ row.label }}
+                                                <small>{{ row.items.length }}</small>
+                                            </button>
+                                            <span v-else>{{ row.label }}</span>
+                                            <small v-if="row.note" class="rpt-line-note">{{ row.note }}</small>
+                                        </th>
+                                        <td class="num" :class="amountTone(row)">{{ fmtLine(row, row.cur) }}</td>
+                                        <td v-if="plPrev" class="num rpt-muted">{{ row.prev == null ? '—' : fmtLine(row, row.prev) }}</td>
+                                        <td v-if="plPrev" class="num">
+                                            <span v-if="row.prev != null" class="rpt-delta" :class="deltaTone(row.cur - row.prev, row.higherIsBetter)">{{ deltaText(row.cur, row.prev) }}</span>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="row.items?.length && plOpen[row.key]" class="row-items">
+                                        <td :colspan="plPrev ? 4 : 2">
+                                            <ul>
+                                                <li v-for="(item, i) in row.items" :key="i">
+                                                    <span>{{ item.description }}<small>{{ item.transacted_at?.slice(0, 10) }}</small></span>
+                                                    <strong>{{ fmt(item.amount) }}</strong>
+                                                </li>
+                                            </ul>
+                                        </td>
+                                    </tr>
                                 </template>
-                                <p v-else class="text-xs text-muted-foreground pl-2">No expenses recorded for this period.</p>
-                            </div>
-                            <div class="flex justify-between text-sm font-semibold border-t mt-2 pt-2">
-                                <span>Total Expenses</span>
-                                <span class="text-red-500">−{{ fmt(plReport.expenses.total) }}</span>
-                            </div>
-                        </div>
-
-                        <!-- ── Payroll ───────────────────────────────────────────── -->
-                        <div class="px-5 py-3">
-                            <button class="w-full flex items-center justify-between py-1 group"
-                                @click="plCollapsed.payroll = !plCollapsed.payroll">
-                                <span class="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
-                                    Payroll Disbursements ({{ plReport.payroll?.count ?? 0 }})
-                                </span>
-                                <ChevronDown v-if="!plCollapsed.payroll" class="h-3.5 w-3.5 text-muted-foreground" />
-                                <ChevronRight v-else class="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                            <div v-show="!plCollapsed.payroll" class="mt-2 space-y-1">
-                                <template v-if="(plReport.payroll?.breakdown ?? []).length > 0">
-                                    <div v-for="pr in plReport.payroll.breakdown" :key="pr.transacted_at + pr.description"
-                                        class="flex justify-between text-xs text-muted-foreground pl-2">
-                                        <span class="truncate max-w-xs">{{ pr.description }} <span class="opacity-60">— {{ pr.transacted_at?.slice(0, 10) }}</span></span>
-                                        <span class="shrink-0 ml-4 text-purple-600">−{{ fmt(pr.amount) }}</span>
-                                    </div>
-                                </template>
-                                <p v-else class="text-xs text-muted-foreground pl-2">No payroll disbursements for this period.</p>
-                            </div>
-                            <div class="flex justify-between text-sm font-semibold border-t mt-2 pt-2">
-                                <span>Total Payroll</span>
-                                <span class="text-purple-600">−{{ fmt(plReport.payroll?.total ?? 0) }}</span>
-                            </div>
-                        </div>
-
-                        <!-- ── Net Profit ────────────────────────────────────────── -->
-                        <div :class="['px-5 py-5', plReport.net_profit >= 0 ? 'bg-green-50 dark:bg-green-950/20' : 'bg-red-50 dark:bg-red-950/20']">
-                            <div class="flex justify-between items-center">
-                                <div>
-                                    <p class="text-base font-black" :class="plReport.net_profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600'">
-                                        {{ plReport.net_profit >= 0 ? 'Net Profit' : 'Net Loss' }}
-                                    </p>
-                                    <p class="text-xs text-muted-foreground">Net Margin: {{ plReport.net_margin }}%</p>
-                                </div>
-                                <p class="text-2xl font-black" :class="plReport.net_profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600'">
-                                    {{ fmt(plReport.net_profit) }}
-                                </p>
-                            </div>
-                            <p class="text-[11px] text-muted-foreground mt-2">
-                                Cash basis — only <strong>paid</strong> bills and expenses are deducted. Upcoming or unpaid bills are not reflected here until they're paid.
-                            </p>
-                        </div>
+                            </tbody>
+                        </table>
                     </div>
-                </div>
+                    <p class="rpt-footnote">
+                        Cash basis: revenue counts when an order is paid, and only paid bills and expenses are deducted.
+                        <template v-if="plIncludeCogs"> Inventory purchases are stock bought, not spent. Their cost reaches profit through COGS when the food sells.</template>
+                        <template v-else> COGS is off, so inventory purchases are deducted as operating expenses when bought.</template>
+                    </p>
+                </section>
 
-                <!-- ── Completed but unpaid (excluded from profit) ─────────────── -->
-                <div v-if="(plReport.unpaid_completed?.count ?? 0) > 0"
-                    class="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/20 p-4 flex items-start gap-3">
-                    <TrendingDown class="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                    <div class="text-sm text-amber-800 dark:text-amber-300">
-                        <p class="font-semibold">
-                            {{ plReport.unpaid_completed!.count }} completed order(s) worth {{ fmt(plReport.unpaid_completed!.total) }} are not in this profit.
-                        </p>
-                        <p class="text-xs mt-0.5 text-amber-700 dark:text-amber-400">
-                            Revenue is recognised only when an order is fully paid (any tender). Record the outstanding payment to include these in profit.
-                        </p>
-                    </div>
-                </div>
-
-                <!-- ── Sales = COGS + Gross Profit stacked bar ─────────────────── -->
-                <div v-if="salesChart" class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                    <div class="p-4 border-b bg-muted/30 flex items-center gap-2">
-                        <TrendingUp class="h-4 w-4 text-orange-500" />
-                        <h2 class="font-bold text-base">Revenue Breakdown: Sales = COGS + Gross Profit</h2>
-                    </div>
-                    <div class="p-6 flex flex-col sm:flex-row items-center sm:items-end gap-8">
-
-                        <!-- Vertical stacked bar -->
-                        <div class="flex flex-col items-center gap-3 shrink-0">
-                            <div class="relative w-28 flex flex-col-reverse rounded-xl overflow-hidden shadow-lg"
-                                style="height: 260px;">
-                                <!-- COGS — bottom segment -->
-                                <div
-                                    class="relative w-full bg-red-500 transition-all duration-700 ease-out flex items-center justify-center"
-                                    :style="{ height: salesChart.cogsH + '%', minHeight: salesChart.cogsH > 0 ? '24px' : '0' }"
-                                >
-                                    <span v-if="salesChart.cogsH > 8"
-                                        class="text-white text-[10px] font-black leading-tight text-center px-1 select-none">
-                                        {{ salesChart.cogsH.toFixed(0) }}%
-                                    </span>
-                                </div>
-                                <!-- Gross Profit — top segment -->
-                                <div
-                                    class="relative w-full bg-emerald-500 transition-all duration-700 ease-out flex items-center justify-center"
-                                    :style="{ height: salesChart.grossH + '%', minHeight: salesChart.grossH > 0 ? '24px' : '0' }"
-                                >
-                                    <span v-if="salesChart.grossH > 8"
-                                        class="text-white text-[10px] font-black leading-tight text-center px-1 select-none">
-                                        {{ salesChart.grossH.toFixed(0) }}%
-                                    </span>
-                                </div>
-                            </div>
-                            <p class="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Net Revenue</p>
-                            <p class="text-sm font-black">{{ fmt(salesChart.revenue) }}</p>
-                        </div>
-
-                        <!-- Legend + breakdown table -->
-                        <div class="flex-1 min-w-0 space-y-4 w-full">
-                            <!-- Gross Profit row -->
-                            <div class="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20 p-4">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="h-3 w-3 rounded-sm bg-emerald-500 shrink-0"></div>
-                                    <span class="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Gross Profit</span>
-                                    <span class="ml-auto text-[11px] font-semibold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 rounded-full">
-                                        {{ salesChart.grossMargin }}% margin
-                                    </span>
-                                </div>
-                                <div class="flex items-baseline gap-2">
-                                    <p class="text-2xl font-black text-emerald-700 dark:text-emerald-400">{{ fmt(salesChart.grossProfit) }}</p>
-                                    <p class="text-xs text-muted-foreground">= Revenue − COGS</p>
-                                </div>
-                                <!-- Gross Profit bar (horizontal reference) -->
-                                <div class="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
-                                    <div class="h-full bg-emerald-500 rounded-full transition-all duration-700"
-                                        :style="{ width: salesChart.grossH + '%' }"></div>
-                                </div>
-                                <p class="text-[11px] text-muted-foreground mt-1">{{ salesChart.grossH.toFixed(1) }}% of net revenue</p>
-                            </div>
-
-                            <!-- COGS row -->
-                            <div class="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20 p-4">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="h-3 w-3 rounded-sm bg-red-500 shrink-0"></div>
-                                    <span class="text-xs font-bold uppercase tracking-wider text-red-700 dark:text-red-400">COGS</span>
-                                    <span class="text-[11px] text-muted-foreground ml-1">Cost of Goods Sold</span>
-                                </div>
-                                <div class="flex items-baseline gap-2">
-                                    <p class="text-2xl font-black text-red-600">{{ fmt(salesChart.cogs) }}</p>
-                                    <p class="text-xs text-muted-foreground">ingredient cost per order</p>
-                                </div>
-                                <!-- COGS bar (horizontal reference) -->
-                                <div class="mt-3 h-1.5 rounded-full bg-muted overflow-hidden">
-                                    <div class="h-full bg-red-500 rounded-full transition-all duration-700"
-                                        :style="{ width: salesChart.cogsH + '%' }"></div>
-                                </div>
-                                <p class="text-[11px] text-muted-foreground mt-1">{{ salesChart.cogsH.toFixed(1) }}% of net revenue</p>
-                            </div>
-
-                            <!-- Formula row -->
-                            <div class="rounded-xl border border-border bg-muted/30 p-4 text-center">
-                                <p class="text-xs text-muted-foreground font-mono">
-                                    <span class="text-foreground font-bold">{{ fmt(salesChart.revenue) }}</span>
-                                    <span class="mx-2 opacity-50">=</span>
-                                    <span class="text-red-600 font-bold">{{ fmt(salesChart.cogs) }}</span>
-                                    <span class="mx-2 text-muted-foreground">+</span>
-                                    <span class="text-emerald-600 font-bold">{{ fmt(salesChart.grossProfit) }}</span>
-                                </p>
-                                <p class="text-[11px] text-muted-foreground mt-1">Net Revenue = COGS + Gross Profit</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Summary cards -->
-                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                    <div class="rounded-xl border bg-card p-4 shadow-sm">
-                        <p class="text-xs text-muted-foreground mb-1">Gross Sales</p>
-                        <p class="text-xl font-black">{{ fmt(plReport.revenue.gross_sales) }}</p>
-                    </div>
-                    <div v-if="plIncludeCogs" class="rounded-xl border bg-card p-4 shadow-sm">
-                        <p class="text-xs text-muted-foreground mb-1">COGS</p>
-                        <p class="text-xl font-black text-red-500">{{ fmt(plReport.cogs.total) }}</p>
-                    </div>
-                    <div class="rounded-xl border bg-card p-4 shadow-sm">
-                        <p class="text-xs text-muted-foreground mb-1">Other Income</p>
-                        <p class="text-xl font-black text-teal-600">{{ fmt(plReport.income_adjustments?.total ?? 0) }}</p>
-                    </div>
-                    <div class="rounded-xl border bg-card p-4 shadow-sm">
-                        <p class="text-xs text-muted-foreground mb-1">Expenses</p>
-                        <p class="text-xl font-black text-red-500">{{ fmt(plReport.expenses.total) }}</p>
-                    </div>
-                    <div class="rounded-xl border bg-card p-4 shadow-sm">
-                        <p class="text-xs text-muted-foreground mb-1">Payroll</p>
-                        <p class="text-xl font-black text-purple-600">{{ fmt(plReport.payroll?.total ?? 0) }}</p>
-                    </div>
-                    <div :class="['rounded-xl border p-4 shadow-sm', plReport.net_profit >= 0 ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800']">
-                        <p class="text-xs text-muted-foreground mb-1">Net Profit</p>
-                        <p class="text-xl font-black" :class="plReport.net_profit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600'">{{ fmt(plReport.net_profit) }}</p>
+                <div v-if="(plReport.unpaid_completed?.count ?? 0) > 0" class="rpt-callout" role="status">
+                    <TrendingDown :size="18" aria-hidden="true" />
+                    <div>
+                        <strong>{{ plReport.unpaid_completed!.count }} completed order{{ plReport.unpaid_completed!.count !== 1 ? 's' : '' }} worth {{ fmt(plReport.unpaid_completed!.total) }} are not in this profit.</strong>
+                        <p>Revenue is recognised only when an order is fully paid. Record the outstanding payments to include them.</p>
                     </div>
                 </div>
             </div>
-            <div v-else-if="!loading" class="rounded-xl border bg-card p-10 text-center shadow-sm text-muted-foreground text-sm">
-                Select a date range and click <strong>Generate</strong> to load the P&amp;L statement.
+            <div v-else-if="!loading" class="rpt-empty">
+                <Scale :size="28" aria-hidden="true" />
+                <h3>Pick a period to build the statement.</h3>
+                <p>Choose a quick period above, or set dates and select Update report.</p>
             </div>
         </template>
 
@@ -2336,11 +2306,11 @@ onMounted(async () => {
                     <p class="text-xl font-black">{{ fmt(monthlySummary * 12) }}</p>
                     <p class="text-xs text-muted-foreground mt-0.5">est. per year</p>
                 </div>
-                <div :class="['rounded-xl border p-4 shadow-sm', overdueBills.length > 0 ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800' : 'bg-card']">
+                <div :class="['rounded-xl border p-4 shadow-sm', overdueBills.length > 0 ? 'bg-red-50 border-red-200' : 'bg-card']">
                     <p class="text-xs text-muted-foreground mb-1">Overdue</p>
                     <p class="text-3xl font-black" :class="overdueBills.length > 0 ? 'text-red-600' : ''">{{ overdueBills.length }}</p>
                 </div>
-                <div :class="['rounded-xl border p-4 shadow-sm', dueSoonBills.length > 0 ? 'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800' : 'bg-card']">
+                <div :class="['rounded-xl border p-4 shadow-sm', dueSoonBills.length > 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-card']">
                     <p class="text-xs text-muted-foreground mb-1">Due Soon</p>
                     <p class="text-3xl font-black" :class="dueSoonBills.length > 0 ? 'text-yellow-600' : ''">{{ dueSoonBills.length }}</p>
                 </div>
@@ -2368,7 +2338,7 @@ onMounted(async () => {
                         </button>
                         <button @click="billForm.is_installment = true"
                             :class="['flex-1 rounded-lg border-2 py-2 text-sm font-semibold transition',
-                                billForm.is_installment ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400' : 'border-border text-muted-foreground hover:bg-muted']">
+                                billForm.is_installment ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-border text-muted-foreground hover:bg-muted']">
                             Payment Plan (Installments)
                         </button>
                     </div>
@@ -2483,11 +2453,11 @@ onMounted(async () => {
                                             {{ billPaying === bill.id ? '…' : 'Pay' }}
                                         </button>
                                         <button @click="openBillForm(bill)"
-                                            class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition">
+                                            class="rounded p-1 text-muted-foreground hover:text-blue-600 hover:bg-blue-50 transition">
                                             <Pencil class="h-3.5 w-3.5" />
                                         </button>
                                         <button @click="deleteBill(bill)" :disabled="billDeleting === bill.id"
-                                            class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition">
+                                            class="rounded p-1 text-muted-foreground hover:text-red-600 hover:bg-red-50 disabled:opacity-40 transition">
                                             <Trash2 class="h-3.5 w-3.5" />
                                         </button>
                                     </div>
@@ -2638,11 +2608,11 @@ onMounted(async () => {
                         <p class="text-xs text-muted-foreground mb-1">Total Orders</p>
                         <p class="text-3xl font-black">{{ dailyReport.total_orders }}</p>
                     </div>
-                    <div class="rounded-lg bg-green-50 dark:bg-green-950/20 p-4">
+                    <div class="rounded-lg bg-green-50 p-4">
                         <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue</p>
                         <p class="text-2xl font-black text-green-600">{{ fmt(dailyReport.total_sales) }}</p>
                     </div>
-                    <div class="rounded-lg bg-yellow-50 dark:bg-yellow-950/20 p-4">
+                    <div class="rounded-lg bg-yellow-50 p-4">
                         <p class="text-xs text-muted-foreground mb-1">Discounts</p>
                         <p class="text-2xl font-black text-yellow-600">{{ fmt(dailyReport.total_discount) }}</p>
                     </div>
@@ -2828,11 +2798,11 @@ onMounted(async () => {
                         <p class="text-xs text-muted-foreground mb-1">Total Orders</p>
                         <p class="text-3xl font-black">{{ monthlyReport.total_orders }}</p>
                     </div>
-                    <div class="rounded-lg bg-green-50 dark:bg-green-950/20 p-4">
+                    <div class="rounded-lg bg-green-50 p-4">
                         <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue</p>
                         <p class="text-2xl font-black text-green-600">{{ fmt(monthlyReport.total_sales) }}</p>
                     </div>
-                    <div class="rounded-lg bg-yellow-50 dark:bg-yellow-950/20 p-4">
+                    <div class="rounded-lg bg-yellow-50 p-4">
                         <p class="text-xs text-muted-foreground mb-1">Discounts</p>
                         <p class="text-2xl font-black text-yellow-600">{{ fmt(monthlyReport.total_discount) }}</p>
                     </div>
@@ -2951,9 +2921,9 @@ onMounted(async () => {
                             <div class="flex items-start gap-3">
                                 <!-- Rank badge -->
                                 <div :class="['shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black',
-                                    i === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                                    i === 1 ? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' :
-                                    i === 2 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                                    i === 0 ? 'bg-amber-100 text-amber-700' :
+                                    i === 1 ? 'bg-zinc-100 text-zinc-600' :
+                                    i === 2 ? 'bg-orange-100 text-orange-700' :
                                     'bg-muted text-muted-foreground']">
                                     {{ i + 1 }}
                                 </div>
@@ -2989,7 +2959,7 @@ onMounted(async () => {
                                 </div>
                                 <div class="relative pt-4" @mouseleave="prodChartTooltip = null">
                                     <div class="absolute top-0 right-0 text-[9px] text-muted-foreground tabular-nums leading-none">{{ fmtShort(productLineData[item.product_id]?.max ?? 0) }}</div>
-                                    <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500 dark:text-emerald-400" preserveAspectRatio="none" style="cursor:crosshair"
+                                    <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500" preserveAspectRatio="none" style="cursor:crosshair"
                                          @mousemove="onProdChartHover($event, item.product_id)">
                                         <defs>
                                             <linearGradient :id="`pg-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
@@ -3068,7 +3038,7 @@ onMounted(async () => {
                                             </div>
                                             <div class="relative pt-4" @mouseleave="prodChartTooltip = null">
                                                 <div class="absolute top-0 right-0 text-[9px] text-muted-foreground tabular-nums leading-none">{{ fmtShort(productLineData[item.product_id]?.max ?? 0) }}</div>
-                                                <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500 dark:text-emerald-400" preserveAspectRatio="none" style="cursor:crosshair"
+                                                <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500" preserveAspectRatio="none" style="cursor:crosshair"
                                                      @mousemove="onProdChartHover($event, item.product_id)">
                                                     <defs>
                                                         <linearGradient :id="`pgd-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
@@ -3108,3 +3078,658 @@ onMounted(async () => {
         </template>
     </div>
 </template>
+
+<style scoped>
+/* Welcome-page palette. The tokens also restyle every Tailwind utility on this page and
+   inside the Trends and Serving time tabs, which inherit them. Stays light like the dashboard. */
+.rpt-theme {
+    --background: #fffcf6;
+    --foreground: #24231e;
+    --card: #fffcf6;
+    --card-foreground: #24231e;
+    --popover: #fffcf6;
+    --popover-foreground: #24231e;
+    --primary: #ef5b2a;
+    --primary-foreground: #fff;
+    --secondary: #efeadf;
+    --secondary-foreground: #24231e;
+    --muted: #efeadf;
+    --muted-foreground: #68665f;
+    --accent: #efeadf;
+    --accent-foreground: #24231e;
+    --destructive: #c0391b;
+    --destructive-foreground: #fff;
+    --border: #ded7cb;
+    --input: #d4cdbf;
+    --ring: #c3441c;
+    --ink: #24231e;
+    --cream: #f6f2e9;
+    --paper: #fffcf6;
+    --orange: #ef5b2a;
+    --orange-deep: #c3441c;
+    --line-soft: #ece5da;
+    --in: #3f7a33;
+    --out: #c0391b;
+    color: var(--ink);
+    color-scheme: light;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.rpt-page {
+    min-height: 100%;
+    padding: 32px clamp(16px, 3vw, 44px) 48px;
+    background: var(--cream);
+}
+.rpt-theme :focus-visible {
+    outline: 2px solid var(--orange-deep);
+    outline-offset: 2px;
+}
+.rpt-theme button:not(:disabled) {
+    cursor: pointer;
+}
+.is-in {
+    color: var(--in);
+}
+.is-out {
+    color: var(--out);
+}
+
+/* Heading */
+.rpt-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 18px 24px;
+}
+.rpt-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 2px;
+}
+.rpt-eyebrow > span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--orange);
+}
+.rpt-heading h1 {
+    margin: 14px 0 10px;
+    font-family: Impact, 'Arial Narrow', sans-serif;
+    font-size: clamp(40px, 5.4vw, 72px);
+    font-weight: 900;
+    line-height: 0.92;
+    letter-spacing: -1px;
+}
+.rpt-heading h1 span {
+    color: var(--orange);
+}
+.rpt-intro {
+    max-width: 460px;
+    min-height: 1.7em;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #68665f;
+}
+.rpt-heading-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* Buttons */
+.rpt-primary-btn,
+.rpt-ghost-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 4px;
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+.rpt-primary-btn {
+    background: var(--orange);
+    color: #fff;
+}
+.rpt-primary-btn:hover:not(:disabled) {
+    background: var(--orange-deep);
+}
+.rpt-ghost-btn {
+    border: 1px solid #d4cdbf;
+    background: var(--paper);
+    color: var(--ink);
+}
+.rpt-ghost-btn:hover:not(:disabled) {
+    background: #efeadf;
+}
+.rpt-primary-btn:disabled,
+.rpt-ghost-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Navigation */
+.rpt-nav {
+    display: flex;
+    gap: 6px 22px;
+    overflow-x: auto;
+    padding: 12px 16px;
+    border-radius: 6px;
+    background: var(--ink);
+    scrollbar-width: none;
+}
+.rpt-nav-group {
+    flex-shrink: 0;
+}
+.rpt-nav-group > p {
+    margin: 0 0 7px 2px;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: #9d988b;
+}
+.rpt-nav-group > div {
+    display: flex;
+    gap: 4px;
+}
+.rpt-nav-group + .rpt-nav-group {
+    padding-left: 22px;
+    border-left: 1px solid #ffffff1f;
+}
+.rpt-nav button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #d8d3c7;
+    white-space: nowrap;
+    transition:
+        background 0.15s,
+        color 0.15s;
+}
+.rpt-nav button:hover {
+    background: #ffffff14;
+    color: #fff;
+}
+.rpt-nav button[aria-selected='true'] {
+    background: var(--orange);
+    color: #fff;
+}
+
+/* Filters */
+.rpt-filters {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    border: 1px solid #ded7cb;
+    border-radius: 6px;
+    background: var(--paper);
+}
+.rpt-presets {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.rpt-presets button {
+    flex-shrink: 0;
+    border: 1px solid #d4cdbf;
+    border-radius: 20px;
+    padding: 7px 14px;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    color: #575144;
+}
+.rpt-presets button:hover {
+    background: #efeadf;
+}
+.rpt-presets button[aria-pressed='true'] {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--cream);
+}
+.rpt-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding-bottom: 4px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.rpt-switch small {
+    display: block;
+    font-size: 10px;
+    font-weight: 400;
+    color: #777268;
+}
+.rpt-switch input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.rpt-switch-track {
+    position: relative;
+    flex-shrink: 0;
+    width: 34px;
+    height: 20px;
+    border-radius: 20px;
+    background: #d4cdbf;
+    transition: background 0.15s;
+}
+.rpt-switch-track span {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.15s;
+}
+.rpt-switch input:checked + .rpt-switch-track {
+    background: var(--orange);
+}
+.rpt-switch input:checked + .rpt-switch-track span {
+    transform: translateX(14px);
+}
+.rpt-switch input:focus-visible + .rpt-switch-track {
+    outline: 2px solid var(--orange-deep);
+    outline-offset: 2px;
+}
+
+/* P&L */
+.rpt-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.rpt-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+.rpt-kpi {
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid #ded7cb;
+    border-radius: 6px;
+    background: var(--paper);
+}
+.rpt-kpi p {
+    font-size: 11px;
+    font-weight: 700;
+    color: #68665f;
+}
+.rpt-kpi strong {
+    display: block;
+    margin: 10px 0 5px;
+    font-size: clamp(20px, 2.2vw, 28px);
+    letter-spacing: -1px;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.rpt-kpi > span {
+    display: block;
+    font-size: 10px;
+    line-height: 1.6;
+    color: #777268;
+}
+.rpt-kpi.is-surplus {
+    border-color: #b9cfae;
+    background: #eef4ea;
+}
+.rpt-kpi.is-surplus strong {
+    color: var(--in);
+}
+.rpt-kpi.is-deficit {
+    border-color: #edc4b7;
+    background: #fbe9e4;
+}
+.rpt-kpi.is-deficit strong {
+    color: var(--out);
+}
+.rpt-kpi .rpt-delta {
+    margin-top: 6px;
+    font-size: 11px;
+}
+.rpt-delta {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.rpt-delta.is-good {
+    color: var(--in);
+}
+.rpt-delta.is-bad {
+    color: var(--out);
+}
+.rpt-delta.is-flat {
+    color: #93897b;
+    font-weight: 700;
+}
+.rpt-panel {
+    min-width: 0;
+    padding: 20px;
+    border: 1px solid #ded7cb;
+    border-radius: 6px;
+    background: var(--paper);
+}
+.rpt-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin-bottom: 16px;
+}
+.rpt-panel-head h2 {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+}
+.rpt-panel-head > small {
+    padding-top: 4px;
+    font-size: 10px;
+    color: #777268;
+}
+.rpt-kicker {
+    margin-bottom: 5px;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    color: var(--orange-deep);
+}
+
+/* Where each peso went */
+.rpt-spend-bar {
+    display: flex;
+    gap: 3px;
+    height: 38px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.rpt-spend-seg {
+    display: grid;
+    place-items: center;
+    flex-basis: 0;
+    min-width: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #fff;
+    transition:
+        filter 0.15s,
+        transform 0.15s;
+}
+.rpt-spend-seg:hover,
+.rpt-spend-seg.is-active {
+    filter: brightness(1.08);
+    transform: scaleY(1.06);
+}
+.seg-cogs {
+    background: #c3441c;
+}
+.seg-expenses {
+    background: #ef5b2a;
+}
+.seg-payroll {
+    background: #d8962b;
+}
+.seg-payouts {
+    background: #7d6a55;
+}
+.seg-profit {
+    background: #5f8f4e;
+}
+.rpt-spend-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+}
+.rpt-spend-legend button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid #ece5da;
+    border-radius: 20px;
+    padding: 5px 10px;
+    background: #fff;
+    font-size: 11px;
+    color: #575144;
+}
+.rpt-spend-legend button.is-active {
+    border-color: var(--ink);
+}
+.rpt-spend-legend i {
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+}
+.rpt-spend-legend strong {
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+.rpt-spend-note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #68665f;
+}
+
+/* Statement */
+.rpt-table-scroll {
+    overflow-x: auto;
+}
+.rpt-pl-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.rpt-pl-table thead th {
+    padding: 0 12px 10px 0;
+    text-align: left;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #777268;
+}
+.rpt-pl-table tbody th,
+.rpt-pl-table tbody td {
+    padding: 11px 12px 11px 0;
+    border-top: 1px solid var(--line-soft);
+    text-align: left;
+    font-weight: 400;
+    vertical-align: middle;
+}
+.rpt-pl-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.rpt-muted {
+    color: #93897b;
+}
+.rpt-line-note {
+    display: block;
+    margin-top: 2px;
+    font-size: 10px;
+    color: #93897b;
+}
+.rpt-pl-table tr.row-less th {
+    padding-left: 16px;
+}
+.rpt-pl-table tr.row-subtotal th,
+.rpt-pl-table tr.row-subtotal td {
+    border-top: 1px solid #d4cdbf;
+    font-weight: 800;
+}
+.rpt-pl-table tr.row-total th,
+.rpt-pl-table tr.row-total td {
+    border-top: 2px solid var(--ink);
+    background: #f6f2e9;
+    font-size: 15px;
+    font-weight: 800;
+}
+.rpt-pl-table tr.row-memo th,
+.rpt-pl-table tr.row-memo td {
+    border-top: 1px dashed #d4cdbf;
+    color: #7b5815;
+    font-style: italic;
+}
+.rpt-line-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font: inherit;
+    color: inherit;
+}
+.rpt-line-toggle svg {
+    color: #93897b;
+    transition: transform 0.15s;
+}
+.rpt-line-toggle[aria-expanded='true'] svg {
+    transform: rotate(90deg);
+}
+.rpt-line-toggle small {
+    border-radius: 20px;
+    padding: 0 6px;
+    background: #efeadf;
+    font-size: 10px;
+    font-style: normal;
+    color: #68665f;
+}
+.rpt-line-toggle:hover {
+    color: var(--orange-deep);
+}
+.rpt-pl-table tr.row-items td {
+    padding: 0 0 10px 32px;
+    border-top: 0;
+}
+.rpt-pl-table tr.row-items ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.rpt-pl-table tr.row-items li {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 6px 12px 6px 10px;
+    border-left: 2px solid #ece5da;
+    font-size: 12px;
+    color: #68665f;
+}
+.rpt-pl-table tr.row-items li small {
+    margin-left: 8px;
+    font-size: 10px;
+    color: #aaa294;
+}
+.rpt-pl-table tr.row-items li strong {
+    font-weight: 700;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+.rpt-footnote {
+    margin-top: 14px;
+    font-size: 11px;
+    line-height: 1.7;
+    color: #777268;
+}
+.rpt-callout {
+    display: flex;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid #e6d09b;
+    border-radius: 6px;
+    background: #fbf4e2;
+    color: #7b5815;
+}
+.rpt-callout strong {
+    display: block;
+    font-size: 13px;
+    color: var(--ink);
+}
+.rpt-callout p {
+    margin-top: 3px;
+    font-size: 12px;
+}
+.rpt-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 40px 16px;
+    border: 1px dashed #d4cdbf;
+    border-radius: 6px;
+    background: var(--paper);
+    text-align: center;
+    color: #777268;
+}
+.rpt-empty > svg {
+    color: var(--orange);
+}
+.rpt-empty h3 {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--ink);
+}
+.rpt-empty p {
+    font-size: 12px;
+}
+
+@media (max-width: 640px) {
+    .rpt-page {
+        padding: 24px 16px 40px;
+    }
+    .rpt-heading-actions {
+        width: 100%;
+    }
+    .rpt-heading-actions > button {
+        flex: 1;
+    }
+    .rpt-nav {
+        padding: 10px 12px;
+    }
+    .rpt-panel {
+        padding: 16px;
+    }
+    .rpt-pl-table {
+        font-size: 12px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .rpt-spend-seg,
+    .rpt-line-toggle svg {
+        transition: none;
+    }
+    .rpt-spend-seg:hover,
+    .rpt-spend-seg.is-active {
+        transform: none;
+    }
+}
+@media print {
+    .rpt-nav,
+    .rpt-filters,
+    .rpt-heading-actions {
+        display: none;
+    }
+    .rpt-page {
+        padding: 0;
+        background: #fff;
+    }
+}
+</style>

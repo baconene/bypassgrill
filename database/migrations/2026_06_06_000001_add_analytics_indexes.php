@@ -35,12 +35,7 @@ return new class extends Migration
 
     private function indexExists(string $table, string $index): bool
     {
-        $conn = Schema::getConnection();
-        $db   = $conn->getDatabaseName();
-
-        return (bool) $conn->selectOne(
-            'SELECT 1 FROM information_schema.statistics WHERE table_schema = ? AND table_name = ? AND index_name = ? LIMIT 1',
-            [$db, $table, $index]
-        );
+        // Driver-agnostic, so the migration also runs on the SQLite test database.
+        return Schema::hasIndex($table, $index);
     }
 };

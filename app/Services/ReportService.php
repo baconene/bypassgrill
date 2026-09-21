@@ -7,7 +7,23 @@ use Carbon\Carbon;
 
 class ReportService
 {
-    public function getDailySalesReport(Carbon $date = null): array
+    /**
+     * Expense descriptions written by the inventory code when stock is bought: stock in,
+     * a new item's starting stock, and an upward count adjustment. With COGS on, their
+     * cost reaches profit through COGS when sold, so they are purchases, not opex.
+     */
+    public const INVENTORY_PURCHASE_PATTERNS = ['Inventory Stock In%', 'Initial stock:%', 'Inventory Adjustment:%'];
+
+    public static function whereInventoryPurchase($query)
+    {
+        foreach (self::INVENTORY_PURCHASE_PATTERNS as $pattern) {
+            $query->orWhere('description', 'like', $pattern);
+        }
+
+        return $query;
+    }
+
+    public function getDailySalesReport(?Carbon $date = null): array
     {
         $date ??= Carbon::today();
 
@@ -49,7 +65,7 @@ class ReportService
         ];
     }
 
-    public function getProductSalesReport(Carbon $startDate = null, Carbon $endDate = null)
+    public function getProductSalesReport(?Carbon $startDate = null, ?Carbon $endDate = null)
     {
         $startDate ??= Carbon::now()->startOfMonth();
         $endDate ??= Carbon::now()->endOfMonth();
@@ -117,7 +133,7 @@ class ReportService
             ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()]);
 
         if ($includeCogs) {
-            $expenseBase->where('description', 'not like', 'Inventory Stock In%');
+            $expenseBase->whereNot(fn ($q) => self::whereInventoryPurchase($q));
         }
 
         $expenseRows   = (clone $expenseBase)->selectRaw('COALESCE(SUM(amount), 0) as total, COUNT(*) as count')->first();
@@ -138,7 +154,7 @@ class ReportService
         // (Cash → Inventory) that the system neutralises; their cost reappears as
         // COGS when the goods are sold. When COGS is OFF they appear inside opex.
         $invPurchaseRows = \App\Models\FinancialTransaction::where('type', 'expense')
-            ->where('description', 'like', 'Inventory Stock In%')
+            ->where(fn ($q) => self::whereInventoryPurchase($q))
             ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
             ->selectRaw('COALESCE(SUM(amount), 0) as total, COUNT(*) as count')
             ->first();
@@ -146,7 +162,7 @@ class ReportService
         $totalInvPurchases = (float) ($invPurchaseRows->total ?? 0);
 
         $invPurchaseBreakdown = \App\Models\FinancialTransaction::where('type', 'expense')
-            ->where('description', 'like', 'Inventory Stock In%')
+            ->where(fn ($q) => self::whereInventoryPurchase($q))
             ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
             ->orderByDesc('transacted_at')
             ->get(['description', 'amount', 'transacted_at'])

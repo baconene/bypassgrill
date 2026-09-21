@@ -57,6 +57,21 @@ class PaymentService {
             ]);
             $payment->update(['status' => PaymentStatus::REFUNDED->value]);
             $payment->order->update(['payment_status' => 'refunded']);
+
+            // Reverse the money in the ledger: a negative payment in the same tender, so
+            // revenue, running balances and deposit snapshots all drop by the refund.
+            FinancialTransaction::create([
+                'type'              => 'payment',
+                'amount'            => -abs((float) $refundData['amount']),
+                'description'       => "Refund for Order #{$payment->order_id}"
+                    .(! empty($refundData['reason']) ? ": {$refundData['reason']}" : ''),
+                'order_id'          => $payment->order_id,
+                'payment_id'        => $payment->id,
+                'payment_tender_id' => $payment->payment_tender_id,
+                'user_id'           => auth()->id(),
+                'transacted_at'     => now(),
+            ]);
+
             return $refund;
         });
     }

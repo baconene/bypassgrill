@@ -162,6 +162,8 @@ class ReportController extends Controller
              SUM(CASE WHEN type IN ('expense','payroll')
                       AND description NOT LIKE 'COGS:%'
                       AND description NOT LIKE 'Inventory Stock In%'
+                      AND description NOT LIKE 'Initial stock:%'
+                      AND description NOT LIKE 'Inventory Adjustment:%'
                  THEN amount ELSE 0 END) as expense"
         )
             ->where('type', '!=', 'order')
@@ -199,6 +201,8 @@ class ReportController extends Controller
              SUM(CASE WHEN type IN ('expense','payroll')
                       AND description NOT LIKE 'COGS:%'
                       AND description NOT LIKE 'Inventory Stock In%'
+                      AND description NOT LIKE 'Initial stock:%'
+                      AND description NOT LIKE 'Inventory Adjustment:%'
                  THEN amount ELSE 0 END) as expense"
         )
             ->where('type', '!=', 'order')

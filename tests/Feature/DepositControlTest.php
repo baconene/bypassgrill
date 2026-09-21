@@ -39,11 +39,14 @@ class DepositControlTest extends TestCase
         $cash = PaymentTender::create(['name' => 'Cash']);
         $gcash = PaymentTender::create(['name' => 'GCash']);
         $prior = $this->transaction($user, $cash, 'payment', 1000, now()->subDay()->toDateTimeString());
-        $this->actingAs($user)->postJson('/api/v1/deposit-controls')->assertCreated()
+        $this->actingAs($user)->postJson('/api/v1/deposit-controls')->assertUnprocessable()
+            ->assertJsonValidationErrors('opening_cash');
+        $this->postJson('/api/v1/deposit-controls', ['opening_cash' => 250.5])->assertCreated()
             ->assertJsonPath('opening_snapshot.running_balance', 1000)
-            ->assertJsonPath('opening_snapshot.net_balance', 0);
+            ->assertJsonPath('opening_snapshot.net_balance', 0)
+            ->assertJsonPath('opening_snapshot.opening_cash', 250.5);
         $shift = DepositControl::firstOrFail();
-        $this->postJson('/api/v1/deposit-controls')->assertConflict();
+        $this->postJson('/api/v1/deposit-controls', ['opening_cash' => 0])->assertConflict();
         $this->travel(8)->hours();
         $this->transaction($user, $cash, 'payment', 500);
         $this->transaction($user, $gcash, 'payment', 200);
@@ -72,7 +75,7 @@ class DepositControlTest extends TestCase
             ->assertJsonPath('reconciliation.overall_variance', -5)
             ->assertJsonPath('reconciliation.shift_net', 525);
         $this->postJson("/api/v1/deposit-controls/{$shift->id}/reconcile", $payload)->assertConflict();
-        $this->postJson('/api/v1/deposit-controls')->assertCreated();
+        $this->postJson('/api/v1/deposit-controls', ['opening_cash' => 0])->assertCreated();
     }
 
     public function test_permissions_sequence_and_incomplete_counts_are_rejected(): void
@@ -80,7 +83,7 @@ class DepositControlTest extends TestCase
         $owner = $this->cashier();
         $other = $this->cashier();
         $cash = PaymentTender::create(['name' => 'Cash']);
-        $this->actingAs($owner)->postJson('/api/v1/deposit-controls')->assertCreated();
+        $this->actingAs($owner)->postJson('/api/v1/deposit-controls', ['opening_cash' => 0])->assertCreated();
         $id = DepositControl::firstOrFail()->id;
         $payload = ['drawer_cash' => 0, 'shift_gcash' => 0, 'lockbox_total' => 0, 'total_gcash' => 0];
         $this->postJson("/api/v1/deposit-controls/$id/reconcile", $payload)->assertConflict();
@@ -99,7 +102,7 @@ class DepositControlTest extends TestCase
         Role::findOrCreate('auditor', 'web');
         $auditor = User::factory()->create()->assignRole('auditor');
         $this->actingAs($auditor)->getJson('/api/v1/deposit-controls')->assertOk();
-        $this->postJson('/api/v1/deposit-controls')->assertForbidden();
+        $this->postJson('/api/v1/deposit-controls', ['opening_cash' => 0])->assertForbidden();
         $this->actingAs(User::factory()->create())->getJson('/api/v1/deposit-controls')->assertForbidden();
     }
 
@@ -109,7 +112,7 @@ class DepositControlTest extends TestCase
         $user = $this->cashier();
         $cash = PaymentTender::create(['name' => 'Cash', 'is_active' => false]);
         $this->transaction($user, $cash, 'payment', 100.25);
-        $this->actingAs($user)->postJson('/api/v1/deposit-controls')->assertCreated();
+        $this->actingAs($user)->postJson('/api/v1/deposit-controls', ['opening_cash' => 0])->assertCreated();
         $id = DepositControl::firstOrFail()->id;
         $this->travel(2)->hours();
         $this->transaction($user, $cash, 'payment', 50.15);
@@ -128,7 +131,7 @@ class DepositControlTest extends TestCase
         $user = $this->cashier();
         $cash = PaymentTender::create(['name' => 'Cash']);
         $entry = $this->transaction($user, $cash, 'payment', 100);
-        $this->actingAs($user)->postJson('/api/v1/deposit-controls')->assertCreated();
+        $this->actingAs($user)->postJson('/api/v1/deposit-controls', ['opening_cash' => 0])->assertCreated();
         $current = DepositControl::firstOrFail();
         $legacy = $current->replicate();
         $legacy->active_slot = null;
