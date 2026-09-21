@@ -1,92 +1,179 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Link, usePage } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3';
 import {
-    LayoutGrid, ShoppingCart, ChefHat, Package, BarChart3, Settings, UtensilsCrossed, Users,
-    DollarSign, CalendarDays, Archive, PieChart, Database, BookOpen, Map,
-} from 'lucide-vue-next'
-import AppLogo from '@/components/AppLogo.vue'
-import NavFooter from '@/components/NavFooter.vue'
-import NavMain from '@/components/NavMain.vue'
-import NavUser from '@/components/NavUser.vue'
+    LayoutGrid,
+    ShoppingCart,
+    ChefHat,
+    Package,
+    BarChart3,
+    Settings,
+    UtensilsCrossed,
+    Users,
+    DollarSign,
+    CalendarDays,
+    Archive,
+    PieChart,
+    Database,
+    BookOpen,
+    Map,
+} from 'lucide-vue-next';
+import { computed } from 'vue';
+import AppLogo from '@/components/AppLogo.vue';
+import NavFooter from '@/components/NavFooter.vue';
+import NavMain from '@/components/NavMain.vue';
+import NavUser from '@/components/NavUser.vue';
 import {
-    Sidebar, SidebarContent, SidebarFooter, SidebarHeader,
-    SidebarMenu, SidebarMenuButton, SidebarMenuItem,
-} from '@/components/ui/sidebar'
-import { dashboard } from '@/routes'
-import type { NavItem } from '@/types'
+    Sidebar,
+    SidebarContent,
+    SidebarFooter,
+    SidebarHeader,
+    SidebarMenu,
+    SidebarMenuButton,
+    SidebarMenuItem,
+    SidebarTrigger,
+} from '@/components/ui/sidebar';
+import type { NavItem } from '@/types';
+import type { Auth } from '@/types/auth';
+import { dashboard } from '@/routes';
 
-const page = usePage()
-const roles = computed<string[]>(() => page.props.auth?.roles ?? [])
+const page = usePage<{ auth: Auth & { roles: string[] } }>();
+const roles = computed<string[]>(() => page.props.auth?.roles ?? []);
 
-const hasRole = (...r: string[]) => r.some((role) => roles.value.includes(role))
+const hasRole = (...r: string[]) =>
+    r.some((role) => roles.value.includes(role));
 
 const mainNavItems = computed<NavItem[]>(() => {
     const items: NavItem[] = [
         { title: 'Dashboard', href: dashboard().url, icon: LayoutGrid },
-    ]
+    ];
 
     if (hasRole('cashier', 'admin')) {
-        items.push({ title: 'Point of Sale', href: '/pos', icon: ShoppingCart })
+        items.push({
+            title: 'Point of Sale',
+            href: '/pos',
+            icon: ShoppingCart,
+        });
     }
 
     if (hasRole('cashier', 'admin', 'auditor')) {
-        items.push({ title: 'Deposit Control', href: '/deposit-control', icon: DollarSign })
+        items.push({
+            title: 'Deposit Control',
+            href: '/deposit-control',
+            icon: DollarSign,
+        });
     }
 
     if (hasRole('cashier', 'kitchen', 'auditor', 'admin')) {
-        items.push({ title: 'Parcels', href: '/parcels', icon: Archive })
+        items.push({ title: 'Parcels', href: '/parcels', icon: Archive });
     }
 
     if (hasRole('kitchen', 'admin')) {
-        items.push({ title: 'Kitchen Monitor', href: '/kitchen', icon: ChefHat })
+        items.push({
+            title: 'Kitchen Monitor',
+            href: '/kitchen',
+            icon: ChefHat,
+        });
     }
 
     if (hasRole('auditor', 'admin')) {
-        items.push({ title: 'Inventory', href: '/inventory', icon: Package })
-        items.push({ title: 'Financial', href: '/financial', icon: DollarSign })
-        items.push({ title: 'Bills', href: '/bills', icon: CalendarDays })
-        items.push({ title: 'Reports', href: '/reports', icon: BarChart3 })
+        items.push({ title: 'Inventory', href: '/inventory', icon: Package });
+        items.push({
+            title: 'Financial',
+            href: '/financial',
+            icon: DollarSign,
+        });
+        items.push({ title: 'Bills', href: '/bills', icon: CalendarDays });
+        items.push({ title: 'Reports', href: '/reports', icon: BarChart3 });
     }
 
     if (hasRole('admin')) {
-        items.push({ title: 'Products', href: '/products', icon: UtensilsCrossed })
-        items.push({ title: 'HRIS', href: '/hris', icon: Users })
-        items.push({ title: 'Profit Sharing', href: '/distribution', icon: PieChart })
-        items.push({ title: 'Stall Mapping', href: '/mapping', icon: Map })
-        items.push({ title: 'Tools', href: '/tools', icon: Database })
-        items.push({ title: 'Documentation', href: '/documentation', icon: BookOpen })
-        items.push({ title: 'Settings', href: '/settings/profile', icon: Settings })
+        items.push({
+            title: 'Products',
+            href: '/products',
+            icon: UtensilsCrossed,
+        });
+        items.push({ title: 'HRIS', href: '/hris', icon: Users });
+        items.push({
+            title: 'Profit Sharing',
+            href: '/distribution',
+            icon: PieChart,
+        });
+        items.push({ title: 'Stall Mapping', href: '/mapping', icon: Map });
+        items.push({ title: 'Tools', href: '/tools', icon: Database });
+        items.push({
+            title: 'Documentation',
+            href: '/documentation',
+            icon: BookOpen,
+        });
+        items.push({
+            title: 'Settings',
+            href: '/settings/profile',
+            icon: Settings,
+        });
     }
 
-    return items
-})
+    return items;
+});
 
-const footerNavItems: NavItem[] = []
+const footerNavItems: NavItem[] = [];
+const managementPaths = [
+    '/products',
+    '/hris',
+    '/distribution',
+    '/mapping',
+    '/tools',
+    '/documentation',
+    '/settings/profile',
+];
+const workspaceItems = computed(() =>
+    mainNavItems.value.filter(
+        (item) => !managementPaths.includes(String(item.href)),
+    ),
+);
+const managementItems = computed(() =>
+    mainNavItems.value.filter((item) =>
+        managementPaths.includes(String(item.href)),
+    ),
+);
 </script>
 
 <template>
-    <Sidebar collapsible="icon" variant="inset">
-        <SidebarHeader>
+    <Sidebar collapsible="icon" variant="inset" class="grill-sidebar">
+        <SidebarHeader class="grill-sidebar-header">
             <SidebarMenu>
                 <SidebarMenuItem>
-                    <SidebarMenuButton size="lg" as-child>
+                    <SidebarMenuButton
+                        size="lg"
+                        as-child
+                        class="grill-brand-link"
+                    >
                         <Link :href="dashboard().url">
                             <AppLogo />
                         </Link>
                     </SidebarMenuButton>
                 </SidebarMenuItem>
             </SidebarMenu>
+            <SidebarTrigger
+                class="grill-mobile-close md:hidden"
+                aria-label="Close navigation"
+            />
         </SidebarHeader>
 
         <SidebarContent>
-            <NavMain :items="mainNavItems" />
+            <NavMain :items="workspaceItems" label="Workspace" />
+            <NavMain
+                v-if="managementItems.length"
+                :items="managementItems"
+                label="Management"
+            />
         </SidebarContent>
 
-        <SidebarFooter>
+        <SidebarFooter class="grill-sidebar-footer">
             <NavFooter :items="footerNavItems" />
             <NavUser />
         </SidebarFooter>
     </Sidebar>
     <slot />
 </template>
+
+<style src="../../css/grill-navigation.css"></style>

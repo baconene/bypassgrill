@@ -1,0 +1,161 @@
+/* Scoped to application navigation, including teleported mobile sheets and menus. */
+.grill-shell {
+    background: #eee8dc;
+}
+.grill-sidebar,
+.grill-user-menu {
+    --foreground: #24231e;
+    --background: #fffcf6;
+    --ring: #ad3b19;
+    --sidebar: #eee8dc;
+    --sidebar-foreground: #24231e;
+    --sidebar-primary: #c3441c;
+    --sidebar-primary-foreground: #fff;
+    --sidebar-accent: #e4dccd;
+    --sidebar-accent-foreground: #24231e;
+    --sidebar-border: #d9d0c0;
+    --sidebar-ring: #ad3b19;
+    --popover: #fffcf6;
+    --popover-foreground: #24231e;
+    --accent: #eee8dc;
+    --accent-foreground: #24231e;
+    --muted: #e4dccd;
+    --muted-foreground: #68665f;
+    --border: #d9d0c0;
+    color: #24231e;
+    color-scheme: light;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.grill-sidebar [data-sidebar='sidebar'],
+.grill-sidebar[data-mobile='true'] {
+    background: #eee8dc;
+}
+.grill-sidebar-header {
+    position: relative;
+    padding: 12px 8px 18px;
+    border-bottom: 1px solid #d9d0c0;
+    margin-bottom: 12px;
+}
+.grill-sidebar .grill-brand-link {
+    padding: 7px;
+    border-radius: 5px;
+}
+.grill-sidebar [data-sidebar='group-label'] {
+    color: #777060;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+}
+.grill-sidebar [data-sidebar='group'] + [data-sidebar='group'] {
+    margin-top: 18px;
+}
+.grill-sidebar [data-sidebar='menu-button'] {
+    color: #575144;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    transition:
+        background 0.15s,
+        color 0.15s;
+}
+.grill-sidebar [data-sidebar='menu-button']:hover {
+    background: #e4dccd;
+    color: #24231e;
+}
+.grill-sidebar [data-sidebar='menu-button'][data-active='true'] {
+    background: #f4dfcf;
+    color: #a23817;
+    box-shadow: inset 3px 0 0 #c3441c;
+    font-weight: 800;
+}
+.grill-sidebar [data-sidebar='menu-button'][data-size='default'] {
+    min-height: 36px;
+}
+.grill-sidebar-footer {
+    border-top: 1px solid #d9d0c0;
+    padding-top: 12px;
+    margin-top: 8px;
+}
+.grill-sidebar [data-slot='avatar-fallback'],
+.grill-user-menu [data-slot='avatar-fallback'] {
+    background: #ded5c3;
+    color: #6f442f;
+}
+.grill-mobile-close {
+    position: absolute;
+    right: 8px;
+    top: 18px;
+}
+.grill-sidebar[data-mobile='true'] .grill-brand-link {
+    padding-right: 32px;
+}
+.grill-user-menu {
+    background: #fffcf6;
+    border-color: #d9d0c0;
+}
+.grill-workspace-header {
+    background: #f6f2e9;
+    border-color: #ded7cb;
+    color: #24231e;
+    font-family: Arial, Helvetica, sans-serif;
+    color-scheme: light;
+}
+.grill-sidebar-toggle {
+    background: #fffcf6;
+    border: 1px solid #ded7cb;
+    color: #68665f;
+    border-radius: 4px;
+}
+.grill-sidebar-toggle:hover,
+.grill-sidebar-toggle:focus-visible {
+    background: #f2e5d8;
+    color: #ad3b19;
+}
+.grill-header-divider {
+    width: 1px;
+    height: 20px;
+    background: #ded7cb;
+    flex-shrink: 0;
+}
+.grill-header-tag {
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 1.4px;
+    color: #88775f;
+}
+.grill-workspace-header .grill-breadcrumbs ol {
+    color: #777268;
+    gap: 7px;
+    font-size: 12px;
+}
+.grill-workspace-header .grill-breadcrumbs a {
+    color: #777268;
+    overflow-wrap: anywhere;
+}
+.grill-workspace-header .grill-breadcrumbs a:hover {
+    color: #ad3b19;
+}
+.grill-workspace-header .grill-breadcrumbs [aria-current='page'] {
+    color: #a23817;
+    background: #f2e5d8;
+    padding: 5px 9px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+.grill-workspace-header .grill-breadcrumbs [role='presentation'] {
+    color: #ada393;
+}
+.grill-sidebar :focus-visible,
+.grill-user-menu :focus-visible,
+.grill-workspace-header :focus-visible {
+    outline: 2px solid #ad3b19;
+    outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .grill-sidebar [data-sidebar='menu-button'] {
+        transition: none;
+    }
+}

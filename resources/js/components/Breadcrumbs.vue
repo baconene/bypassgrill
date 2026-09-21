@@ -18,10 +18,10 @@ defineProps<Props>();
 </script>
 
 <template>
-    <Breadcrumb>
+    <Breadcrumb class="grill-breadcrumbs min-w-0">
         <BreadcrumbList>
             <template v-for="(item, index) in breadcrumbs" :key="index">
-                <BreadcrumbItem>
+                <BreadcrumbItem class="min-w-0">
                     <template v-if="index === breadcrumbs.length - 1">
                         <BreadcrumbPage>{{ item.title }}</BreadcrumbPage>
                     </template>

@@ -36,7 +36,7 @@ const { isMobile, state } = useSidebar();
                     </SidebarMenuButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
-                    class="w-(--reka-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+                    class="grill-user-menu w-(--reka-dropdown-menu-trigger-width) min-w-56 rounded-lg"
                     :side="
                         isMobile
                             ? 'bottom'
