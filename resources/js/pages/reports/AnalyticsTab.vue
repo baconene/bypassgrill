@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import {
-    RefreshCw, BarChart3, Flame, Clock, TrendingUp, Layers, Link2, Sparkles, Download, Printer,
+    RefreshCw, BarChart3, Flame, Clock, TrendingUp, Layers, Link2, Sparkles, Download, Printer, Eye, EyeOff,
 } from 'lucide-vue-next'
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -67,6 +67,18 @@ const heatColor = (v: number, max: number) => {
 const heatText = (v: number, max: number) => (max > 0 && v / max > 0.55) ? '#fff' : 'hsl(28 60% 25%)'
 
 const hours = Array.from({ length: 24 }, (_, h) => h)
+const hourLabel = (h: number) => (h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`)
+
+// Heatmap numbers can be hidden for a clean screenshot to share on social media.
+const readShowNumbers = () => {
+    try { return localStorage.getItem('trends-heatmap-numbers') !== 'hidden' } catch { return true }
+}
+const showHeatNumbers = ref(readShowNumbers())
+const toggleHeatNumbers = () => {
+    showHeatNumbers.value = !showHeatNumbers.value
+    try { localStorage.setItem('trends-heatmap-numbers', showHeatNumbers.value ? 'shown' : 'hidden') } catch { /* private mode */ }
+}
+const legendSteps = [0.12, 0.3, 0.5, 0.7, 0.9, 1]
 
 // ── Hourly trend SVG geometry ────────────────────────────────────────────────
 const trend = computed(() => {
@@ -190,12 +202,20 @@ onMounted(async () => {
 
             <!-- Orders Heatmap -->
             <div class="rounded-xl border bg-card shadow-sm p-4 overflow-x-auto">
-                <h3 class="font-bold text-sm flex items-center gap-2 mb-3"><Flame class="h-4 w-4 text-orange-500" /> Orders Heatmap — Day × Hour</h3>
+                <div class="heat-head">
+                    <h3 class="font-bold text-sm flex items-center gap-2"><Flame class="h-4 w-4 text-orange-500" /> Orders Heatmap — Day × Hour</h3>
+                    <div class="heat-tools">
+                        <span class="heat-legend" aria-hidden="true">Less<i v-for="s in legendSteps" :key="s" :style="{ backgroundColor: heatColor(s, 1) }" />More</span>
+                        <button class="heat-toggle" :aria-pressed="!showHeatNumbers" @click="toggleHeatNumbers">
+                            <component :is="showHeatNumbers ? EyeOff : Eye" class="h-3.5 w-3.5" aria-hidden="true" />{{ showHeatNumbers ? 'Hide numbers' : 'Show numbers' }}
+                        </button>
+                    </div>
+                </div>
                 <div class="min-w-[760px]">
                     <div class="flex">
                         <div class="w-10 shrink-0"></div>
                         <div class="flex-1 grid" :style="{ gridTemplateColumns: `repeat(24, minmax(0, 1fr))` }">
-                            <div v-for="h in hours" :key="h" class="text-[9px] text-center text-muted-foreground">{{ h }}</div>
+                            <div v-for="h in hours" :key="h" class="text-[9px] text-center text-muted-foreground">{{ hourLabel(h) }}</div>
                         </div>
                     </div>
                     <div v-for="(row, di) in data.orders_heatmap.grid" :key="di" class="flex items-center">
@@ -205,7 +225,7 @@ onMounted(async () => {
                                 class="aspect-square rounded-[3px] flex items-center justify-center text-[8px] font-semibold"
                                 :style="{ backgroundColor: heatColor(v, data.orders_heatmap.max), color: heatText(v, data.orders_heatmap.max) }"
                                 :title="`${data.orders_heatmap.days?.[di]} ${hi}:00 — ${v} orders`">
-                                {{ v > 0 ? v : '' }}
+                                {{ showHeatNumbers && v > 0 ? v : '' }}
                             </div>
                         </div>
                     </div>
@@ -260,12 +280,20 @@ onMounted(async () => {
 
             <!-- Product Demand Heatmap -->
             <div v-if="data.product_heatmap.products?.length" class="rounded-xl border bg-card shadow-sm p-4 overflow-x-auto">
-                <h3 class="font-bold text-sm flex items-center gap-2 mb-3"><Flame class="h-4 w-4 text-teal-500" /> Product Demand Heatmap — Product × Hour</h3>
+                <div class="heat-head">
+                    <h3 class="font-bold text-sm flex items-center gap-2"><Flame class="h-4 w-4 text-teal-500" /> Product Demand Heatmap — Product × Hour</h3>
+                    <div class="heat-tools">
+                        <span class="heat-legend" aria-hidden="true">Less<i v-for="s in legendSteps" :key="s" :style="{ backgroundColor: heatColor(s, 1) }" />More</span>
+                        <button class="heat-toggle" :aria-pressed="!showHeatNumbers" @click="toggleHeatNumbers">
+                            <component :is="showHeatNumbers ? EyeOff : Eye" class="h-3.5 w-3.5" aria-hidden="true" />{{ showHeatNumbers ? 'Hide numbers' : 'Show numbers' }}
+                        </button>
+                    </div>
+                </div>
                 <div class="min-w-[820px]">
                     <div class="flex">
                         <div class="w-32 shrink-0"></div>
                         <div class="flex-1 grid" :style="{ gridTemplateColumns: `repeat(24, minmax(0, 1fr))` }">
-                            <div v-for="h in hours" :key="h" class="text-[9px] text-center text-muted-foreground">{{ h }}</div>
+                            <div v-for="h in hours" :key="h" class="text-[9px] text-center text-muted-foreground">{{ hourLabel(h) }}</div>
                         </div>
                     </div>
                     <div v-for="(row, pi) in data.product_heatmap.grid" :key="pi" class="flex items-center">
@@ -275,7 +303,7 @@ onMounted(async () => {
                                 class="aspect-square rounded-[3px] flex items-center justify-center text-[8px] font-semibold"
                                 :style="{ backgroundColor: heatColor(v, data.product_heatmap.max), color: heatText(v, data.product_heatmap.max) }"
                                 :title="`${data.product_heatmap.products?.[pi]?.name} @ ${hi}:00 — ${v} sold`">
-                                {{ v > 0 ? v : '' }}
+                                {{ showHeatNumbers && v > 0 ? v : '' }}
                             </div>
                         </div>
                     </div>
@@ -330,3 +358,59 @@ onMounted(async () => {
         </template>
     </div>
 </template>
+
+<style scoped>
+.heat-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin-bottom: 12px;
+}
+.heat-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.heat-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--muted-foreground);
+}
+.heat-legend i {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+}
+.heat-legend i:first-of-type {
+    margin-left: 4px;
+}
+.heat-legend i:last-of-type {
+    margin-right: 4px;
+}
+.heat-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    background: var(--background);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--foreground);
+    cursor: pointer;
+}
+.heat-toggle:hover {
+    background: var(--muted);
+}
+.heat-toggle[aria-pressed='true'] {
+    border-color: var(--foreground);
+    background: var(--foreground);
+    color: var(--background);
+}
+</style>

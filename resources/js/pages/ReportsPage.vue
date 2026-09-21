@@ -2522,7 +2522,7 @@ onMounted(async () => {
                 <div class="p-3 sm:p-4 border-b flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none"
                     @click="chartCollapsed = !chartCollapsed">
                     <h2 class="font-bold text-sm flex items-center gap-2">
-                        <BarChart3 class="h-4 w-4 text-primary" /> Daily Income vs Expense
+                        <BarChart3 class="h-4 w-4 text-primary" /> Daily cash in vs cash out
                     </h2>
                     <div class="flex items-center gap-2">
                         <div class="flex items-center gap-1" @click.stop>
@@ -2544,17 +2544,18 @@ onMounted(async () => {
                 </div>
 
                 <div v-show="!chartCollapsed">
+                    <p class="rpt-chart-note">Counted the same way as the Financial page: cash out is every expense (stock purchases included), payroll, asset deduction and profit payout. For profit, see Profit &amp; loss.</p>
                     <div v-if="chartData.length > 0" class="grid grid-cols-3 divide-x border-b text-center">
                         <div class="px-3 py-2.5">
-                            <p class="text-xs text-muted-foreground">Total Income</p>
+                            <p class="text-xs text-muted-foreground">Cash in</p>
                             <p class="text-sm font-bold text-green-600">{{ fmt(chartTotals.income) }}</p>
                         </div>
                         <div class="px-3 py-2.5">
-                            <p class="text-xs text-muted-foreground">Total Expense</p>
+                            <p class="text-xs text-muted-foreground">Cash out</p>
                             <p class="text-sm font-bold text-red-500">{{ fmt(chartTotals.expense) }}</p>
                         </div>
                         <div class="px-3 py-2.5">
-                            <p class="text-xs text-muted-foreground">Net</p>
+                            <p class="text-xs text-muted-foreground">Net cash</p>
                             <p class="text-sm font-bold" :class="chartTotals.net >= 0 ? 'text-green-600' : 'text-red-500'">{{ fmt(chartTotals.net) }}</p>
                         </div>
                     </div>
@@ -2589,11 +2590,11 @@ onMounted(async () => {
                         <div class="flex items-center justify-center gap-6 mt-1 pb-1">
                             <div class="flex items-center gap-1.5">
                                 <div class="w-3 h-3 rounded-sm" style="background:#22c55e;opacity:0.8"></div>
-                                <span class="text-xs text-muted-foreground">Income</span>
+                                <span class="text-xs text-muted-foreground">Cash in</span>
                             </div>
                             <div class="flex items-center gap-1.5">
                                 <div class="w-3 h-3 rounded-sm" style="background:#ef4444;opacity:0.8"></div>
-                                <span class="text-xs text-muted-foreground">Expense</span>
+                                <span class="text-xs text-muted-foreground">Cash out</span>
                             </div>
                         </div>
                     </div>
@@ -2725,24 +2726,25 @@ onMounted(async () => {
                 <div class="p-3 sm:p-4 border-b flex flex-wrap items-center justify-between gap-2 cursor-pointer select-none"
                     @click="monthChartCollapsed = !monthChartCollapsed">
                     <h2 class="font-bold text-sm flex items-center gap-2">
-                        <BarChart3 class="h-4 w-4 text-primary" /> {{ selectedYear }} Monthly Income vs Expense (YTD)
+                        <BarChart3 class="h-4 w-4 text-primary" /> {{ selectedYear }} monthly cash in vs cash out (year to date)
                     </h2>
                     <ChevronDown v-if="!monthChartCollapsed" class="h-4 w-4 text-muted-foreground shrink-0" />
                     <ChevronRight v-else class="h-4 w-4 text-muted-foreground shrink-0" />
                 </div>
 
                 <div v-show="!monthChartCollapsed">
+                    <p class="rpt-chart-note">Counted the same way as the Financial page: cash out is every expense (stock purchases included), payroll, asset deduction and profit payout. For profit, see Profit &amp; loss.</p>
                     <div v-if="monthChartData.length > 0" class="grid grid-cols-3 divide-x border-b text-center">
                         <div class="px-3 py-2.5">
-                            <p class="text-xs text-muted-foreground">Total Income</p>
+                            <p class="text-xs text-muted-foreground">Cash in</p>
                             <p class="text-sm font-bold text-green-600">{{ fmt(monthChartTotals.income) }}</p>
                         </div>
                         <div class="px-3 py-2.5">
-                            <p class="text-xs text-muted-foreground">Total Expense</p>
+                            <p class="text-xs text-muted-foreground">Cash out</p>
                             <p class="text-sm font-bold text-red-500">{{ fmt(monthChartTotals.expense) }}</p>
                         </div>
                         <div class="px-3 py-2.5">
-                            <p class="text-xs text-muted-foreground">Net</p>
+                            <p class="text-xs text-muted-foreground">Net cash</p>
                             <p class="text-sm font-bold" :class="monthChartTotals.net >= 0 ? 'text-green-600' : 'text-red-500'">{{ fmt(monthChartTotals.net) }}</p>
                         </div>
                     </div>
@@ -2777,11 +2779,11 @@ onMounted(async () => {
                         <div class="flex items-center justify-center gap-6 mt-1 pb-1">
                             <div class="flex items-center gap-1.5">
                                 <div class="w-3 h-3 rounded-sm" style="background:#22c55e;opacity:0.8"></div>
-                                <span class="text-xs text-muted-foreground">Income</span>
+                                <span class="text-xs text-muted-foreground">Cash in</span>
                             </div>
                             <div class="flex items-center gap-1.5">
                                 <div class="w-3 h-3 rounded-sm" style="background:#ef4444;opacity:0.8"></div>
-                                <span class="text-xs text-muted-foreground">Expense</span>
+                                <span class="text-xs text-muted-foreground">Cash out</span>
                             </div>
                         </div>
                     </div>
@@ -3642,6 +3644,14 @@ onMounted(async () => {
     font-weight: 700;
     color: var(--ink);
     font-variant-numeric: tabular-nums;
+}
+.rpt-chart-note {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--line-soft);
+    background: #f6f2e9;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #68665f;
 }
 .rpt-footnote {
     margin-top: 14px;

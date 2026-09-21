@@ -159,14 +159,10 @@ class ReportController extends Controller
         $rows = \App\Models\FinancialTransaction::selectRaw(
             "DATE_FORMAT(transacted_at, '%Y-%m') as month,
              SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
-             SUM(CASE WHEN type IN ('expense','payroll')
-                      AND description NOT LIKE 'COGS:%'
-                      AND description NOT LIKE 'Inventory Stock In%'
-                      AND description NOT LIKE 'Initial stock:%'
-                      AND description NOT LIKE 'Inventory Adjustment:%'
-                 THEN amount ELSE 0 END) as expense"
+             SUM(CASE WHEN type IN ('payment','income_adjustment') THEN 0 ELSE amount END) as expense"
         )
             ->where('type', '!=', 'order')
+            ->when(! request()->boolean('include_asset_deductions', true), fn ($q) => $q->where('type', '!=', 'asset_deduction'))
             ->whereYear('transacted_at', $year)
             ->groupByRaw("DATE_FORMAT(transacted_at, '%Y-%m')")
             ->orderByRaw("DATE_FORMAT(transacted_at, '%Y-%m')")
@@ -198,14 +194,10 @@ class ReportController extends Controller
         $rows = \App\Models\FinancialTransaction::selectRaw(
             "DATE(transacted_at) as date,
              SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE 0 END) as income,
-             SUM(CASE WHEN type IN ('expense','payroll')
-                      AND description NOT LIKE 'COGS:%'
-                      AND description NOT LIKE 'Inventory Stock In%'
-                      AND description NOT LIKE 'Initial stock:%'
-                      AND description NOT LIKE 'Inventory Adjustment:%'
-                 THEN amount ELSE 0 END) as expense"
+             SUM(CASE WHEN type IN ('payment','income_adjustment') THEN 0 ELSE amount END) as expense"
         )
             ->where('type', '!=', 'order')
+            ->when(! request()->boolean('include_asset_deductions', true), fn ($q) => $q->where('type', '!=', 'asset_deduction'))
             ->whereBetween('transacted_at', [$start, $end])
             ->groupByRaw('DATE(transacted_at)')
             ->orderByRaw('DATE(transacted_at)')

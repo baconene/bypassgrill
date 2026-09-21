@@ -241,14 +241,30 @@ class FinancialReportsTest extends TestCase
         $this->assertSame(['2026-08-27', '2026-08-31'], [$custom['rows'][0]['start'], $custom['rows'][0]['end']]);
     }
 
-    public function test_daily_chart_keeps_inventory_purchases_out_of_expenses(): void
+    public function test_daily_chart_matches_the_financial_page_cash_totals(): void
     {
         $this->seedSeptember();
+        $this->order(300, 0, 90, 'paid', '2026-09-21 18:00:00');
+        $this->entry('expense', 55, 'Yesterday gas', '2026-09-21 19:00:00');
 
-        $days = $this->actingAs($this->admin)->getJson('/api/v1/reports/daily-chart?days=1')->assertOk()->json();
+        foreach ([1, 0] as $withAssets) {
+            $days = $this->actingAs($this->admin)
+                ->getJson("/api/v1/reports/daily-chart?days=2&include_asset_deductions={$withAssets}")->assertOk()->json();
+            $summary = $this->getJson("/api/v1/financial-transactions/summary?start_date=2026-09-21&end_date=2026-09-22&include_asset_deductions={$withAssets}")->json();
 
-        $this->assertEquals(480, $days[0]['income']);     // 450 payment + 30 income adjustment
-        $this->assertEquals(220, $days[0]['expense']);    // 100 charcoal + 120 payroll
+            $moneyIn = $summary['payments']['total'] + $summary['income_adjustments']['total'];
+            $moneyOut = $summary['expenses']['total'] + $summary['payroll']['total']
+                + $summary['asset_deductions']['total'] + $summary['payout_shares']['total'];
+
+            $this->assertEquals($moneyIn, array_sum(array_column($days, 'income')));
+            $this->assertEquals($moneyOut, array_sum(array_column($days, 'expense')));
+            $this->assertEquals($summary['net'], round(array_sum(array_column($days, 'income')) - array_sum(array_column($days, 'expense')), 2));
+        }
+
+        // Today: 450 + 30 in; 100 + 300 + 80 + 40 + 120 + 10 + 25 out, inventory purchases included.
+        $today = $this->getJson('/api/v1/reports/daily-chart?days=1')->json()[0];
+        $this->assertEquals(480, $today['income']);
+        $this->assertEquals(675, $today['expense']);
     }
 
     public function test_refund_reverses_the_payment_in_revenue_and_balance(): void
