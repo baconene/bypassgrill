@@ -1,12 +1,27 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { Head, usePage } from '@inertiajs/vue3'
-import { toast } from 'vue-sonner'
-import api from '@/utils/api'
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import {
-    BarChart3, DollarSign, Plus, Trash2, ChevronLeft, ChevronRight,
-    TrendingUp, TrendingDown, ChevronDown, Search, Pencil, X, Filter, Menu,
-} from 'lucide-vue-next'
+    ArrowDownLeft,
+    ArrowUpRight,
+    BarChart3,
+    ChevronLeft,
+    ChevronRight,
+    CalendarDays,
+    FileText,
+    LayoutGrid,
+    Pencil,
+    Plus,
+    RefreshCw,
+    Receipt,
+    Search,
+    Trash2,
+    Wallet,
+    X,
+} from 'lucide-vue-next';
+import { FocusScope } from 'reka-ui';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { toast } from 'vue-sonner';
+import api from '@/utils/api';
 
 defineOptions({
     layout: {
@@ -15,339 +30,622 @@ defineOptions({
             { title: 'Financial', href: '/financial' },
         ],
     },
-})
+});
 
 // ── Types ───────────────────────────────────────────────────────────────────────
 interface FtSummary {
-    period: { start: string; end: string }
-    payments: { total: number; count: number }
-    expenses: { total: number; count: number }
-    income_adjustments: { total: number; count: number }
-    payroll: { total: number; count: number }
-    asset_deductions: { total: number; count: number }
-    payout_shares: { total: number; count: number }
-    net: number
-    balance_as_of_end: number
-    balance_by_tender: { tender: string; balance: number; count: number }[]
-    by_tender: { tender: string; total: number; count: number }[]
-    net_by_tender: { tender: string; total_in: number; total_out: number; net: number; count: number }[]
-    include_asset_deductions: boolean
+    period: { start: string; end: string };
+    payments: { total: number; count: number };
+    expenses: { total: number; count: number };
+    income_adjustments: { total: number; count: number };
+    payroll: { total: number; count: number };
+    asset_deductions: { total: number; count: number };
+    payout_shares: { total: number; count: number };
+    net: number;
+    balance_as_of_end: number;
+    balance_by_tender: { tender: string; balance: number; count: number }[];
+    by_tender: { tender: string; total: number; count: number }[];
+    net_by_tender: {
+        tender: string;
+        total_in: number;
+        total_out: number;
+        net: number;
+        count: number;
+    }[];
+    include_asset_deductions: boolean;
 }
 interface PaymentTender {
-    id: number; name: string; is_active: boolean
+    id: number;
+    name: string;
+    is_active: boolean;
 }
 interface FtTransaction {
-    id: number; type: string; amount: number; description: string; notes: string | null
-    transacted_at: string; financial_balance: number | null
-    payment_tender_id: number | null; order_id: number | null
-    user?: { name: string }; tender?: { id: number; name: string }
-    order?: { customer_name: string | null; id: number } | null
+    id: number;
+    type: string;
+    amount: number;
+    description: string;
+    notes: string | null;
+    transacted_at: string;
+    financial_balance: number | null;
+    payment_tender_id: number | null;
+    order_id: number | null;
+    user?: { name: string };
+    tender?: { id: number; name: string };
+    order?: { customer_name: string | null; id: number } | null;
 }
 interface BillsSummary {
-    total_due: number; overdue: number; upcoming: number; count: number
-    period: { start: string; end: string }
+    total_due: number;
+    overdue: number;
+    upcoming: number;
+    count: number;
+    period: { start: string; end: string };
 }
+type Tab = 'overview' | 'ledger' | 'performance';
+type Preset = 'today' | 'yesterday' | '7d' | 'month' | 'lastMonth' | 'custom';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
-const page    = usePage()
-const isAdmin = computed(() => ((page.props.auth as any)?.roles ?? []).includes('admin'))
+const page = usePage();
+const isAdmin = computed(() =>
+    ((page.props.auth as any)?.roles ?? []).includes('admin'),
+);
+
+// ── Dates ─────────────────────────────────────────────────────────────────────
+// Local (Manila) dates. toISOString() is UTC, which is a day behind before 8 am.
+const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (d: Date, n: number) => {
+    const c = new Date(d);
+    c.setDate(c.getDate() + n);
+
+    return c;
+};
+const parseYmd = (s: string) => new Date(s + 'T00:00:00');
+const today = ymd(new Date());
+const nowDatetimeLocal = () => {
+    const d = new Date();
+
+    return `${ymd(d)}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
 
 // ── State ──────────────────────────────────────────────────────────────────────
-const today = new Date().toISOString().split('T')[0]
-const nowDatetimeLocal = () => new Date().toISOString().substring(0, 16)
-const ftStartDate = ref(today)
-const ftEndDate = ref(today)
-const ftTypeFilter = ref('')
-const ftTenderFilter = ref<number | ''>('')
-const loading = ref(false)
-const ftSummary = ref<FtSummary | null>(null)
-const billsSummary = ref<BillsSummary | null>(null)
-const ftTransactions = ref<FtTransaction[]>([])
-const ftMeta = ref<any>(null)
-const ftPage = ref(1)
-const showEntryForm = ref(false)
-const entryForm = ref({ type: 'expense' as 'expense' | 'income_adjustment', description: '', amount: '', notes: '', transacted_at: nowDatetimeLocal(), payment_tender_id: null as number | null })
-const entrySaving = ref(false)
-const ftDeleting = ref<number | null>(null)
-const summaryOpen = ref(true)
-const showTenderBreakdown = ref(false)
-const showBalanceByTender = ref(false)
-const ftSearch = ref('')
-const ftSortKey = ref<'transacted_at' | 'type' | 'amount' | 'description'>('transacted_at')
-const ftSortDir = ref<'asc' | 'desc'>('desc')
-const tenders = ref<PaymentTender[]>([])
-const includeAssetDeductions = ref(true)
-const editingTx = ref<FtTransaction | null>(null)
-const editForm = ref({ type: '', description: '', amount: '', notes: '', transacted_at: '', payment_tender_id: null as number | null })
-const editSaving = ref(false)
+const ftStartDate = ref(today);
+const ftEndDate = ref(today);
+const activePreset = ref<Preset>('today');
+const ftTypeFilter = ref('');
+const ftTenderFilter = ref<number | ''>('');
+const loading = ref(false);
+const refreshing = ref(false);
+const ftSummary = ref<FtSummary | null>(null);
+const billsSummary = ref<BillsSummary | null>(null);
+const ftTransactions = ref<FtTransaction[]>([]);
+const ftMeta = ref<any>(null);
+const ftPage = ref(1);
+const entryForm = ref({
+    type: 'expense' as 'expense' | 'income_adjustment',
+    description: '',
+    amount: '',
+    notes: '',
+    transacted_at: nowDatetimeLocal(),
+    payment_tender_id: null as number | null,
+});
+const entrySaving = ref(false);
+const ftDeleting = ref<number | null>(null);
+const ftSearch = ref('');
+const ftSortKey = ref<'transacted_at' | 'type' | 'amount' | 'description'>(
+    'transacted_at',
+);
+const ftSortDir = ref<'asc' | 'desc'>('desc');
+const tenders = ref<PaymentTender[]>([]);
+const includeAssetDeductions = ref(true);
+const editingTx = ref<FtTransaction | null>(null);
+const editForm = ref({
+    type: '',
+    description: '',
+    amount: '',
+    notes: '',
+    transacted_at: '',
+    payment_tender_id: null as number | null,
+});
+const editSaving = ref(false);
+const sheet = ref<null | 'new' | 'edit'>(null);
 
-const activeTab = ref<'ledger' | 'performance'>('ledger')
-const dailyData = ref<{ date: string; income: number; expense: number; balance: number }[]>([])
-const prevSummary = ref<FtSummary | null>(null)
-const perfLoading = ref(false)
-const hoveredDayIdx = ref<number | null>(null)
-const showComparisonHelp = ref(false)
+const readTab = (): Tab => {
+    try {
+        const saved = localStorage.getItem('financial-tab');
 
-// ── Mobile FAB state ─────────────────────────────────────────────────────────
-const fabOpen = ref(false)
-const fabX = ref(16)
-const showMobileFilter = ref(false)
-const showMobileAddTx = ref(false)
-
-const onFabTouchStart = (e: TouchEvent) => {
-    e.preventDefault()
-    const startClientX = e.touches[0].clientX
-    const startFabX = fabX.value
-    let hasDragged = false
-
-    const onMove = (ev: TouchEvent) => {
-        ev.preventDefault()
-        const dx = ev.touches[0].clientX - startClientX
-        if (Math.abs(dx) > 6) hasDragged = true
-        fabX.value = Math.max(8, Math.min(window.innerWidth - 56, startFabX + dx))
+        return saved === 'ledger' || saved === 'performance'
+            ? saved
+            : 'overview';
+    } catch {
+        return 'overview';
     }
-    const onEnd = () => {
-        if (!hasDragged) fabOpen.value = !fabOpen.value
-        document.removeEventListener('touchmove', onMove)
-        document.removeEventListener('touchend', onEnd)
-    }
-    document.addEventListener('touchmove', onMove, { passive: false })
-    document.addEventListener('touchend', onEnd)
-}
+};
+const activeTab = ref<Tab>(readTab());
+const dailyData = ref<
+    { date: string; income: number; expense: number; balance: number }[]
+>([]);
+const prevSummary = ref<FtSummary | null>(null);
+const perfLoading = ref(false);
+const perfStale = ref(true);
+const hoveredDayIdx = ref<number | null>(null);
+const showComparisonHelp = ref(false);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt = (v: number | string | null | undefined) =>
-    '₱' + parseFloat(String(v ?? 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })
+    '₱' +
+    parseFloat(String(v ?? 0)).toLocaleString('en-PH', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
 
 const fmtDatetime = (s: string) => {
-    if (!s) return '—'
+    if (!s) {
+return '—';
+}
+
     // MySQL returns "YYYY-MM-DD HH:MM:SS" (space separator); Safari rejects that format.
     // Replace the space with T so all browsers get a valid ISO-8601 string.
-    const d = new Date(s.replace(' ', 'T'))
-    if (isNaN(d.getTime())) return s
-    return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: '2-digit' }) + ' ' +
-        d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true })
+    const d = new Date(s.replace(' ', 'T'));
+
+    if (isNaN(d.getTime())) {
+return s;
 }
 
-const typeLabel = (t: string) => ({
-    order: 'Order', payment: 'Payment', expense: 'Expense', income_adjustment: 'Income Adj.',
-    payroll: 'Payroll', asset_deduction: 'Asset Deduction', payout_share: 'Payout Share',
-}[t] ?? t)
+    return (
+        d.toLocaleDateString('en-PH', {
+            month: 'short',
+            day: 'numeric',
+            year: '2-digit',
+        }) +
+        ' ' +
+        d.toLocaleTimeString('en-PH', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+        })
+    );
+};
+const fmtDay = (s: string) =>
+    parseYmd(s).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
 
-const typeBadgeClass = (t: string) => ({
-    order:             'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    payment:           'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    expense:           'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    income_adjustment: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
-    payroll:           'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    asset_deduction:   'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-    payout_share:      'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-}[t] ?? 'bg-muted text-muted-foreground')
+const typeLabel = (t: string) =>
+    ({
+        order: 'Order',
+        payment: 'Payment',
+        expense: 'Expense',
+        income_adjustment: 'Income Adj.',
+        payroll: 'Payroll',
+        asset_deduction: 'Asset Deduction',
+        payout_share: 'Payout Share',
+    })[t] ?? t;
 
-const isCredit = (t: string) => t === 'payment' || t === 'income_adjustment'
+const typeOptions = [
+    { value: '', label: 'All' },
+    { value: 'payment', label: 'Payments' },
+    { value: 'expense', label: 'Expenses' },
+    { value: 'income_adjustment', label: 'Income adj.' },
+    { value: 'payroll', label: 'Payroll' },
+    { value: 'asset_deduction', label: 'Asset deductions' },
+    { value: 'payout_share', label: 'Payout shares' },
+];
+
+const isCredit = (t: string) => t === 'payment' || t === 'income_adjustment';
+
+// ── Period ────────────────────────────────────────────────────────────────────
+const presets: { key: Preset; label: string }[] = [
+    { key: 'today', label: 'Today' },
+    { key: 'yesterday', label: 'Yesterday' },
+    { key: '7d', label: 'Last 7 days' },
+    { key: 'month', label: 'This month' },
+    { key: 'lastMonth', label: 'Last month' },
+    { key: 'custom', label: 'Custom' },
+];
+const setPreset = (key: Preset) => {
+    activePreset.value = key;
+
+    if (key === 'custom') {
+return;
+}
+
+    const now = new Date();
+    const ranges: Record<Exclude<Preset, 'custom'>, [Date, Date]> = {
+        today: [now, now],
+        yesterday: [addDays(now, -1), addDays(now, -1)],
+        '7d': [addDays(now, -6), now],
+        month: [new Date(now.getFullYear(), now.getMonth(), 1), now],
+        lastMonth: [
+            new Date(now.getFullYear(), now.getMonth() - 1, 1),
+            new Date(now.getFullYear(), now.getMonth(), 0),
+        ],
+    };
+    const [start, end] = ranges[key];
+    ftStartDate.value = ymd(start);
+    ftEndDate.value = ymd(end);
+    reload();
+};
+const onCustomDate = () => {
+    if (
+        ftStartDate.value &&
+        ftEndDate.value &&
+        ftStartDate.value > ftEndDate.value
+    ) {
+        [ftStartDate.value, ftEndDate.value] = [
+            ftEndDate.value,
+            ftStartDate.value,
+        ];
+    }
+
+    reload();
+};
+const periodDays = computed(
+    () =>
+        Math.round(
+            (parseYmd(ftEndDate.value).getTime() -
+                parseYmd(ftStartDate.value).getTime()) /
+                86400000,
+        ) + 1,
+);
+const periodLabel = computed(() =>
+    ftStartDate.value === ftEndDate.value
+        ? parseYmd(ftStartDate.value).toLocaleDateString('en-PH', {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+          })
+        : `${fmtDay(ftStartDate.value)} – ${parseYmd(ftEndDate.value).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+);
 
 // ── Computed ─────────────────────────────────────────────────────────────────────
-const pieData = computed(() => {
-    if (!ftSummary.value) return []
-    const s = ftSummary.value
-    // Allocation: Payments, Expenses, Income Adj., Payroll (excludes raw order count)
-    const items = [
-        { label: 'Payments',    value: s.payments.total,                 count: s.payments.count,                 color: '#22c55e' },
-        { label: 'Expenses',    value: s.expenses.total,                 count: s.expenses.count,                 color: '#ef4444' },
-        { label: 'Income Adj.', value: s.income_adjustments?.total ?? 0, count: s.income_adjustments?.count ?? 0, color: '#14b8a6' },
-        { label: 'Payroll',     value: s.payroll?.total ?? 0,            count: s.payroll?.count ?? 0,            color: '#a855f7' },
-    ].filter(i => i.value > 0)
-    const total = items.reduce((sum, i) => sum + i.value, 0)
-    if (!total) return []
-    const R = 70, r = 42, cx = 90, cy = 90
-    const arcPath = (sa: number, ea: number): string => {
-        const sweep = ea - sa
-        if (sweep >= Math.PI * 2 - 0.001) {
-            const mid = sa + Math.PI
-            return [
-                `M${cx + R * Math.cos(sa)} ${cy + R * Math.sin(sa)}`,
-                `A${R} ${R} 0 0 1 ${cx + R * Math.cos(mid)} ${cy + R * Math.sin(mid)}`,
-                `A${R} ${R} 0 0 1 ${cx + R * Math.cos(ea)} ${cy + R * Math.sin(ea)}`,
-                `L${cx + r * Math.cos(ea)} ${cy + r * Math.sin(ea)}`,
-                `A${r} ${r} 0 0 0 ${cx + r * Math.cos(mid)} ${cy + r * Math.sin(mid)}`,
-                `A${r} ${r} 0 0 0 ${cx + r * Math.cos(sa)} ${cy + r * Math.sin(sa)}Z`,
-            ].join(' ')
-        }
-        const large = sweep > Math.PI ? 1 : 0
-        return [
-            `M${cx + R * Math.cos(sa)} ${cy + R * Math.sin(sa)}`,
-            `A${R} ${R} 0 ${large} 1 ${cx + R * Math.cos(ea)} ${cy + R * Math.sin(ea)}`,
-            `L${cx + r * Math.cos(ea)} ${cy + r * Math.sin(ea)}`,
-            `A${r} ${r} 0 ${large} 0 ${cx + r * Math.cos(sa)} ${cy + r * Math.sin(sa)}Z`,
-        ].join(' ')
-    }
-    let angle = -Math.PI / 2
-    return items.map(item => {
-        const sweep = (item.value / total) * 2 * Math.PI
-        const sa = angle, ea = angle + sweep
-        angle = ea
-        return { ...item, pct: Math.round((item.value / total) * 100), path: arcPath(sa, ea) }
-    })
-})
-
-const comparisonBars = computed(() => {
-    if (!ftSummary.value) return []
-    const s = ftSummary.value
-    const income  = s.payments.total + (s.income_adjustments?.total ?? 0)
-    const outflow = s.expenses.total + (s.payroll?.total ?? 0) + (s.asset_deductions?.total ?? 0) + (s.payout_shares?.total ?? 0)
-    const payable = billsSummary.value?.total_due ?? 0
-    const items = [
-        { label: 'Total Income',  value: income,  barColor: 'bg-blue-500',    textColor: 'text-blue-600' },
-        { label: 'Total Outflow', value: outflow, barColor: 'bg-red-500',     textColor: 'text-red-600' },
-        { label: 'Net Cash',      value: s.net,   barColor: s.net >= 0 ? 'bg-emerald-500' : 'bg-red-600', textColor: s.net >= 0 ? 'text-emerald-600' : 'text-red-600' },
-        { label: 'Payables Due',  value: payable, barColor: 'bg-orange-500',  textColor: 'text-orange-600' },
-    ]
-    const maxVal = Math.max(...items.map(i => Math.abs(i.value)), 1)
-    return items.map(i => ({ ...i, pct: Math.round((Math.abs(i.value) / maxVal) * 100) }))
-})
-
-const totalIncome = computed(() => {
-    if (!ftSummary.value) return 0
-    return ftSummary.value.payments.total + (ftSummary.value.income_adjustments?.total ?? 0)
-})
-
 const periodIncome = computed(() => {
-    if (!ftSummary.value) return 0
-    return ftSummary.value.payments.total + (ftSummary.value.income_adjustments?.total ?? 0)
-})
+    if (!ftSummary.value) {
+return 0;
+}
+
+    return (
+        ftSummary.value.payments.total +
+        (ftSummary.value.income_adjustments?.total ?? 0)
+    );
+});
 
 const periodExpenses = computed(() => {
-    if (!ftSummary.value) return 0
-    const s = ftSummary.value
-    return s.expenses.total + (s.payroll?.total ?? 0) + (s.asset_deductions?.total ?? 0) + (s.payout_shares?.total ?? 0)
-})
+    if (!ftSummary.value) {
+return 0;
+}
+
+    const s = ftSummary.value;
+
+    return (
+        s.expenses.total +
+        (s.payroll?.total ?? 0) +
+        (s.asset_deductions?.total ?? 0) +
+        (s.payout_shares?.total ?? 0)
+    );
+});
 
 const comparisonRows = computed(() => {
-    if (!ftSummary.value) return []
-    const s = ftSummary.value
-    const p = prevSummary.value
-    const prevIncome   = p ? p.payments.total + (p.income_adjustments?.total ?? 0) : 0
-    const prevExpenses = p ? p.expenses.total + (p.payroll?.total ?? 0) + (p.asset_deductions?.total ?? 0) + (p.payout_shares?.total ?? 0) : 0
-    const mkRow = (label: string, cur: number, prev: number, higherIsBetter = true) => {
-        const change = cur - prev
-        const changePct = prev !== 0 ? Math.round((change / Math.abs(prev)) * 100) : null
-        const good = higherIsBetter ? change >= 0 : change <= 0
-        return {
-            label, cur, prev, change, changePct,
-            changeClass: change === 0 ? 'text-muted-foreground' : good ? 'text-emerald-600 font-semibold' : 'text-red-600 font-semibold',
-            sign: change >= 0 ? '+' : '',
-        }
-    }
-    return [
-        mkRow('Total Income',    periodIncome.value,          prevIncome,                   true),
-        mkRow('Total Expenses',  periodExpenses.value,        prevExpenses,                 false),
-        mkRow('Net Cash',        s.net ?? 0,                  p?.net ?? 0,                  true),
-        mkRow('Payments',        s.payments.total,            p?.payments?.total ?? 0,      true),
-        mkRow('Expenses only',   s.expenses.total,            p?.expenses?.total ?? 0,      false),
-        mkRow('Payroll',         s.payroll?.total ?? 0,       p?.payroll?.total ?? 0,       false),
-    ]
-})
+    if (!ftSummary.value) {
+return [];
+}
 
-const typeBreakdown = computed(() => {
-    if (!ftSummary.value) return []
-    const s = ftSummary.value
+    const s = ftSummary.value;
+    const p = prevSummary.value;
+    const prevIncome = p
+        ? p.payments.total + (p.income_adjustments?.total ?? 0)
+        : 0;
+    const prevExpenses = p
+        ? p.expenses.total +
+          (p.payroll?.total ?? 0) +
+          (p.asset_deductions?.total ?? 0) +
+          (p.payout_shares?.total ?? 0)
+        : 0;
+    const mkRow = (
+        label: string,
+        cur: number,
+        prev: number,
+        higherIsBetter = true,
+    ) => {
+        const change = cur - prev;
+        const changePct =
+            prev !== 0 ? Math.round((change / Math.abs(prev)) * 100) : null;
+        const good = higherIsBetter ? change >= 0 : change <= 0;
+
+        return {
+            label,
+            cur,
+            prev,
+            change,
+            changePct,
+            tone: change === 0 ? 'flat' : good ? 'good' : 'bad',
+            sign: change >= 0 ? '+' : '−',
+        };
+    };
+
     return [
-        { type: 'payment',          total: s.payments.total,                count: s.payments.count },
-        { type: 'income_adjustment',total: s.income_adjustments?.total ?? 0,count: s.income_adjustments?.count ?? 0 },
-        { type: 'expense',          total: s.expenses.total,                count: s.expenses.count },
-        { type: 'payroll',          total: s.payroll?.total ?? 0,           count: s.payroll?.count ?? 0 },
-        { type: 'asset_deduction',  total: s.asset_deductions?.total ?? 0,  count: s.asset_deductions?.count ?? 0 },
-        { type: 'payout_share',     total: s.payout_shares?.total ?? 0,     count: s.payout_shares?.count ?? 0 },
-    ].filter(r => r.total > 0 || r.count > 0)
-})
+        mkRow('Total income', periodIncome.value, prevIncome, true),
+        mkRow('Total outflow', periodExpenses.value, prevExpenses, false),
+        mkRow('Net cash', s.net ?? 0, p?.net ?? 0, true),
+        mkRow('Payments', s.payments.total, p?.payments?.total ?? 0, true),
+        mkRow(
+            'Expenses only',
+            s.expenses.total,
+            p?.expenses?.total ?? 0,
+            false,
+        ),
+        mkRow('Payroll', s.payroll?.total ?? 0, p?.payroll?.total ?? 0, false),
+    ];
+});
+
+// Every movement type in the period, sized against the largest, for the overview bars.
+const typeRows = computed(() => {
+    if (!ftSummary.value) {
+return [];
+}
+
+    const s = ftSummary.value;
+    const rows = [
+        { type: 'payment', total: s.payments.total, count: s.payments.count },
+        {
+            type: 'income_adjustment',
+            total: s.income_adjustments?.total ?? 0,
+            count: s.income_adjustments?.count ?? 0,
+        },
+        { type: 'expense', total: s.expenses.total, count: s.expenses.count },
+        {
+            type: 'payroll',
+            total: s.payroll?.total ?? 0,
+            count: s.payroll?.count ?? 0,
+        },
+        {
+            type: 'asset_deduction',
+            total: s.asset_deductions?.total ?? 0,
+            count: s.asset_deductions?.count ?? 0,
+        },
+        {
+            type: 'payout_share',
+            total: s.payout_shares?.total ?? 0,
+            count: s.payout_shares?.count ?? 0,
+        },
+    ].filter((r) => r.total > 0 || r.count > 0);
+    const max = Math.max(...rows.map((r) => r.total), 1);
+    const inTotal = periodIncome.value || 1;
+    const outTotal = periodExpenses.value || 1;
+
+    return rows.map((r) => ({
+        ...r,
+        credit: isCredit(r.type),
+        width: Math.max(2, Math.round((r.total / max) * 100)),
+        share: Math.round(
+            (r.total / (isCredit(r.type) ? inTotal : outTotal)) * 100,
+        ),
+    }));
+});
+
+// Money in/out per tender this period, joined with each tender's running balance.
+const tenderRows = computed(() => {
+    const s = ftSummary.value;
+
+    if (!s) {
+return [];
+}
+
+    const balances = new Map(
+        s.balance_by_tender.map((b) => [b.tender, b.balance]),
+    );
+    const names = new Set([
+        ...s.net_by_tender.map((r) => r.tender),
+        ...s.balance_by_tender.map((b) => b.tender),
+    ]);
+
+    return [...names]
+        .map((name) => {
+            const flow = s.net_by_tender.find((r) => r.tender === name);
+
+            return {
+                tender: name,
+                id: tenders.value.find((t) => t.name === name)?.id ?? null,
+                total_in: flow?.total_in ?? 0,
+                total_out: flow?.total_out ?? 0,
+                net: flow?.net ?? 0,
+                count: flow?.count ?? 0,
+                balance: balances.get(name) ?? 0,
+            };
+        })
+        .sort((a, b) => b.balance - a.balance);
+});
 
 const lineChart = computed(() => {
-    const data = dailyData.value
-    if (!data.length) return null
-    const n = data.length
-    const VW = 600, VH = 190
-    const padL = 58, padR = 58, padT = 14, padB = 38
-    const W = VW - padL - padR
-    const H = VH - padT - padB
+    const data = dailyData.value;
+
+    if (!data.length) {
+return null;
+}
+
+    const n = data.length;
+    const VW = 600,
+        VH = 200;
+    const padL = 58,
+        padR = 58,
+        padT = 14,
+        padB = 38;
+    const W = VW - padL - padR;
+    const H = VH - padT - padB;
 
     // Left axis: daily income / expense scale
-    const maxIE = Math.max(...data.flatMap(d => [d.income, d.expense]), 100)
-    const xPos = (i: number) => padL + (n > 1 ? (i / (n - 1)) * W : W / 2)
-    const yPos = (v: number) => padT + H * (1 - v / maxIE)
+    const maxIE = Math.max(...data.flatMap((d) => [d.income, d.expense]), 100);
+    const xPos = (i: number) => padL + (n > 1 ? (i / (n - 1)) * W : W / 2);
+    const yPos = (v: number) => padT + H * (1 - v / maxIE);
     const polyline = (key: 'income' | 'expense') =>
-        data.map((d, i) => `${xPos(i)},${yPos(d[key])}`).join(' ')
+        data.map((d, i) => `${xPos(i)},${yPos(d[key])}`).join(' ');
     const area = (key: 'income' | 'expense') => {
-        const pts = data.map((d, i) => `L${xPos(i)},${yPos(d[key])}`).join(' ')
-        return `M${xPos(0)},${padT + H} ${pts} L${xPos(n - 1)},${padT + H}Z`
-    }
-    const yTicks = [0, 0.25, 0.5, 0.75, 1].map(p => ({ y: yPos(maxIE * p), val: maxIE * p }))
+        const pts = data.map((d, i) => `L${xPos(i)},${yPos(d[key])}`).join(' ');
 
-    // Right axis: cumulative YTD balance scale
-    const bals = data.map(d => d.balance)
-    const minBal = Math.min(...bals)
-    const maxBal = Math.max(...bals)
-    const bRange = Math.max(maxBal - minBal, 1)
-    const bMin = minBal - bRange * 0.08
-    const bMax = maxBal + bRange * 0.08
-    const yBal = (v: number) => padT + H * (1 - (v - bMin) / (bMax - bMin))
-    const balPolyline = data.map((d, i) => `${xPos(i)},${yBal(d.balance)}`).join(' ')
-    const balTicks = [0, 0.25, 0.5, 0.75, 1].map(p => ({
+        return `M${xPos(0)},${padT + H} ${pts} L${xPos(n - 1)},${padT + H}Z`;
+    };
+    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((p) => ({
+        y: yPos(maxIE * p),
+        val: maxIE * p,
+    }));
+
+    // Right axis: cumulative balance scale
+    const bals = data.map((d) => d.balance);
+    const minBal = Math.min(...bals);
+    const maxBal = Math.max(...bals);
+    const bRange = Math.max(maxBal - minBal, 1);
+    const bMin = minBal - bRange * 0.08;
+    const bMax = maxBal + bRange * 0.08;
+    const yBal = (v: number) => padT + H * (1 - (v - bMin) / (bMax - bMin));
+    const balPolyline = data
+        .map((d, i) => `${xPos(i)},${yBal(d.balance)}`)
+        .join(' ');
+    const balTicks = [0, 0.25, 0.5, 0.75, 1].map((p) => ({
         y: padT + H * (1 - p),
         val: bMin + (bMax - bMin) * p,
-    }))
+    }));
     const shortFmt = (v: number) => {
-        const abs = Math.abs(v)
-        const s = v < 0 ? '-' : ''
-        if (abs >= 1_000_000) return s + (abs / 1_000_000).toFixed(1) + 'M'
-        if (abs >= 1_000) return s + (abs / 1_000).toFixed(0) + 'k'
-        return v.toFixed(0)
-    }
+        const abs = Math.abs(v);
+        const s = v < 0 ? '-' : '';
 
-    const stepW = n > 1 ? W / (n - 1) : W
-    const xLabels = data.map((d, i) => ({ i, x: xPos(i), label: d.date.slice(5) }))
-        .filter((_, i) => i === 0 || i === n - 1 || i % 5 === 0)
-    const strips = data.map((_, i) => ({ x: xPos(i) - stepW / 2, width: stepW, index: i }))
-    return { polyline, area, balPolyline, yTicks, balTicks, shortFmt, xLabels, strips, xPos, yPos, yBal, padL, padR, padT, padB, H, VW, VH }
-})
+        if (abs >= 1_000_000) {
+return s + (abs / 1_000_000).toFixed(1) + 'M';
+}
+
+        if (abs >= 1_000) {
+return s + (abs / 1_000).toFixed(0) + 'k';
+}
+
+        return v.toFixed(0);
+    };
+
+    const stepW = n > 1 ? W / (n - 1) : W;
+    const xLabels = data
+        .map((d, i) => ({ i, x: xPos(i), label: d.date.slice(5) }))
+        .filter((_, i) => i === 0 || i === n - 1 || i % 5 === 0);
+    const strips = data.map((_, i) => ({
+        x: xPos(i) - stepW / 2,
+        width: stepW,
+        index: i,
+    }));
+
+    return {
+        polyline,
+        area,
+        balPolyline,
+        yTicks,
+        balTicks,
+        shortFmt,
+        xLabels,
+        strips,
+        xPos,
+        yPos,
+        yBal,
+        padL,
+        padR,
+        padT,
+        padB,
+        H,
+        VW,
+        VH,
+    };
+});
 
 const sortedTx = computed(() => {
-    let list = ftTransactions.value
-    const q = ftSearch.value.trim().toLowerCase()
+    let list = ftTransactions.value;
+    const q = ftSearch.value.trim().toLowerCase();
+
     if (q) {
-        list = list.filter(tx =>
-            tx.description.toLowerCase().includes(q) ||
-            tx.type.toLowerCase().includes(q) ||
-            (tx.tender?.name ?? '').toLowerCase().includes(q) ||
-            (tx.user?.name ?? '').toLowerCase().includes(q)
-        )
+        list = list.filter(
+            (tx) =>
+                tx.description.toLowerCase().includes(q) ||
+                tx.type.toLowerCase().includes(q) ||
+                (tx.tender?.name ?? '').toLowerCase().includes(q) ||
+                (tx.user?.name ?? '').toLowerCase().includes(q) ||
+                (tx.order?.customer_name ?? '').toLowerCase().includes(q),
+        );
     }
-    const dir = ftSortDir.value === 'asc' ? 1 : -1
+
+    const dir = ftSortDir.value === 'asc' ? 1 : -1;
+
     return [...list].sort((a, b) => {
         switch (ftSortKey.value) {
-            case 'transacted_at': return dir * (new Date(a.transacted_at).getTime() - new Date(b.transacted_at).getTime())
-            case 'amount':        return dir * (a.amount - b.amount)
-            case 'type':          return dir * a.type.localeCompare(b.type)
-            case 'description':   return dir * a.description.localeCompare(b.description)
+            case 'transacted_at':
+                return (
+                    dir *
+                    (new Date(a.transacted_at.replace(' ', 'T')).getTime() -
+                        new Date(b.transacted_at.replace(' ', 'T')).getTime())
+                );
+            case 'amount':
+                return dir * (a.amount - b.amount);
+            case 'type':
+                return dir * a.type.localeCompare(b.type);
+            case 'description':
+                return dir * a.description.localeCompare(b.description);
         }
-        return 0
-    })
-})
+
+        return 0;
+    });
+});
+
+const activeFilters = computed(() => {
+    const list: { key: 'type' | 'tender' | 'search'; label: string }[] = [];
+
+    if (ftTypeFilter.value) {
+list.push({
+            key: 'type',
+            label:
+                typeOptions.find((o) => o.value === ftTypeFilter.value)
+                    ?.label ?? ftTypeFilter.value,
+        });
+}
+
+    if (ftTenderFilter.value !== '') {
+list.push({
+            key: 'tender',
+            label:
+                tenders.value.find((t) => t.id === ftTenderFilter.value)
+                    ?.name ?? 'Tender',
+        });
+}
+
+    if (ftSearch.value.trim()) {
+list.push({ key: 'search', label: `“${ftSearch.value.trim()}”` });
+}
+
+    return list;
+});
 
 const toggleSort = (key: typeof ftSortKey.value) => {
-    if (ftSortKey.value === key) ftSortDir.value = ftSortDir.value === 'asc' ? 'desc' : 'asc'
-    else { ftSortKey.value = key; ftSortDir.value = 'desc' }
-}
+    if (ftSortKey.value === key) {
+ftSortDir.value = ftSortDir.value === 'asc' ? 'desc' : 'asc';
+} else {
+        ftSortKey.value = key;
+        ftSortDir.value = 'desc';
+    }
+};
+const sortMark = (key: typeof ftSortKey.value) =>
+    ftSortKey.value !== key ? '↕' : ftSortDir.value === 'asc' ? '↑' : '↓';
+const ariaSort = (key: typeof ftSortKey.value) =>
+    ftSortKey.value !== key
+        ? 'none'
+        : ftSortDir.value === 'asc'
+          ? 'ascending'
+          : 'descending';
 
 // ── Data loading ─────────────────────────────────────────────────────────────────
 const loadTenders = async () => {
     try {
-        const res = await api.get('/api/v1/payment-tenders')
-        tenders.value = Array.isArray(res.data) ? res.data : (res.data?.data ?? [])
-    } catch { /* non-fatal */ }
-}
+        const res = await api.get('/api/v1/payment-tenders');
+        tenders.value = Array.isArray(res.data)
+            ? res.data
+            : (res.data?.data ?? []);
+    } catch {
+        /* non-fatal */
+    }
+};
 
 const loadFinancial = async (page = 1) => {
-    ftPage.value = page
+    ftPage.value = page;
+
     try {
         const [summaryRes, listRes, billsRes] = await Promise.all([
             api.get('/api/v1/financial-transactions/summary', {
@@ -367,70 +665,184 @@ const loadFinancial = async (page = 1) => {
                     include_asset_deductions: includeAssetDeductions.value,
                 },
             }),
-            api.get('/api/v1/bills/summary', {
-                params: { start_date: ftStartDate.value || undefined, end_date: ftEndDate.value || undefined },
-            }).catch(() => ({ data: null })),
-        ])
-        ftSummary.value = summaryRes.data
-        ftTransactions.value = listRes.data.data ?? []
-        ftMeta.value = listRes.data.meta ?? listRes.data
-        billsSummary.value = billsRes.data
+            api
+                .get('/api/v1/bills/summary', {
+                    params: {
+                        start_date: ftStartDate.value || undefined,
+                        end_date: ftEndDate.value || undefined,
+                    },
+                })
+                .catch(() => ({ data: null })),
+        ]);
+        ftSummary.value = summaryRes.data;
+        ftTransactions.value = listRes.data.data ?? [];
+        ftMeta.value = listRes.data.meta ?? listRes.data;
+        billsSummary.value = billsRes.data;
     } catch (err: any) {
-        toast.error(err.response?.data?.message ?? 'Failed to load transactions.')
+        toast.error(
+            err.response?.data?.message ?? 'Failed to load transactions.',
+        );
     }
-}
+};
 
 const loadPerformance = async () => {
-    perfLoading.value = true
+    perfLoading.value = true;
+
     try {
-        const s = new Date(ftStartDate.value + 'T00:00:00')
-        const e = new Date(ftEndDate.value + 'T00:00:00')
-        const len = Math.round((e.getTime() - s.getTime()) / 86400000) + 1
-        const prevEnd = new Date(s); prevEnd.setDate(prevEnd.getDate() - 1)
-        const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - len + 1)
-        const toDate = (d: Date) => d.toISOString().split('T')[0]
+        const start = parseYmd(ftStartDate.value);
+        const prevEnd = addDays(start, -1);
+        const prevStart = addDays(prevEnd, -(periodDays.value - 1));
         const [dailyRes, prevRes] = await Promise.all([
-            api.get('/api/v1/financial-transactions/daily', { params: { days: 30 } }),
-            api.get('/api/v1/financial-transactions/summary', {
-                params: { start_date: toDate(prevStart), end_date: toDate(prevEnd), include_asset_deductions: includeAssetDeductions.value },
+            api.get('/api/v1/financial-transactions/daily', {
+                params: { days: 30 },
             }),
-        ])
-        dailyData.value = dailyRes.data
-        prevSummary.value = prevRes.data
+            api.get('/api/v1/financial-transactions/summary', {
+                params: {
+                    start_date: ymd(prevStart),
+                    end_date: ymd(prevEnd),
+                    include_asset_deductions: includeAssetDeductions.value,
+                },
+            }),
+        ]);
+        dailyData.value = dailyRes.data;
+        prevSummary.value = prevRes.data;
+        perfStale.value = false;
     } catch {
-        toast.error('Failed to load performance data.')
+        toast.error('Failed to load performance data.');
     } finally {
-        perfLoading.value = false
+        perfLoading.value = false;
     }
+};
+
+// Reload everything that depends on the period or filters.
+const reload = async (page = 1) => {
+    perfStale.value = true;
+    await loadFinancial(page);
+
+    if (activeTab.value === 'performance') {
+await loadPerformance();
+}
+};
+
+const refreshAll = async () => {
+    refreshing.value = true;
+
+    try {
+        await Promise.all([reload(ftPage.value), loadTenders()]);
+    } finally {
+        refreshing.value = false;
+    }
+};
+
+const switchTab = (tab: Tab) => {
+    activeTab.value = tab;
+
+    try {
+        localStorage.setItem('financial-tab', tab);
+    } catch {
+        /* private mode */
+    }
+
+    if (tab === 'performance' && perfStale.value) {
+loadPerformance();
+}
+};
+
+// Jump from an overview figure to the matching ledger rows.
+const showInLedger = (filters: { type?: string; tender?: number | null }) => {
+    ftTypeFilter.value = filters.type ?? '';
+    ftTenderFilter.value = filters.tender ?? '';
+    ftSearch.value = '';
+    switchTab('ledger');
+    loadFinancial();
+};
+const setTypeFilter = (type: string) => {
+    ftTypeFilter.value = type;
+    loadFinancial();
+};
+const clearFilter = (key: 'type' | 'tender' | 'search') => {
+    if (key === 'search') {
+        ftSearch.value = '';
+
+        return;
+    }
+
+    if (key === 'type') {
+ftTypeFilter.value = '';
+} else {
+ftTenderFilter.value = '';
 }
 
-const switchTab = (tab: 'ledger' | 'performance') => {
-    activeTab.value = tab
-    if (tab === 'performance' && !dailyData.value.length) loadPerformance()
-}
+    loadFinancial();
+};
+const clearAllFilters = () => {
+    ftTypeFilter.value = '';
+    ftTenderFilter.value = '';
+    ftSearch.value = '';
+    loadFinancial();
+};
 
 const onChartTouch = (e: TouchEvent) => {
-    if (!lineChart.value || !dailyData.value.length) return
-    const target = e.currentTarget as SVGSVGElement
-    const rect = target.getBoundingClientRect()
-    const touch = e.touches[0]
-    if (!touch) return
-    const relX = touch.clientX - rect.left
-    const chart = lineChart.value
-    const svgX = (relX / rect.width) * chart.VW
-    const n = dailyData.value.length
-    hoveredDayIdx.value = Math.round(Math.max(0, Math.min(n - 1,
-        ((svgX - chart.padL) / (chart.VW - chart.padL - 14)) * (n - 1)
-    )))
+    if (!lineChart.value || !dailyData.value.length) {
+return;
 }
 
+    const target = e.currentTarget as SVGSVGElement;
+    const rect = target.getBoundingClientRect();
+    const touch = e.touches[0];
+
+    if (!touch) {
+return;
+}
+
+    const relX = touch.clientX - rect.left;
+    const chart = lineChart.value;
+    const svgX = (relX / rect.width) * chart.VW;
+    const n = dailyData.value.length;
+    hoveredDayIdx.value = Math.round(
+        Math.max(
+            0,
+            Math.min(
+                n - 1,
+                ((svgX - chart.padL) / (chart.VW - chart.padL - chart.padR)) *
+                    (n - 1),
+            ),
+        ),
+    );
+};
+
 // ── Actions ────────────────────────────────────────────────────────────────────
+const entryValid = computed(
+    () =>
+        !!entryForm.value.description.trim() &&
+        Number(entryForm.value.amount) > 0 &&
+        !!entryForm.value.payment_tender_id &&
+        !!entryForm.value.transacted_at,
+);
+const openNewEntry = (type: 'expense' | 'income_adjustment' = 'expense') => {
+    editingTx.value = null;
+    entryForm.value = {
+        type,
+        description: '',
+        amount: '',
+        notes: '',
+        transacted_at: nowDatetimeLocal(),
+        payment_tender_id: entryForm.value.payment_tender_id,
+    };
+    sheet.value = 'new';
+};
+const closeSheet = () => {
+    sheet.value = null;
+    editingTx.value = null;
+};
+
 const saveEntry = async () => {
-    if (!entryForm.value.description.trim() || !entryForm.value.amount || !entryForm.value.payment_tender_id || !entryForm.value.transacted_at) return
-    entrySaving.value = true
-    const recordedDate = entryForm.value.transacted_at
-        ? entryForm.value.transacted_at.substring(0, 10)
-        : today
+    if (!entryValid.value) {
+return;
+}
+
+    entrySaving.value = true;
+    const recordedDate = entryForm.value.transacted_at.substring(0, 10);
     const payload = {
         type: entryForm.value.type,
         amount: parseFloat(entryForm.value.amount),
@@ -438,29 +850,47 @@ const saveEntry = async () => {
         notes: entryForm.value.notes || null,
         transacted_at: entryForm.value.transacted_at || null,
         payment_tender_id: entryForm.value.payment_tender_id || null,
-    }
+    };
+
     try {
-        await api.post('/api/v1/financial-transactions', payload)
-        const label = entryForm.value.type === 'income_adjustment' ? 'Income adjustment' : 'Expense'
-        toast.success(`${label} recorded.`)
-        entryForm.value = { type: 'expense', description: '', amount: '', notes: '', transacted_at: nowDatetimeLocal(), payment_tender_id: null }
-        showEntryForm.value = false
-        showMobileAddTx.value = false
-        // Widen the date filter to include the entry's date so it's always visible after save.
-        if (recordedDate < ftStartDate.value) ftStartDate.value = recordedDate
-        if (recordedDate > ftEndDate.value) ftEndDate.value = recordedDate
-        await loadFinancial()
-    } catch (err: any) {
-        toast.error(err.response?.data?.message ?? 'Failed to save entry.')
-    } finally {
-        entrySaving.value = false
-    }
+        await api.post('/api/v1/financial-transactions', payload);
+        const label =
+            entryForm.value.type === 'income_adjustment'
+                ? 'Income adjustment'
+                : 'Expense';
+        toast.success(`${label} recorded.`);
+        closeSheet();
+
+        // Widen the period to include the entry's date so it's always visible after save.
+        if (
+            recordedDate < ftStartDate.value ||
+            recordedDate > ftEndDate.value
+        ) {
+            if (recordedDate < ftStartDate.value) {
+ftStartDate.value = recordedDate;
 }
 
+            if (recordedDate > ftEndDate.value) {
+ftEndDate.value = recordedDate;
+}
+
+            activePreset.value = 'custom';
+        }
+
+        await reload();
+    } catch (err: any) {
+        toast.error(err.response?.data?.message ?? 'Failed to save entry.');
+    } finally {
+        entrySaving.value = false;
+    }
+};
+
 const startEdit = (tx: FtTransaction) => {
-    editingTx.value = tx
+    editingTx.value = tx;
     // Format datetime-local value: strip seconds/ms from ISO string
-    const dt = tx.transacted_at ? tx.transacted_at.replace(' ', 'T').substring(0, 16) : ''
+    const dt = tx.transacted_at
+        ? tx.transacted_at.replace(' ', 'T').substring(0, 16)
+        : '';
     editForm.value = {
         type: tx.type,
         description: tx.description,
@@ -468,1210 +898,2753 @@ const startEdit = (tx: FtTransaction) => {
         notes: tx.notes ?? '',
         transacted_at: dt,
         payment_tender_id: tx.payment_tender_id ?? null,
-    }
-}
-
-const cancelEdit = () => { editingTx.value = null }
+    };
+    sheet.value = 'edit';
+};
 
 const saveEdit = async () => {
-    if (!editingTx.value) return
-    editSaving.value = true
-    try {
-        await api.patch(`/api/v1/financial-transactions/${editingTx.value.id}`, {
-            type: editForm.value.type || undefined,
-            description: editForm.value.description || undefined,
-            amount: editForm.value.amount ? parseFloat(editForm.value.amount) : undefined,
-            notes: editForm.value.notes || null,
-            transacted_at: editForm.value.transacted_at || undefined,
-            payment_tender_id: editForm.value.payment_tender_id || null,
-        })
-        toast.success('Transaction updated.')
-        editingTx.value = null
-        await loadFinancial(ftPage.value)
-    } catch (err: any) {
-        toast.error(err.response?.data?.message ?? 'Failed to update transaction.')
-    } finally {
-        editSaving.value = false
-    }
+    if (!editingTx.value) {
+return;
 }
+
+    editSaving.value = true;
+
+    try {
+        await api.patch(
+            `/api/v1/financial-transactions/${editingTx.value.id}`,
+            {
+                type: editForm.value.type || undefined,
+                description: editForm.value.description || undefined,
+                amount: editForm.value.amount
+                    ? parseFloat(editForm.value.amount)
+                    : undefined,
+                notes: editForm.value.notes || null,
+                transacted_at: editForm.value.transacted_at || undefined,
+                payment_tender_id: editForm.value.payment_tender_id || null,
+            },
+        );
+        toast.success('Transaction updated.');
+        closeSheet();
+        await reload(ftPage.value);
+    } catch (err: any) {
+        toast.error(
+            err.response?.data?.message ?? 'Failed to update transaction.',
+        );
+    } finally {
+        editSaving.value = false;
+    }
+};
 
 const deleteTransaction = async (tx: FtTransaction) => {
-    const orderNote = tx.order_id && ['order', 'payment'].includes(tx.type)
-        ? `\n\nThis will also delete Order #${tx.order_id} and all of its payments and transactions.`
-        : ''
+    const orderNote =
+        tx.order_id && ['order', 'payment'].includes(tx.type)
+            ? `\n\nThis will also delete Order #${tx.order_id} and all of its payments and transactions.`
+            : '';
 
-    if (!confirm(`Delete transaction?\n${tx.description}\nAmount: ${fmt(tx.amount)}${orderNote}`)) return
-    ftDeleting.value = tx.id
-    try {
-        await api.delete(`/api/v1/financial-transactions/${tx.id}`)
-        toast.success('Transaction deleted.')
-        await loadFinancial(ftPage.value)
-    } catch (err: any) {
-        toast.error(err.response?.data?.message ?? 'Failed to delete transaction.')
-    } finally {
-        ftDeleting.value = null
-    }
+    if (
+        !confirm(
+            `Delete transaction?\n${tx.description}\nAmount: ${fmt(tx.amount)}${orderNote}`,
+        )
+    ) {
+return;
 }
 
+    ftDeleting.value = tx.id;
+
+    try {
+        await api.delete(`/api/v1/financial-transactions/${tx.id}`);
+        toast.success('Transaction deleted.');
+
+        if (editingTx.value?.id === tx.id) {
+closeSheet();
+}
+
+        await reload(ftPage.value);
+    } catch (err: any) {
+        toast.error(
+            err.response?.data?.message ?? 'Failed to delete transaction.',
+        );
+    } finally {
+        ftDeleting.value = null;
+    }
+};
+const canDelete = (tx: FtTransaction) =>
+    isAdmin.value || ['expense', 'income_adjustment'].includes(tx.type);
+
+watch(includeAssetDeductions, () => reload());
+
+// Lock page scroll while the entry sheet is open.
+let originalOverflow: string | null = null;
+watch(sheet, (open) => {
+    if (open && originalOverflow === null) {
+        originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+    } else if (!open && originalOverflow !== null) {
+        document.body.style.overflow = originalOverflow;
+        originalOverflow = null;
+    }
+});
+
 onMounted(async () => {
-    fabX.value = window.innerWidth - 72
-    loading.value = true
-    try { await Promise.all([loadFinancial(), loadTenders()]) } finally { loading.value = false }
-})
+    loading.value = true;
+
+    try {
+        await Promise.all([loadFinancial(), loadTenders()]);
+
+        if (activeTab.value === 'performance') {
+await loadPerformance();
+}
+    } finally {
+        loading.value = false;
+    }
+});
+onBeforeUnmount(() => {
+    if (originalOverflow !== null) {
+document.body.style.overflow = originalOverflow;
+}
+});
 </script>
 
 <template>
-    <Head title="Financial Transactions" />
+    <Head title="Financial" />
 
-    <div class="space-y-5 p-4 md:p-6">
-
-        <!-- ── Collapsible Financial Overview ─────────────────────────────────── -->
-        <div v-if="ftSummary" class="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <button @click="summaryOpen = !summaryOpen"
-                class="w-full px-4 py-3 flex items-center justify-between hover:bg-muted/30 transition-colors">
-                <h2 class="font-bold text-sm flex items-center gap-2 flex-wrap">
-                    <BarChart3 class="h-4 w-4 text-primary" />
-                    Financial Overview
-                    <span class="text-xs font-normal text-muted-foreground">
-                        {{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}
-                    </span>
-                    <span v-if="!includeAssetDeductions"
-                        class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                        Asset Deductions excluded
-                    </span>
-                </h2>
-                <ChevronDown class="h-4 w-4 text-muted-foreground transition-transform duration-200"
-                    :class="summaryOpen ? 'rotate-180' : ''" />
-            </button>
-
-            <div v-show="summaryOpen" class="border-t p-4 space-y-4">
-                <div class="grid lg:grid-cols-2 gap-5">
-
-                    <!-- LEFT: Allocation donut ────────────────────────── -->
-                    <div class="rounded-xl border bg-background p-4">
-                        <h3 class="font-bold text-sm mb-4">Financial Allocation</h3>
-                        <div v-if="pieData.length > 0" class="space-y-4">
-                            <!-- Donut chart centred above the table -->
-                            <div class="flex justify-center">
-                                <svg viewBox="0 0 180 180" style="width:148px;height:148px">
-                                    <path v-for="(slice, i) in pieData" :key="i"
-                                        :d="slice.path" :fill="slice.color"
-                                        class="transition-opacity hover:opacity-75" />
-                                    <text x="90" y="82" text-anchor="middle" fill="currentColor" fill-opacity="0.4" font-size="10">Allocation</text>
-                                    <text x="90" y="98" text-anchor="middle" fill="currentColor" font-size="13" font-weight="bold">{{ pieData.length }}</text>
-                                    <text x="90" y="111" text-anchor="middle" fill="currentColor" fill-opacity="0.4" font-size="9">categories</text>
-                                </svg>
-                            </div>
-                            <!-- Breakdown table -->
-                            <table class="w-full text-xs">
-                                <thead>
-                                    <tr class="border-b text-muted-foreground">
-                                        <th class="pb-1.5 text-left font-medium">Category</th>
-                                        <th class="pb-1.5 text-right font-medium">Txns</th>
-                                        <th class="pb-1.5 text-right font-medium">Amount</th>
-                                        <th class="pb-1.5 pl-3 text-left font-medium">Share</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-border">
-                                    <tr v-for="slice in pieData" :key="slice.label">
-                                        <td class="py-2">
-                                            <span class="flex items-center gap-1.5">
-                                                <span class="w-2 h-2 rounded-sm shrink-0" :style="`background:${slice.color}`"></span>
-                                                <span class="font-medium">{{ slice.label }}</span>
-                                            </span>
-                                        </td>
-                                        <td class="py-2 text-right tabular-nums text-muted-foreground">{{ slice.count }}</td>
-                                        <td class="py-2 text-right tabular-nums font-semibold">{{ fmt(slice.value) }}</td>
-                                        <td class="py-2 pl-3">
-                                            <div class="flex items-center gap-1.5">
-                                                <div class="w-14 h-1.5 rounded-full bg-muted overflow-hidden shrink-0">
-                                                    <div class="h-full rounded-full" :style="`width:${slice.pct}%;background:${slice.color}`" />
-                                                </div>
-                                                <span class="tabular-nums text-muted-foreground">{{ slice.pct }}%</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                                <tfoot class="border-t border-border">
-                                    <tr class="text-muted-foreground">
-                                        <td class="pt-2 font-bold text-foreground">Total</td>
-                                        <td class="pt-2 text-right tabular-nums">{{ pieData.reduce((s, i) => s + i.count, 0) }}</td>
-                                        <td class="pt-2 text-right tabular-nums font-bold text-foreground">{{ fmt(pieData.reduce((s, i) => s + i.value, 0)) }}</td>
-                                        <td class="pt-2 pl-3">100%</td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                        <p v-else class="text-xs text-muted-foreground py-4 text-center">No allocation data for this period.</p>
-                    </div>
-
-                    <!-- RIGHT: Comparison panel ───────────────────────── -->
-                    <div class="space-y-3">
-
-                        <!-- Balance as of end date -->
-                        <div :class="['rounded-xl border p-3 text-center',
-                            (ftSummary.balance_as_of_end ?? 0) >= 0
-                                ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800'
-                                : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800']">
-                            <p class="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Balance as of {{ ftSummary.period?.end }}</p>
-                            <p class="text-xl font-black leading-tight tabular-nums"
-                                :class="(ftSummary.balance_as_of_end ?? 0) >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                {{ fmt(ftSummary.balance_as_of_end ?? 0) }}
-                            </p>
-                            <p class="text-[10px] text-muted-foreground mt-0.5">running balance</p>
-                        </div>
-
-                        <!-- 3 key metric chips -->
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <!-- Net Cash — clickable to reveal tender breakdown -->
-                            <button @click="showTenderBreakdown = !showTenderBreakdown"
-                                :class="['rounded-xl border p-3 text-center w-full transition-colors',
-                                    ftSummary.net >= 0
-                                        ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-950/40'
-                                        : 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-950/40']">
-                                <p class="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center justify-center gap-1">
-                                    Net Cash
-                                    <ChevronDown class="h-3 w-3 transition-transform duration-200" :class="showTenderBreakdown ? 'rotate-180' : ''" />
-                                </p>
-                                <p class="text-base font-black leading-tight tabular-nums"
-                                    :class="ftSummary.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                    {{ fmt(ftSummary.net) }}
-                                </p>
-                                <p class="text-[10px] text-muted-foreground mt-0.5">{{ ftSummary.net >= 0 ? 'Surplus' : 'Deficit' }}</p>
-                            </button>
-
-                            <div class="rounded-xl border bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800 p-3 text-center">
-                                <p class="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Payables Due</p>
-                                <p class="text-base font-black text-orange-600 leading-tight tabular-nums">{{ fmt(billsSummary?.total_due ?? 0) }}</p>
-                                <p class="text-[10px] text-muted-foreground mt-0.5">
-                                    {{ billsSummary?.count ?? 0 }} bill{{ (billsSummary?.count ?? 0) !== 1 ? 's' : '' }}
-                                </p>
-                            </div>
-
-                            <div class="rounded-xl border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 p-3 text-center">
-                                <p class="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Total Income</p>
-                                <p class="text-base font-black text-blue-600 leading-tight tabular-nums">{{ fmt(totalIncome) }}</p>
-                                <p class="text-[10px] text-muted-foreground mt-0.5">payments + adj.</p>
-                            </div>
-                        </div>
-
-                        <!-- Tender Balances — expanded when Net Cash is clicked -->
-                        <div v-show="showTenderBreakdown"
-                            class="rounded-xl border bg-background overflow-hidden transition-all duration-200">
-                            <div class="px-4 py-2.5 bg-muted/40 border-b flex items-center justify-between">
-                                <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Deposit / Account Balances</h3>
-                                <p class="text-[10px] text-muted-foreground">per tender, this period</p>
-                            </div>
-                            <div v-if="ftSummary.net_by_tender?.length > 0">
-                                <!-- Mobile cards -->
-                                <div class="md:hidden divide-y divide-border">
-                                    <div v-for="row in ftSummary.net_by_tender" :key="row.tender"
-                                        class="px-4 py-3">
-                                        <div class="flex items-center justify-between mb-1">
-                                            <span class="font-semibold text-sm">{{ row.tender }}</span>
-                                            <span class="text-[11px] text-muted-foreground">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</span>
-                                        </div>
-                                        <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
-                                            <span class="text-green-600 font-medium">In: +{{ fmt(row.total_in) }}</span>
-                                            <span class="text-red-600 font-medium">Out: -{{ fmt(row.total_out) }}</span>
-                                            <span class="font-bold"
-                                                :class="row.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                                Net: {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div class="px-4 py-3 bg-muted/30">
-                                        <div class="flex items-center justify-between mb-1">
-                                            <span class="font-bold text-sm">Total</span>
-                                            <span class="text-[11px] text-muted-foreground">{{ ftSummary.net_by_tender.reduce((s, r) => s + r.count, 0) }} txns</span>
-                                        </div>
-                                        <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
-                                            <span class="text-green-700 font-bold">In: +{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_in, 0)) }}</span>
-                                            <span class="text-red-600 font-bold">Out: -{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_out, 0)) }}</span>
-                                            <span class="font-black"
-                                                :class="ftSummary.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                                Net: {{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.net, 0)) }}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <!-- Desktop table -->
-                                <div class="hidden md:block overflow-x-auto">
-                                    <table class="w-full text-xs">
-                                        <thead>
-                                            <tr class="border-b text-muted-foreground bg-muted/20">
-                                                <th class="px-4 py-2 text-left font-medium">Tender / Account</th>
-                                                <th class="px-4 py-2 text-right font-medium text-green-700">Money In</th>
-                                                <th class="px-4 py-2 text-right font-medium text-red-600">Money Out</th>
-                                                <th class="px-4 py-2 text-right font-medium">Net</th>
-                                                <th class="px-4 py-2 text-right font-medium text-muted-foreground">Txns</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-border">
-                                            <tr v-for="row in ftSummary.net_by_tender" :key="row.tender"
-                                                class="hover:bg-muted/20 transition-colors">
-                                                <td class="px-4 py-2.5 font-semibold">{{ row.tender }}</td>
-                                                <td class="px-4 py-2.5 text-right tabular-nums text-green-600 font-medium">+{{ fmt(row.total_in) }}</td>
-                                                <td class="px-4 py-2.5 text-right tabular-nums text-red-600 font-medium">-{{ fmt(row.total_out) }}</td>
-                                                <td class="px-4 py-2.5 text-right tabular-nums font-bold"
-                                                    :class="row.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                                    {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
-                                                </td>
-                                                <td class="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
-                                            </tr>
-                                        </tbody>
-                                        <tfoot class="border-t border-border bg-muted/30">
-                                            <tr>
-                                                <td class="px-4 py-2 font-bold text-xs">Total</td>
-                                                <td class="px-4 py-2 text-right tabular-nums font-bold text-green-700 text-xs">
-                                                    +{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_in, 0)) }}
-                                                </td>
-                                                <td class="px-4 py-2 text-right tabular-nums font-bold text-red-600 text-xs">
-                                                    -{{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.total_out, 0)) }}
-                                                </td>
-                                                <td class="px-4 py-2 text-right tabular-nums font-black text-xs"
-                                                    :class="ftSummary.net >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                                    {{ fmt(ftSummary.net_by_tender.reduce((s, r) => s + r.net, 0)) }}
-                                                </td>
-                                                <td class="px-4 py-2 text-right tabular-nums text-muted-foreground text-xs">
-                                                    {{ ftSummary.net_by_tender.reduce((s, r) => s + r.count, 0) }}
-                                                </td>
-                                            </tr>
-                                        </tfoot>
-                                    </table>
-                                </div>
-                            </div>
-                            <p v-else class="px-4 py-4 text-xs text-muted-foreground text-center">
-                                No tender-tagged transactions in this period. Tag expenses and income adjustments to a tender when recording entries.
-                            </p>
-                        </div>
-
-                        <!-- Cash flow comparison bars -->
-                        <div class="rounded-xl border bg-background p-4 space-y-3">
-                            <h3 class="font-bold text-sm text-muted-foreground uppercase tracking-wide text-xs">Cash Flow Comparison</h3>
-                            <div v-for="bar in comparisonBars" :key="bar.label" class="space-y-1">
-                                <div class="flex items-center justify-between text-xs">
-                                    <span class="text-muted-foreground">{{ bar.label }}</span>
-                                    <span class="font-semibold tabular-nums" :class="bar.textColor">{{ fmt(bar.value) }}</span>
-                                </div>
-                                <div class="h-2 rounded-full bg-muted overflow-hidden">
-                                    <div :class="['h-full rounded-full transition-all duration-500', bar.barColor]"
-                                        :style="`width:${bar.pct}%`" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Payments by Tender (secondary detail) -->
-                <div v-if="ftSummary.by_tender.length > 0" class="rounded-xl border bg-background p-4">
-                    <h3 class="font-bold text-sm mb-3">Payments by Tender</h3>
-                    <div class="grid sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                        <div v-for="row in ftSummary.by_tender" :key="row.tender"
-                            class="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2.5">
-                            <div>
-                                <p class="text-sm font-semibold">{{ row.tender }}</p>
-                                <p class="text-xs text-muted-foreground">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</p>
-                            </div>
-                            <p class="text-sm font-bold text-green-600 tabular-nums">{{ fmt(row.total) }}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ── Tab switcher ─────────────────────────────────────────────────── -->
-        <div class="flex gap-1 rounded-xl border bg-card shadow-sm p-1">
-            <button @click="switchTab('ledger')"
-                :class="['flex-1 rounded-lg py-2 text-sm font-semibold transition-colors',
-                    activeTab === 'ledger' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted/40']">
-                Ledger
-            </button>
-            <button @click="switchTab('performance')"
-                :class="['flex-1 rounded-lg py-2 text-sm font-semibold transition-colors',
-                    activeTab === 'performance' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground hover:bg-muted/40']">
-                Performance
-            </button>
-        </div>
-
-        <!-- ── Ledger tab ─────────────────────────────────────────────────────── -->
-        <div v-show="activeTab === 'ledger'" class="space-y-5">
-
-        <!-- ── Filters and actions bar (desktop only — mobile uses FAB) ───────── -->
-        <div class="hidden md:block rounded-xl border bg-card shadow-sm p-4">
-            <div class="flex flex-col sm:flex-row flex-wrap gap-3 sm:items-end">
-                <div class="flex gap-3 flex-1">
-                    <div class="flex-1 min-w-0">
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="ftStartDate" type="date" @change="loadFinancial()"
-                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="ftEndDate" type="date" @change="loadFinancial()"
-                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                    </div>
-                </div>
-                <div class="flex gap-3 flex-1 sm:flex-none">
-                    <div class="flex-1 sm:flex-none">
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
-                        <select v-model="ftTypeFilter" @change="loadFinancial()"
-                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                            <option value="">All Types</option>
-                            <option value="payment">Payment</option>
-                            <option value="expense">Expense</option>
-                            <option value="income_adjustment">Income Adjustment</option>
-                            <option value="payroll">Payroll</option>
-                            <option value="asset_deduction">Asset Deduction</option>
-                            <option value="payout_share">Payout Share</option>
-                        </select>
-                    </div>
-                    <div class="flex-1 sm:flex-none">
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Tender</label>
-                        <select v-model="ftTenderFilter" @change="loadFinancial()"
-                            class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                            <option value="">All Tenders</option>
-                            <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
-                        </select>
-                    </div>
-                    <div class="flex-1 sm:flex-none">
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Search</label>
-                        <div class="relative">
-                            <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                            <input v-model="ftSearch" type="text" placeholder="Filter…"
-                                class="w-full pl-8 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary sm:w-52" />
-                        </div>
-                    </div>
-                </div>
-                <div class="flex items-center justify-between sm:justify-start sm:flex-col sm:items-start gap-3 sm:gap-1">
-                    <label class="text-xs font-medium text-muted-foreground">Include Asset Deductions</label>
-                    <button @click="includeAssetDeductions = !includeAssetDeductions; loadFinancial()"
-                        :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200',
-                            includeAssetDeductions ? 'bg-primary' : 'bg-muted-foreground/30']"
-                        role="switch" :aria-checked="includeAssetDeductions">
-                        <span :class="['pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200',
-                            includeAssetDeductions ? 'translate-x-5' : 'translate-x-0']" />
-                    </button>
-                </div>
-                <button @click="showEntryForm = !showEntryForm"
-                    class="flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 sm:self-end">
-                    <Plus class="h-3.5 w-3.5" /> Record Entry
-                </button>
-            </div>
-        </div>
-
-        <!-- ── Entry form (desktop only) ────────────────────────────────────────── -->
-        <div v-if="showEntryForm" class="hidden md:block rounded-xl border bg-card shadow-sm p-4">
-            <p class="text-sm font-bold mb-3">Record Expense or Income Adjustment</p>
-            <div class="grid sm:grid-cols-2 gap-3">
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Type *</label>
-                    <select v-model="entryForm.type"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                        <option value="expense">Expense</option>
-                        <option value="income_adjustment">Income Adjustment</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
-                    <input v-model="entryForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div class="sm:col-span-2">
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Description *</label>
-                    <input v-model="entryForm.description" type="text" placeholder="e.g. Office supplies, Customer refund"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Date/Time <span class="text-red-500">*</span></label>
-                    <input v-model="entryForm.transacted_at" type="datetime-local"
-                        min="2000-01-01T00:00" max="2099-12-31T23:59" required
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Notes</label>
-                    <input v-model="entryForm.notes" type="text" placeholder="Optional reference"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">
-                        Tender / Account <span class="text-red-500">*</span>
-                    </label>
-                    <select v-model="entryForm.payment_tender_id"
-                        :class="['w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary',
-                            entryForm.payment_tender_id ? 'bg-background border-border' : 'bg-background border-red-400 text-muted-foreground']">
-                        <option :value="null" disabled>— Select tender —</option>
-                        <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
-                    </select>
-                </div>
-            </div>
-            <div class="flex gap-2 mt-3">
-                <button @click="saveEntry" :disabled="entrySaving || !entryForm.description.trim() || !entryForm.amount || !entryForm.payment_tender_id || !entryForm.transacted_at"
-                    class="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                    {{ entrySaving ? 'Saving…' : 'Record Entry' }}
-                </button>
-                <button @click="showEntryForm = false" class="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted">Cancel</button>
-            </div>
-        </div>
-
-        <!-- ── Edit Entry form ────────────────────────────────────────────────────── -->
-        <div v-if="editingTx" class="rounded-xl border border-primary/30 bg-card shadow-sm p-4">
-            <div class="flex items-center justify-between mb-3">
-                <p class="text-sm font-bold flex items-center gap-2">
-                    <Pencil class="h-4 w-4 text-primary" />
-                    Edit {{ typeLabel(editingTx.type) }}
-                    <span class="text-xs text-muted-foreground font-normal">#{{ editingTx.id }}</span>
+    <div class="fin-theme fin-page">
+        <!-- ── Heading ──────────────────────────────────────────────────────── -->
+        <header class="fin-heading">
+            <div>
+                <p class="fin-eyebrow">
+                    <span aria-hidden="true" />BYPASS GRILL / FINANCES
                 </p>
-                <button @click="cancelEdit" class="text-muted-foreground hover:text-foreground">
-                    <X class="h-4 w-4" />
+                <h1>FOLLOW EVERY <span>PESO.</span></h1>
+                <p class="fin-intro">
+                    Money in, money out, and where it sits, for any period you
+                    pick.
+                </p>
+            </div>
+            <div class="fin-heading-actions">
+                <button
+                    class="fin-ghost-btn"
+                    :disabled="refreshing"
+                    @click="refreshAll"
+                >
+                    <RefreshCw
+                        :size="14"
+                        :class="{ spinning: refreshing }"
+                        aria-hidden="true"
+                    />{{ refreshing ? 'Refreshing…' : 'Refresh' }}
+                </button>
+                <button class="fin-primary-btn" @click="openNewEntry()">
+                    <Plus :size="16" aria-hidden="true" />Record entry
                 </button>
             </div>
-            <div class="grid sm:grid-cols-2 gap-3">
-                <div v-if="editingTx?.type !== 'payment'" class="sm:col-span-2">
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Type *</label>
-                    <select v-model="editForm.type"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                        <option value="expense">Expense</option>
-                        <option value="income_adjustment">Income Adjustment</option>
-                        <option value="asset_deduction">Asset Deduction</option>
-                        <option value="payroll">Payroll</option>
-                        <option value="payout_share">Payout Share</option>
-                    </select>
+        </header>
+
+        <!-- ── Period bar ───────────────────────────────────────────────────── -->
+        <section class="fin-period" aria-label="Reporting period">
+            <div class="fin-period-top">
+                <div class="fin-period-label">
+                    <CalendarDays :size="16" aria-hidden="true" />
+                    <strong>{{ periodLabel }}</strong>
+                    <small
+                        >{{ periodDays }} day{{
+                            periodDays !== 1 ? 's' : ''
+                        }}</small
+                    >
                 </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
-                    <input v-model="editForm.amount" type="number" min="0.01" step="0.01"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Tender / Account</label>
-                    <select v-model="editForm.payment_tender_id"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                        <option :value="null">— Not tagged —</option>
-                        <option
-                            v-if="editingTx?.tender && !tenders.some(t => t.id === editingTx!.tender!.id)"
-                            :value="editingTx.tender.id">{{ editingTx.tender.name }}</option>
-                        <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
-                    </select>
-                </div>
-                <div class="sm:col-span-2">
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Description *</label>
-                    <input v-model="editForm.description" type="text"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Date/Time</label>
-                    <input v-model="editForm.transacted_at" type="datetime-local"
-                        min="2000-01-01T00:00" max="2099-12-31T23:59"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
-                <div>
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Notes</label>
-                    <input v-model="editForm.notes" type="text" placeholder="Optional reference"
-                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
+                <label class="fin-switch">
+                    <input v-model="includeAssetDeductions" type="checkbox" />
+                    <span class="fin-switch-track" aria-hidden="true"
+                        ><span
+                    /></span>
+                    Include asset deductions
+                </label>
             </div>
-            <div class="flex gap-2 mt-3">
-                <button @click="saveEdit" :disabled="editSaving || !editForm.description.trim() || !editForm.amount"
-                    class="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                    {{ editSaving ? 'Saving…' : 'Save Changes' }}
+            <div class="fin-presets" role="group" aria-label="Quick periods">
+                <button
+                    v-for="p in presets"
+                    :key="p.key"
+                    :aria-pressed="activePreset === p.key"
+                    @click="setPreset(p.key)"
+                >
+                    {{ p.label }}
                 </button>
-                <button @click="cancelEdit" class="rounded-lg border px-4 py-2 text-sm font-medium hover:bg-muted">Cancel</button>
             </div>
+            <div v-if="activePreset === 'custom'" class="fin-custom-range">
+                <label
+                    >From<input
+                        v-model="ftStartDate"
+                        type="date"
+                        :max="ftEndDate"
+                        @change="onCustomDate"
+                /></label>
+                <label
+                    >To<input
+                        v-model="ftEndDate"
+                        type="date"
+                        :min="ftStartDate"
+                        @change="onCustomDate"
+                /></label>
+            </div>
+        </section>
+
+        <!-- ── KPI strip ────────────────────────────────────────────────────── -->
+        <section class="fin-kpis" aria-label="Period totals">
+            <template v-if="ftSummary">
+                <article class="fin-kpi">
+                    <p>
+                        <ArrowDownLeft :size="13" aria-hidden="true" />Money in
+                    </p>
+                    <strong class="is-in">{{ fmt(periodIncome) }}</strong>
+                    <span>Payments + income adjustments</span>
+                </article>
+                <article class="fin-kpi">
+                    <p>
+                        <ArrowUpRight :size="13" aria-hidden="true" />Money out
+                    </p>
+                    <strong class="is-out">{{ fmt(periodExpenses) }}</strong>
+                    <span
+                        >Expenses, payroll{{
+                            includeAssetDeductions ? ', asset deductions' : ''
+                        }}, payouts</span
+                    >
+                </article>
+                <article
+                    class="fin-kpi"
+                    :class="ftSummary.net >= 0 ? 'is-surplus' : 'is-deficit'"
+                >
+                    <p>Net cash</p>
+                    <strong
+                        >{{ ftSummary.net < 0 ? '−' : ''
+                        }}{{ fmt(Math.abs(ftSummary.net)) }}</strong
+                    >
+                    <span
+                        >{{ ftSummary.net >= 0 ? 'Surplus' : 'Deficit' }} for
+                        the period</span
+                    >
+                </article>
+                <article class="fin-kpi fin-kpi-dark">
+                    <p><Wallet :size="13" aria-hidden="true" />Balance</p>
+                    <strong>{{ fmt(ftSummary.balance_as_of_end ?? 0) }}</strong>
+                    <span
+                        >All funds as of
+                        {{ fmtDay(ftSummary.period.end) }}</span
+                    >
+                </article>
+            </template>
+            <p v-else class="fin-loading" role="status">
+                {{ loading ? 'Loading figures…' : 'No figures loaded.' }}
+            </p>
+        </section>
+
+        <!-- ── Tabs ─────────────────────────────────────────────────────────── -->
+        <nav class="fin-tabs" role="tablist" aria-label="Financial views">
+            <button
+                role="tab"
+                :aria-selected="activeTab === 'overview'"
+                @click="switchTab('overview')"
+            >
+                <LayoutGrid :size="15" aria-hidden="true" />Overview
+            </button>
+            <button
+                role="tab"
+                :aria-selected="activeTab === 'ledger'"
+                @click="switchTab('ledger')"
+            >
+                <FileText :size="15" aria-hidden="true" />Ledger<span
+                    v-if="ftMeta?.total != null"
+                    class="fin-tab-count"
+                    >{{ ftMeta.total }}</span
+                >
+            </button>
+            <button
+                role="tab"
+                :aria-selected="activeTab === 'performance'"
+                @click="switchTab('performance')"
+            >
+                <BarChart3 :size="15" aria-hidden="true" />Performance
+            </button>
+        </nav>
+
+        <!-- ══ OVERVIEW ══════════════════════════════════════════════════════ -->
+        <div v-show="activeTab === 'overview'" role="tabpanel" class="fin-grid">
+            <section class="fin-panel fin-span-2">
+                <div class="fin-panel-head">
+                    <div>
+                        <p class="fin-kicker">
+                            WHERE IT CAME FROM, WHERE IT WENT
+                        </p>
+                        <h2>Money by type</h2>
+                    </div>
+                    <small>Select a row to open it in the ledger</small>
+                </div>
+                <ul v-if="typeRows.length" class="fin-type-list">
+                    <li v-for="row in typeRows" :key="row.type">
+                        <button @click="showInLedger({ type: row.type })">
+                            <span class="fin-type-name">
+                                <i
+                                    :class="row.credit ? 'dot-in' : 'dot-out'"
+                                    aria-hidden="true"
+                                />{{ typeLabel(row.type) }}
+                                <small
+                                    >{{ row.count }} txn{{
+                                        row.count !== 1 ? 's' : ''
+                                    }}
+                                    · {{ row.share }}% of
+                                    {{ row.credit ? 'in' : 'out' }}</small
+                                >
+                            </span>
+                            <span
+                                class="fin-type-amount"
+                                :class="row.credit ? 'is-in' : 'is-out'"
+                                >{{ row.credit ? '+' : '−'
+                                }}{{ fmt(row.total) }}</span
+                            >
+                            <span class="fin-bar" aria-hidden="true"
+                                ><span
+                                    :class="row.credit ? 'bar-in' : 'bar-out'"
+                                    :style="{ width: row.width + '%' }"
+                            /></span>
+                        </button>
+                    </li>
+                </ul>
+                <div v-else class="fin-empty">
+                    <Receipt :size="26" aria-hidden="true" />
+                    <h3>Nothing recorded in this period.</h3>
+                    <p>
+                        Pick another period above, or record an expense or
+                        income adjustment.
+                    </p>
+                </div>
+            </section>
+
+            <section class="fin-panel">
+                <div class="fin-panel-head">
+                    <div>
+                        <p class="fin-kicker">CASH FLOW</p>
+                        <h2>In vs out</h2>
+                    </div>
+                </div>
+                <div v-if="ftSummary" class="fin-flow">
+                    <div class="fin-flow-bars" aria-hidden="true">
+                        <span
+                            class="bar-in"
+                            :style="{
+                                flexGrow:
+                                    periodIncome || (periodExpenses ? 0 : 1),
+                            }"
+                        />
+                        <span
+                            class="bar-out"
+                            :style="{ flexGrow: periodExpenses }"
+                        />
+                    </div>
+                    <dl class="fin-list">
+                        <div>
+                            <dt><i class="dot-in" />Money in</dt>
+                            <dd class="is-in">{{ fmt(periodIncome) }}</dd>
+                        </div>
+                        <div>
+                            <dt><i class="dot-out" />Money out</dt>
+                            <dd class="is-out">−{{ fmt(periodExpenses) }}</dd>
+                        </div>
+                        <div class="fin-list-total">
+                            <dt>Net cash</dt>
+                            <dd
+                                :class="ftSummary.net >= 0 ? 'is-in' : 'is-out'"
+                            >
+                                {{ ftSummary.net < 0 ? '−' : ''
+                                }}{{ fmt(Math.abs(ftSummary.net)) }}
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
+            </section>
+
+            <section class="fin-panel fin-bills">
+                <div class="fin-panel-head">
+                    <div>
+                        <p class="fin-kicker">PAYABLES</p>
+                        <h2>Bills due</h2>
+                    </div>
+                </div>
+                <p class="fin-bills-total">
+                    {{ fmt(billsSummary?.total_due ?? 0) }}
+                </p>
+                <dl class="fin-list">
+                    <div>
+                        <dt>Bills in this period</dt>
+                        <dd>{{ billsSummary?.count ?? 0 }}</dd>
+                    </div>
+                    <div v-if="billsSummary?.overdue">
+                        <dt>Overdue</dt>
+                        <dd class="is-out">{{ fmt(billsSummary.overdue) }}</dd>
+                    </div>
+                    <div v-if="billsSummary?.upcoming">
+                        <dt>Upcoming</dt>
+                        <dd>{{ fmt(billsSummary.upcoming) }}</dd>
+                    </div>
+                </dl>
+                <Link href="/bills" class="fin-text-link"
+                    >Manage bills <ArrowUpRight :size="14" aria-hidden="true"
+                /></Link>
+            </section>
+
+            <section class="fin-panel fin-span-2">
+                <div class="fin-panel-head">
+                    <div>
+                        <p class="fin-kicker">WHERE THE MONEY SITS</p>
+                        <h2>Tenders &amp; accounts</h2>
+                    </div>
+                    <small
+                        >Balance is all-time up to
+                        {{
+                            ftSummary ? fmtDay(ftSummary.period.end) : ''
+                        }}</small
+                    >
+                </div>
+                <div
+                    v-if="tenderRows.length"
+                    class="fin-table-scroll"
+                    tabindex="0"
+                    role="region"
+                    aria-label="Tender balances"
+                >
+                    <table class="fin-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Tender</th>
+                                <th scope="col" class="num">In</th>
+                                <th scope="col" class="num">Out</th>
+                                <th scope="col" class="num">Net this period</th>
+                                <th scope="col" class="num">Balance</th>
+                                <th scope="col">
+                                    <span class="sr-only">Open in ledger</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="row in tenderRows" :key="row.tender">
+                                <td>
+                                    <strong>{{ row.tender }}</strong
+                                    ><small
+                                        >{{ row.count }} txn{{
+                                            row.count !== 1 ? 's' : ''
+                                        }}
+                                        this period</small
+                                    >
+                                </td>
+                                <td class="num is-in">
+                                    +{{ fmt(row.total_in) }}
+                                </td>
+                                <td class="num is-out">
+                                    −{{ fmt(row.total_out) }}
+                                </td>
+                                <td
+                                    class="num"
+                                    :class="row.net >= 0 ? 'is-in' : 'is-out'"
+                                >
+                                    {{ row.net < 0 ? '−' : '+'
+                                    }}{{ fmt(Math.abs(row.net)) }}
+                                </td>
+                                <td
+                                    class="num fin-strong"
+                                    :class="{ 'is-out': row.balance < 0 }"
+                                >
+                                    {{ row.balance < 0 ? '−' : ''
+                                    }}{{ fmt(Math.abs(row.balance)) }}
+                                </td>
+                                <td class="num">
+                                    <button
+                                        v-if="row.id"
+                                        class="fin-row-link"
+                                        @click="
+                                            showInLedger({ tender: row.id })
+                                        "
+                                    >
+                                        Ledger
+                                        <ChevronRight
+                                            :size="13"
+                                            aria-hidden="true"
+                                        />
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td>Total</td>
+                                <td class="num is-in">
+                                    +{{
+                                        fmt(
+                                            tenderRows.reduce(
+                                                (s, r) => s + r.total_in,
+                                                0,
+                                            ),
+                                        )
+                                    }}
+                                </td>
+                                <td class="num is-out">
+                                    −{{
+                                        fmt(
+                                            tenderRows.reduce(
+                                                (s, r) => s + r.total_out,
+                                                0,
+                                            ),
+                                        )
+                                    }}
+                                </td>
+                                <td class="num">
+                                    {{
+                                        fmt(
+                                            tenderRows.reduce(
+                                                (s, r) => s + r.net,
+                                                0,
+                                            ),
+                                        )
+                                    }}
+                                </td>
+                                <td class="num">
+                                    {{ fmt(ftSummary?.balance_as_of_end ?? 0) }}
+                                </td>
+                                <td />
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <p v-else class="fin-muted">
+                    No tender activity yet. Tag expenses and income adjustments
+                    to a tender when recording them.
+                </p>
+            </section>
+
+            <section v-if="ftSummary?.by_tender.length" class="fin-panel">
+                <div class="fin-panel-head">
+                    <div>
+                        <p class="fin-kicker">SALES COLLECTED</p>
+                        <h2>Payments by tender</h2>
+                    </div>
+                </div>
+                <dl class="fin-list">
+                    <div v-for="row in ftSummary.by_tender" :key="row.tender">
+                        <dt>
+                            {{ row.tender }} <small>{{ row.count }}</small>
+                        </dt>
+                        <dd class="is-in">{{ fmt(row.total) }}</dd>
+                    </div>
+                </dl>
+            </section>
         </div>
 
-        <!-- ── Transactions ────────────────────────────────────────────────────────── -->
-        <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div class="p-4 border-b flex items-center justify-between">
-                <h2 class="font-bold text-sm flex items-center gap-2"><DollarSign class="h-4 w-4" /> Transactions</h2>
-                <div class="flex items-center gap-3">
-                    <p v-if="ftSearch" class="text-xs text-muted-foreground">{{ sortedTx.length }} result{{ sortedTx.length !== 1 ? 's' : '' }}</p>
-                    <button v-if="ftSummary?.balance_by_tender?.length"
-                        @click="showBalanceByTender = !showBalanceByTender"
-                        :class="['flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
-                            showBalanceByTender ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted']">
-                        Balance by Tender
-                        <ChevronDown class="h-3 w-3 transition-transform duration-200" :class="showBalanceByTender ? 'rotate-180' : ''" />
+        <!-- ══ LEDGER ════════════════════════════════════════════════════════ -->
+        <div v-show="activeTab === 'ledger'" role="tabpanel" class="fin-stack">
+            <section class="fin-panel fin-toolbar">
+                <div class="fin-toolbar-row">
+                    <div class="fin-search">
+                        <Search :size="15" aria-hidden="true" />
+                        <input
+                            v-model="ftSearch"
+                            type="search"
+                            placeholder="Search description, customer, tender, or staff"
+                            aria-label="Search transactions"
+                        />
+                    </div>
+                    <select
+                        v-model="ftTenderFilter"
+                        class="fin-select"
+                        aria-label="Filter by tender"
+                        @change="loadFinancial()"
+                    >
+                        <option value="">All tenders</option>
+                        <option v-for="t in tenders" :key="t.id" :value="t.id">
+                            {{ t.name }}
+                        </option>
+                    </select>
+                </div>
+                <div class="fin-chips" role="group" aria-label="Filter by type">
+                    <button
+                        v-for="o in typeOptions"
+                        :key="o.value"
+                        :aria-pressed="ftTypeFilter === o.value"
+                        @click="setTypeFilter(o.value)"
+                    >
+                        {{ o.label }}
                     </button>
                 </div>
-            </div>
-
-            <!-- Balance by Tender collapsible -->
-            <div v-show="showBalanceByTender && ftSummary?.balance_by_tender?.length"
-                class="border-b bg-muted/20">
-                <div class="p-3">
-                    <p class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                        Running Balance by Tender — as of {{ ftSummary?.period?.end }}
-                    </p>
-                    <!-- Mobile -->
-                    <div class="md:hidden space-y-1.5">
-                        <div v-for="row in ftSummary?.balance_by_tender" :key="row.tender"
-                            class="flex items-center justify-between rounded-lg bg-background border px-3 py-2">
-                            <div>
-                                <span class="text-sm font-semibold">{{ row.tender }}</span>
-                                <span class="ml-2 text-[11px] text-muted-foreground">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</span>
-                            </div>
-                            <span class="font-bold tabular-nums text-sm"
-                                :class="row.balance >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                {{ row.balance >= 0 ? '' : '-' }}{{ fmt(Math.abs(row.balance)) }}
-                            </span>
-                        </div>
-                        <div class="flex items-center justify-between rounded-lg bg-muted/60 border px-3 py-2">
-                            <span class="text-sm font-bold">Total</span>
-                            <span class="font-black tabular-nums text-sm"
-                                :class="(ftSummary?.balance_as_of_end ?? 0) >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                {{ fmt(ftSummary?.balance_as_of_end ?? 0) }}
-                            </span>
-                        </div>
-                    </div>
-                    <!-- Desktop -->
-                    <div class="hidden md:block overflow-x-auto">
-                        <table class="w-full text-xs">
-                            <thead>
-                                <tr class="border-b text-muted-foreground">
-                                    <th class="pb-1.5 text-left font-medium">Tender / Account</th>
-                                    <th class="pb-1.5 text-right font-medium">Txns</th>
-                                    <th class="pb-1.5 text-right font-medium">Running Balance</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-border">
-                                <tr v-for="row in ftSummary?.balance_by_tender" :key="row.tender"
-                                    class="hover:bg-muted/20 transition-colors">
-                                    <td class="py-1.5 font-semibold">{{ row.tender }}</td>
-                                    <td class="py-1.5 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
-                                    <td class="py-1.5 text-right tabular-nums font-bold"
-                                        :class="row.balance >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                        {{ row.balance >= 0 ? '' : '-' }}{{ fmt(Math.abs(row.balance)) }}
-                                    </td>
-                                </tr>
-                            </tbody>
-                            <tfoot class="border-t border-border">
-                                <tr>
-                                    <td class="pt-1.5 font-bold">Total</td>
-                                    <td class="pt-1.5 text-right tabular-nums text-muted-foreground">
-                                        {{ ftSummary?.balance_by_tender?.reduce((s, r) => s + r.count, 0) }}
-                                    </td>
-                                    <td class="pt-1.5 text-right tabular-nums font-black"
-                                        :class="(ftSummary?.balance_as_of_end ?? 0) >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600'">
-                                        {{ fmt(ftSummary?.balance_as_of_end ?? 0) }}
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
+                <div v-if="activeFilters.length" class="fin-active-filters">
+                    <span>Showing:</span>
+                    <button
+                        v-for="f in activeFilters"
+                        :key="f.key"
+                        :aria-label="`Remove filter ${f.label}`"
+                        @click="clearFilter(f.key)"
+                    >
+                        {{ f.label }} <X :size="12" aria-hidden="true" />
+                    </button>
+                    <button class="fin-clear-all" @click="clearAllFilters">
+                        Clear all
+                    </button>
                 </div>
-            </div>
+            </section>
 
-            <!-- Mobile card list -->
-            <div class="md:hidden divide-y">
-                <div v-for="tx in sortedTx" :key="tx.id"
-                    :class="['px-4 py-3 transition-colors', editingTx?.id === tx.id ? 'bg-primary/5 dark:bg-primary/10' : 'hover:bg-muted/20']">
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0 flex-1">
-                            <div class="flex items-center gap-2 flex-wrap mb-1">
-                                <span :class="['px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap', typeBadgeClass(tx.type)]">
-                                    {{ typeLabel(tx.type) }}
-                                </span>
-                                <span class="text-xs text-muted-foreground tabular-nums">{{ fmtDatetime(tx.transacted_at) }}</span>
-                            </div>
-                            <p class="text-sm font-medium leading-snug">{{ tx.description }}</p>
-                            <div class="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
-                                <span v-if="tx.tender?.name">{{ tx.tender.name }}</span>
-                                <span v-if="tx.order?.customer_name" class="font-medium text-foreground/80">{{ tx.order.customer_name }}</span>
-                                <span v-if="tx.user?.name" class="opacity-60">{{ tx.user.name }}</span>
-                            </div>
-                        </div>
-                        <div class="flex flex-col items-end gap-1 shrink-0">
-                            <span :class="['font-bold tabular-nums text-sm', isCredit(tx.type) ? 'text-green-600' : 'text-red-600']">
-                                {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
-                            </span>
-                            <span class="text-xs text-muted-foreground tabular-nums">{{ fmt(tx.financial_balance ?? 0) }}</span>
-                            <div class="flex items-center gap-2 mt-1">
-                                <button v-if="tx.type !== 'order'" @click="startEdit(tx)"
-                                    :class="['hover:text-primary transition-colors', editingTx?.id === tx.id ? 'text-primary' : 'text-muted-foreground']"
-                                    title="Edit">
-                                    <Pencil class="h-4 w-4" />
-                                </button>
-                                <button v-if="isAdmin || ['expense', 'income_adjustment'].includes(tx.type)"
-                                    @click="deleteTransaction(tx)" :disabled="ftDeleting === tx.id"
-                                    class="text-red-600 hover:text-red-700 disabled:opacity-50 transition-colors"
-                                    title="Delete">
-                                    <Trash2 class="h-4 w-4" />
-                                </button>
-                            </div>
-                        </div>
+            <section class="fin-panel fin-ledger">
+                <div class="fin-panel-head">
+                    <div>
+                        <p class="fin-kicker">LEDGER</p>
+                        <h2>Transactions</h2>
                     </div>
+                    <small>{{
+                        ftSearch
+                            ? `${sortedTx.length} match${sortedTx.length !== 1 ? 'es' : ''} on this page`
+                            : ftMeta?.total != null
+                              ? `${ftMeta.total} in this period`
+                              : ''
+                    }}</small>
                 </div>
-            </div>
 
-            <!-- Desktop table -->
-            <div class="hidden md:block overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
-                        <tr>
-                            <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground whitespace-nowrap" @click="toggleSort('transacted_at')">
-                                <span class="flex items-center gap-1">Date
-                                    <span v-if="ftSortKey === 'transacted_at'" class="text-primary">{{ ftSortDir === 'asc' ? '↑' : '↓' }}</span>
-                                    <span v-else class="opacity-30">↕</span>
-                                </span>
-                            </th>
-                            <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground" @click="toggleSort('type')">
-                                <span class="flex items-center gap-1">Type
-                                    <span v-if="ftSortKey === 'type'" class="text-primary">{{ ftSortDir === 'asc' ? '↑' : '↓' }}</span>
-                                    <span v-else class="opacity-30">↕</span>
-                                </span>
-                            </th>
-                            <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-foreground" @click="toggleSort('description')">
-                                <span class="flex items-center gap-1">Description
-                                    <span v-if="ftSortKey === 'description'" class="text-primary">{{ ftSortDir === 'asc' ? '↑' : '↓' }}</span>
-                                    <span v-else class="opacity-30">↕</span>
-                                </span>
-                            </th>
-                            <th class="px-4 py-3 text-left">Customer</th>
-                            <th class="px-4 py-3 text-left">Tender</th>
-                            <th class="px-4 py-3 text-right cursor-pointer select-none hover:text-foreground whitespace-nowrap" @click="toggleSort('amount')">
-                                <span class="flex items-center justify-end gap-1">Amount
-                                    <span v-if="ftSortKey === 'amount'" class="text-primary">{{ ftSortDir === 'asc' ? '↑' : '↓' }}</span>
-                                    <span v-else class="opacity-30">↕</span>
-                                </span>
-                            </th>
-                            <th class="px-4 py-3 text-right whitespace-nowrap">Balance</th>
-                            <th class="px-4 py-3 text-left">By</th>
-                            <th class="px-4 py-3 text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="tx in sortedTx" :key="tx.id"
-                            :class="['border-t transition-colors', editingTx?.id === tx.id ? 'bg-primary/5 dark:bg-primary/10' : 'hover:bg-muted/20']">
-                            <td class="px-4 py-3 text-sm tabular-nums whitespace-nowrap">{{ fmtDatetime(tx.transacted_at) }}</td>
-                            <td class="px-4 py-3">
-                                <span :class="['px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap', typeBadgeClass(tx.type)]">
-                                    {{ typeLabel(tx.type) }}
-                                </span>
-                            </td>
-                            <td class="px-4 py-3 text-sm font-medium">{{ tx.description }}</td>
-                            <td class="px-4 py-3 text-sm text-muted-foreground">{{ tx.order?.customer_name ?? '—' }}</td>
-                            <td class="px-4 py-3 text-sm text-muted-foreground">{{ tx.tender?.name ?? '—' }}</td>
-                            <td :class="['px-4 py-3 text-right font-semibold tabular-nums', isCredit(tx.type) ? 'text-green-600' : 'text-red-600']">
-                                {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
-                            </td>
-                            <td class="px-4 py-3 text-right text-sm tabular-nums">{{ fmt(tx.financial_balance ?? 0) }}</td>
-                            <td class="px-4 py-3 text-sm text-muted-foreground">{{ tx.user?.name ?? '—' }}</td>
-                            <td class="px-4 py-3 text-center">
-                                <div class="flex items-center justify-center gap-1">
-                                    <button v-if="tx.type !== 'order'"
+                <!-- Desktop table -->
+                <div
+                    v-if="sortedTx.length"
+                    class="fin-table-scroll fin-desktop"
+                    tabindex="0"
+                    role="region"
+                    aria-label="Transactions table"
+                >
+                    <table class="fin-table">
+                        <thead>
+                            <tr>
+                                <th
+                                    scope="col"
+                                    :aria-sort="ariaSort('transacted_at')"
+                                >
+                                    <button
+                                        class="fin-sort"
+                                        @click="toggleSort('transacted_at')"
+                                    >
+                                        Date
+                                        <span>{{
+                                            sortMark('transacted_at')
+                                        }}</span>
+                                    </button>
+                                </th>
+                                <th scope="col" :aria-sort="ariaSort('type')">
+                                    <button
+                                        class="fin-sort"
+                                        @click="toggleSort('type')"
+                                    >
+                                        Type <span>{{ sortMark('type') }}</span>
+                                    </button>
+                                </th>
+                                <th
+                                    scope="col"
+                                    :aria-sort="ariaSort('description')"
+                                >
+                                    <button
+                                        class="fin-sort"
+                                        @click="toggleSort('description')"
+                                    >
+                                        Description
+                                        <span>{{
+                                            sortMark('description')
+                                        }}</span>
+                                    </button>
+                                </th>
+                                <th scope="col">Tender</th>
+                                <th scope="col">By</th>
+                                <th
+                                    scope="col"
+                                    class="num"
+                                    :aria-sort="ariaSort('amount')"
+                                >
+                                    <button
+                                        class="fin-sort"
+                                        @click="toggleSort('amount')"
+                                    >
+                                        Amount
+                                        <span>{{ sortMark('amount') }}</span>
+                                    </button>
+                                </th>
+                                <th scope="col" class="num">Balance</th>
+                                <th scope="col">
+                                    <span class="sr-only">Actions</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="tx in sortedTx"
+                                :key="tx.id"
+                                :class="{
+                                    'is-editing': editingTx?.id === tx.id,
+                                }"
+                            >
+                                <td class="fin-nowrap">
+                                    {{ fmtDatetime(tx.transacted_at) }}
+                                </td>
+                                <td>
+                                    <span
+                                        class="fin-type-pill"
+                                        :class="`type-${tx.type}`"
+                                        >{{ typeLabel(tx.type) }}</span
+                                    >
+                                </td>
+                                <td class="fin-desc">
+                                    <strong>{{ tx.description }}</strong>
+                                    <small
+                                        v-if="
+                                            tx.order?.customer_name || tx.notes
+                                        "
+                                        >{{
+                                            [tx.order?.customer_name, tx.notes]
+                                                .filter(Boolean)
+                                                .join(' · ')
+                                        }}</small
+                                    >
+                                </td>
+                                <td>{{ tx.tender?.name ?? '—' }}</td>
+                                <td class="fin-muted-cell">
+                                    {{ tx.user?.name ?? '—' }}
+                                </td>
+                                <td
+                                    class="num fin-strong"
+                                    :class="
+                                        isCredit(tx.type) ? 'is-in' : 'is-out'
+                                    "
+                                >
+                                    {{ isCredit(tx.type) ? '+' : '−'
+                                    }}{{ fmt(tx.amount) }}
+                                </td>
+                                <td class="num">
+                                    {{ fmt(tx.financial_balance ?? 0) }}
+                                </td>
+                                <td class="fin-actions">
+                                    <button
+                                        v-if="tx.type !== 'order'"
+                                        :aria-label="`Edit ${tx.description}`"
                                         @click="startEdit(tx)"
-                                        :class="['hover:text-primary transition-colors', editingTx?.id === tx.id ? 'text-primary' : 'text-muted-foreground']"
-                                        title="Edit">
-                                        <Pencil class="h-4 w-4" />
+                                    >
+                                        <Pencil :size="15" />
                                     </button>
-                                    <button v-if="isAdmin || ['expense', 'income_adjustment'].includes(tx.type)"
-                                        @click="deleteTransaction(tx)" :disabled="ftDeleting === tx.id"
-                                        class="text-red-600 hover:text-red-700 disabled:opacity-50 transition-colors"
-                                        title="Delete">
-                                        <Trash2 class="h-4 w-4" />
+                                    <button
+                                        v-if="canDelete(tx)"
+                                        class="is-danger"
+                                        :disabled="ftDeleting === tx.id"
+                                        :aria-label="`Delete ${tx.description}`"
+                                        @click="deleteTransaction(tx)"
+                                    >
+                                        <Trash2 :size="15" />
                                     </button>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
 
-            <div v-if="sortedTx.length === 0" class="p-8 text-center text-muted-foreground">
-                <p>{{ ftSearch ? 'No transactions match the search.' : 'No transactions for the selected period.' }}</p>
-            </div>
+                <!-- Mobile cards -->
+                <ul v-if="sortedTx.length" class="fin-mobile fin-tx-cards">
+                    <li
+                        v-for="tx in sortedTx"
+                        :key="tx.id"
+                        :class="{ 'is-editing': editingTx?.id === tx.id }"
+                    >
+                        <div class="fin-tx-top">
+                            <span
+                                class="fin-type-pill"
+                                :class="`type-${tx.type}`"
+                                >{{ typeLabel(tx.type) }}</span
+                            >
+                            <strong
+                                :class="isCredit(tx.type) ? 'is-in' : 'is-out'"
+                                >{{ isCredit(tx.type) ? '+' : '−'
+                                }}{{ fmt(tx.amount) }}</strong
+                            >
+                        </div>
+                        <p class="fin-tx-desc">{{ tx.description }}</p>
+                        <p class="fin-tx-meta">
+                            {{
+                                [
+                                    fmtDatetime(tx.transacted_at),
+                                    tx.tender?.name,
+                                    tx.order?.customer_name,
+                                    tx.user?.name,
+                                ]
+                                    .filter(Boolean)
+                                    .join(' · ')
+                            }}
+                        </p>
+                        <div class="fin-tx-bottom">
+                            <span
+                                >Balance
+                                {{ fmt(tx.financial_balance ?? 0) }}</span
+                            >
+                            <div class="fin-actions">
+                                <button
+                                    v-if="tx.type !== 'order'"
+                                    :aria-label="`Edit ${tx.description}`"
+                                    @click="startEdit(tx)"
+                                >
+                                    <Pencil :size="15" />
+                                </button>
+                                <button
+                                    v-if="canDelete(tx)"
+                                    class="is-danger"
+                                    :disabled="ftDeleting === tx.id"
+                                    :aria-label="`Delete ${tx.description}`"
+                                    @click="deleteTransaction(tx)"
+                                >
+                                    <Trash2 :size="15" />
+                                </button>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
 
-            <!-- Pagination -->
-            <div v-if="ftMeta && ftMeta.last_page > 1" class="p-4 border-t flex items-center justify-between">
-                <button @click="loadFinancial(ftPage - 1)" :disabled="ftPage === 1"
-                    class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50">
-                    <ChevronLeft class="h-4 w-4" /> Previous
-                </button>
-                <p class="text-xs text-muted-foreground">Page {{ ftPage }} of {{ ftMeta.last_page }}</p>
-                <button @click="loadFinancial(ftPage + 1)" :disabled="ftPage === ftMeta.last_page"
-                    class="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm font-medium hover:bg-muted disabled:opacity-50">
-                    Next <ChevronRight class="h-4 w-4" />
-                </button>
-            </div>
+                <div v-if="!sortedTx.length" class="fin-empty">
+                    <Search :size="26" aria-hidden="true" />
+                    <h3>
+                        {{
+                            ftSearch || activeFilters.length
+                                ? 'No transactions match these filters.'
+                                : 'No transactions in this period.'
+                        }}
+                    </h3>
+                    <p v-if="activeFilters.length">
+                        <button class="fin-text-link" @click="clearAllFilters">
+                            Clear filters
+                        </button>
+                    </p>
+                    <p v-else>
+                        Choose another period above or record an entry.
+                    </p>
+                </div>
+
+                <div v-if="ftMeta && ftMeta.last_page > 1" class="fin-pager">
+                    <button
+                        :disabled="ftPage === 1"
+                        @click="loadFinancial(ftPage - 1)"
+                    >
+                        <ChevronLeft :size="15" aria-hidden="true" />Previous
+                    </button>
+                    <span>Page {{ ftPage }} of {{ ftMeta.last_page }}</span>
+                    <button
+                        :disabled="ftPage === ftMeta.last_page"
+                        @click="loadFinancial(ftPage + 1)"
+                    >
+                        Next<ChevronRight :size="15" aria-hidden="true" />
+                    </button>
+                </div>
+            </section>
         </div>
 
-        </div><!-- end ledger tab -->
-
-        <!-- ── Performance tab ──────────────────────────────────────────────── -->
-        <div v-show="activeTab === 'performance'" class="space-y-4">
-            <div v-if="perfLoading" class="text-center py-12 text-muted-foreground text-sm">Loading performance data…</div>
+        <!-- ══ PERFORMANCE ═══════════════════════════════════════════════════ -->
+        <div
+            v-show="activeTab === 'performance'"
+            role="tabpanel"
+            class="fin-stack"
+        >
+            <p v-if="perfLoading" class="fin-panel fin-loading" role="status">
+                Loading performance data…
+            </p>
             <template v-else-if="ftSummary">
-
-                <!-- KPI cards — 2 cols on mobile, 4 on lg -->
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-                    <div class="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
-                        <p class="text-[11px] sm:text-xs font-medium text-muted-foreground mb-1 leading-tight">Period Income</p>
-                        <p class="text-base sm:text-xl font-black text-green-600 tabular-nums leading-tight">{{ fmt(periodIncome) }}</p>
-                        <p class="text-[10px] sm:text-[11px] text-muted-foreground mt-1">payments + adj.</p>
-                    </div>
-                    <div class="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
-                        <p class="text-[11px] sm:text-xs font-medium text-muted-foreground mb-1 leading-tight">Period Expenses</p>
-                        <p class="text-base sm:text-xl font-black text-red-600 tabular-nums leading-tight">{{ fmt(periodExpenses) }}</p>
-                        <p class="text-[10px] sm:text-[11px] text-muted-foreground mt-1">all outflows</p>
-                    </div>
-                    <div class="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
-                        <p class="text-[11px] sm:text-xs font-medium text-muted-foreground mb-1 leading-tight">Period Net</p>
-                        <p class="text-base sm:text-xl font-black tabular-nums leading-tight"
-                            :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
-                            {{ fmt(ftSummary.net ?? 0) }}
-                        </p>
-                        <p class="text-[10px] sm:text-[11px] mt-1 font-medium"
-                            :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
-                            {{ (ftSummary.net ?? 0) >= 0 ? 'surplus' : 'deficit' }}
-                        </p>
-                    </div>
-                    <div class="rounded-xl border bg-card shadow-sm p-3 sm:p-4">
-                        <p class="text-[11px] sm:text-xs font-medium text-muted-foreground mb-1 leading-tight">Balance ({{ ftSummary.period?.end }})</p>
-                        <p class="text-base sm:text-xl font-black tabular-nums leading-tight"
-                            :class="(ftSummary.balance_as_of_end ?? 0) >= 0 ? 'text-blue-600' : 'text-red-600'">
-                            {{ fmt(ftSummary.balance_as_of_end ?? 0) }}
-                        </p>
-                        <p class="text-[10px] sm:text-[11px] text-muted-foreground mt-1">cumulative</p>
-                    </div>
-                </div>
-
-                <!-- Period vs Previous comparison -->
-                <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                    <div class="px-4 py-3 border-b">
-                        <div class="flex items-start justify-between gap-2">
-                            <div>
-                                <h3 class="font-bold text-sm">Period Comparison</h3>
-                                <p class="text-xs text-muted-foreground mt-0.5">
-                                    {{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}
-                                    vs same-length period before it
-                                </p>
-                            </div>
-                            <button @click="showComparisonHelp = !showComparisonHelp"
-                                :class="['shrink-0 w-6 h-6 rounded-full border text-xs font-bold transition-colors flex items-center justify-center',
-                                    showComparisonHelp ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground hover:bg-muted']">
-                                ?
-                            </button>
-                        </div>
-                        <!-- Help panel -->
-                        <div v-if="showComparisonHelp" class="mt-3 rounded-lg bg-muted/60 border p-3 text-xs space-y-2">
-                            <p><span class="font-semibold text-foreground">This Period</span> — totals for the date range you selected (From / To in the filters).</p>
-                            <p><span class="font-semibold text-foreground">Previous</span> — the same-length window immediately before your selected range. E.g. if you selected 7 days, Previous covers the 7 days before that. For a single day, Previous is the day before it.</p>
-                            <p><span class="font-semibold text-foreground">Change</span> — difference between This Period and Previous.
-                                <span class="text-emerald-600 font-semibold">Green</span> = improvement (more income or less cost);
-                                <span class="text-red-600 font-semibold">Red</span> = worse performance.
-                                The % next to the value shows how large the change is relative to the previous period.
-                            </p>
-                            <p class="text-[10px] text-muted-foreground">Tip: set the same date for both From and To to compare a single day vs the day before.</p>
-                        </div>
-                    </div>
-                    <!-- Mobile: stacked cards -->
-                    <div class="md:hidden divide-y">
-                        <div v-for="row in comparisonRows" :key="row.label" class="px-4 py-3">
-                            <p class="text-xs font-semibold text-muted-foreground mb-2">{{ row.label }}</p>
-                            <div class="flex items-center justify-between gap-2">
-                                <div class="text-center flex-1">
-                                    <p class="text-[10px] text-muted-foreground mb-0.5">This Period</p>
-                                    <p class="text-sm font-bold tabular-nums">{{ fmt(row.cur) }}</p>
-                                </div>
-                                <div class="text-center flex-1">
-                                    <p class="text-[10px] text-muted-foreground mb-0.5">Previous</p>
-                                    <p class="text-sm tabular-nums text-muted-foreground">{{ fmt(row.prev) }}</p>
-                                </div>
-                                <div class="text-center flex-1">
-                                    <p class="text-[10px] text-muted-foreground mb-0.5">Change</p>
-                                    <p :class="['text-sm tabular-nums', row.changeClass]">
-                                        {{ row.sign }}{{ fmt(Math.abs(row.change)) }}
-                                        <span v-if="row.changePct !== null" class="text-[10px] opacity-75 block">({{ row.changePct }}%)</span>
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Desktop: table -->
-                    <div class="hidden md:block overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead class="bg-muted/50 text-xs text-muted-foreground uppercase tracking-wide">
-                                <tr>
-                                    <th class="px-4 py-2.5 text-left font-medium">Metric</th>
-                                    <th class="px-4 py-2.5 text-right font-medium">This Period</th>
-                                    <th class="px-4 py-2.5 text-right font-medium">Previous</th>
-                                    <th class="px-4 py-2.5 text-right font-medium">Change</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-border">
-                                <tr v-for="row in comparisonRows" :key="row.label" class="hover:bg-muted/20 transition-colors">
-                                    <td class="px-4 py-2.5 font-medium">{{ row.label }}</td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums font-semibold">{{ fmt(row.cur) }}</td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums text-muted-foreground">{{ fmt(row.prev) }}</td>
-                                    <td class="px-4 py-2.5 text-right tabular-nums">
-                                        <span :class="row.changeClass">
-                                            {{ row.sign }}{{ fmt(Math.abs(row.change)) }}
-                                            <span v-if="row.changePct !== null" class="text-xs opacity-75">({{ row.changePct }}%)</span>
-                                        </span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- 30-day triple line chart -->
-                <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                    <div class="px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2">
+                <section class="fin-panel">
+                    <div class="fin-panel-head">
                         <div>
-                            <h3 class="font-bold text-sm">30-Day Income vs Expense vs Balance</h3>
-                            <p class="text-xs text-muted-foreground mt-0.5">Tap or hover a day to inspect · Balance uses right axis</p>
+                            <p class="fin-kicker">VERSUS THE PERIOD BEFORE</p>
+                            <h2>How this period compares</h2>
                         </div>
-                        <div class="flex items-center gap-3 text-xs text-muted-foreground">
-                            <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 rounded-full bg-green-500 inline-block"></span>Income</span>
-                            <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 rounded-full bg-red-500 inline-block"></span>Expense</span>
-                            <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 rounded-full bg-blue-500 inline-block"></span>Balance</span>
+                        <button
+                            class="fin-help"
+                            :aria-expanded="showComparisonHelp"
+                            aria-label="How the comparison works"
+                            @click="showComparisonHelp = !showComparisonHelp"
+                        >
+                            ?
+                        </button>
+                    </div>
+                    <div v-if="showComparisonHelp" class="fin-help-box">
+                        <p>
+                            <strong>This period</strong> is the range picked
+                            above ({{ periodLabel }}).
+                        </p>
+                        <p>
+                            <strong>Previous</strong> is the same number of days
+                            right before it. For a single day, that's the day
+                            before.
+                        </p>
+                        <p>
+                            <strong>Green</strong> means better (more income or
+                            less cost). <strong>Red</strong> means worse.
+                        </p>
+                    </div>
+                    <div class="fin-compare-grid">
+                        <article
+                            v-for="row in comparisonRows"
+                            :key="row.label"
+                            class="fin-compare"
+                            :class="`tone-${row.tone}`"
+                        >
+                            <p>{{ row.label }}</p>
+                            <strong>{{ fmt(row.cur) }}</strong>
+                            <span class="fin-delta">
+                                {{
+                                    row.tone === 'flat'
+                                        ? 'No change'
+                                        : `${row.sign}${fmt(Math.abs(row.change))}`
+                                }}<template
+                                    v-if="
+                                        row.changePct !== null &&
+                                        row.tone !== 'flat'
+                                    "
+                                >
+                                    ({{ row.changePct > 0 ? '+' : ''
+                                    }}{{ row.changePct }}%)</template
+                                >
+                            </span>
+                            <small>Previous {{ fmt(row.prev) }}</small>
+                        </article>
+                    </div>
+                </section>
+
+                <section class="fin-panel">
+                    <div class="fin-panel-head">
+                        <div>
+                            <p class="fin-kicker">LAST 30 DAYS</p>
+                            <h2>Income, expenses &amp; balance</h2>
+                        </div>
+                        <div class="fin-legend">
+                            <span><i class="dot-in" />Income</span>
+                            <span><i class="dot-out" />Expenses</span>
+                            <span><i class="dot-bal" />Balance</span>
                         </div>
                     </div>
-                    <div class="px-3 pt-3 pb-1" v-if="lineChart">
-                        <svg :viewBox="`0 0 ${lineChart.VW} ${lineChart.VH}`" class="w-full" style="height:190px;touch-action:none"
+                    <div v-if="lineChart" class="fin-chart">
+                        <svg
+                            :viewBox="`0 0 ${lineChart.VW} ${lineChart.VH}`"
+                            role="img"
+                            aria-label="Daily income, expenses and running balance for the last 30 days"
                             @mouseleave="hoveredDayIdx = null"
-                            @touchmove.prevent="onChartTouch($event as unknown as TouchEvent)"
-                            @touchend="hoveredDayIdx = null">
-                            <!-- Grid lines -->
-                            <line v-for="tick in lineChart.yTicks" :key="tick.y"
-                                :x1="lineChart.padL" :y1="tick.y" :x2="lineChart.VW - lineChart.padR" :y2="tick.y"
-                                stroke="currentColor" stroke-opacity="0.07" stroke-width="1" />
-                            <!-- Left Y axis (income/expense) -->
-                            <text v-for="tick in lineChart.yTicks" :key="`yl${tick.y}`"
-                                :x="lineChart.padL - 5" :y="tick.y + 4"
-                                text-anchor="end" fill="currentColor" fill-opacity="0.45" font-size="9">
-                                ₱{{ tick.val >= 1000 ? (tick.val / 1000).toFixed(tick.val >= 10000 ? 0 : 1) + 'k' : tick.val.toFixed(0) }}
+                            @touchstart="
+                                onChartTouch($event as unknown as TouchEvent)
+                            "
+                            @touchmove.prevent="
+                                onChartTouch($event as unknown as TouchEvent)
+                            "
+                        >
+                            <line
+                                v-for="tick in lineChart.yTicks"
+                                :key="tick.y"
+                                :x1="lineChart.padL"
+                                :y1="tick.y"
+                                :x2="lineChart.VW - lineChart.padR"
+                                :y2="tick.y"
+                                stroke="#24231e"
+                                stroke-opacity="0.08"
+                            />
+                            <text
+                                v-for="tick in lineChart.yTicks"
+                                :key="`yl${tick.y}`"
+                                :x="lineChart.padL - 6"
+                                :y="tick.y + 3"
+                                text-anchor="end"
+                                fill="#777268"
+                                font-size="9"
+                            >
+                                ₱{{ lineChart.shortFmt(tick.val) }}
                             </text>
-                            <!-- Right Y axis (balance) -->
-                            <text v-for="tick in lineChart.balTicks" :key="`yr${tick.y}`"
-                                :x="lineChart.VW - lineChart.padR + 5" :y="tick.y + 4"
-                                text-anchor="start" fill="#3b82f6" fill-opacity="0.65" font-size="9">
+                            <text
+                                v-for="tick in lineChart.balTicks"
+                                :key="`yr${tick.y}`"
+                                :x="lineChart.VW - lineChart.padR + 6"
+                                :y="tick.y + 3"
+                                text-anchor="start"
+                                fill="#24231e"
+                                fill-opacity="0.6"
+                                font-size="9"
+                            >
                                 {{ lineChart.shortFmt(tick.val) }}
                             </text>
-                            <!-- X axis -->
-                            <text v-for="lbl in lineChart.xLabels" :key="`xl${lbl.i}`"
-                                :x="lbl.x" :y="lineChart.VH - 4"
-                                text-anchor="middle" fill="currentColor" fill-opacity="0.45" font-size="9">
+                            <text
+                                v-for="lbl in lineChart.xLabels"
+                                :key="`xl${lbl.i}`"
+                                :x="lbl.x"
+                                :y="lineChart.VH - 8"
+                                text-anchor="middle"
+                                fill="#777268"
+                                font-size="9"
+                            >
                                 {{ lbl.label }}
                             </text>
-                            <!-- Fill areas (income/expense) -->
-                            <path :d="lineChart.area('income')" fill="#22c55e" fill-opacity="0.10" />
-                            <path :d="lineChart.area('expense')" fill="#ef4444" fill-opacity="0.10" />
-                            <!-- Lines: income + expense -->
-                            <polyline :points="lineChart.polyline('income')" fill="none" stroke="#22c55e" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-                            <polyline :points="lineChart.polyline('expense')" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-                            <!-- Balance line (right axis, dashed) -->
-                            <polyline :points="lineChart.balPolyline" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5,3" />
-                            <!-- Hover strips -->
-                            <rect v-for="strip in lineChart.strips" :key="strip.index"
-                                :x="strip.x" :y="lineChart.padT" :width="strip.width" :height="lineChart.H"
-                                fill="transparent" @mouseenter="hoveredDayIdx = strip.index" />
-                            <!-- Hover indicator -->
-                            <template v-if="hoveredDayIdx !== null">
-                                <line :x1="lineChart.xPos(hoveredDayIdx)" :y1="lineChart.padT"
-                                    :x2="lineChart.xPos(hoveredDayIdx)" :y2="lineChart.padT + lineChart.H"
-                                    stroke="currentColor" stroke-opacity="0.2" stroke-width="1" stroke-dasharray="3,3" />
-                                <circle :cx="lineChart.xPos(hoveredDayIdx)" :cy="lineChart.yPos(dailyData[hoveredDayIdx].income)" r="4" fill="#22c55e" />
-                                <circle :cx="lineChart.xPos(hoveredDayIdx)" :cy="lineChart.yPos(dailyData[hoveredDayIdx].expense)" r="4" fill="#ef4444" />
-                                <circle :cx="lineChart.xPos(hoveredDayIdx)" :cy="lineChart.yBal(dailyData[hoveredDayIdx].balance)" r="4" fill="#3b82f6" />
+                            <path
+                                :d="lineChart.area('income')"
+                                fill="#5f8f4e"
+                                fill-opacity="0.12"
+                            />
+                            <path
+                                :d="lineChart.area('expense')"
+                                fill="#ef5b2a"
+                                fill-opacity="0.1"
+                            />
+                            <polyline
+                                :points="lineChart.polyline('income')"
+                                fill="none"
+                                stroke="#5f8f4e"
+                                stroke-width="2.2"
+                                stroke-linejoin="round"
+                                stroke-linecap="round"
+                            />
+                            <polyline
+                                :points="lineChart.polyline('expense')"
+                                fill="none"
+                                stroke="#ef5b2a"
+                                stroke-width="2.2"
+                                stroke-linejoin="round"
+                                stroke-linecap="round"
+                            />
+                            <polyline
+                                :points="lineChart.balPolyline"
+                                fill="none"
+                                stroke="#24231e"
+                                stroke-width="2"
+                                stroke-linejoin="round"
+                                stroke-linecap="round"
+                                stroke-dasharray="5,4"
+                            />
+                            <rect
+                                v-for="strip in lineChart.strips"
+                                :key="strip.index"
+                                :x="strip.x"
+                                :y="lineChart.padT"
+                                :width="strip.width"
+                                :height="lineChart.H"
+                                fill="transparent"
+                                @mouseenter="hoveredDayIdx = strip.index"
+                            />
+                            <template
+                                v-if="
+                                    hoveredDayIdx !== null &&
+                                    dailyData[hoveredDayIdx]
+                                "
+                            >
+                                <line
+                                    :x1="lineChart.xPos(hoveredDayIdx)"
+                                    :y1="lineChart.padT"
+                                    :x2="lineChart.xPos(hoveredDayIdx)"
+                                    :y2="lineChart.padT + lineChart.H"
+                                    stroke="#24231e"
+                                    stroke-opacity="0.25"
+                                    stroke-dasharray="3,3"
+                                />
+                                <circle
+                                    :cx="lineChart.xPos(hoveredDayIdx)"
+                                    :cy="
+                                        lineChart.yPos(
+                                            dailyData[hoveredDayIdx].income,
+                                        )
+                                    "
+                                    r="4"
+                                    fill="#5f8f4e"
+                                />
+                                <circle
+                                    :cx="lineChart.xPos(hoveredDayIdx)"
+                                    :cy="
+                                        lineChart.yPos(
+                                            dailyData[hoveredDayIdx].expense,
+                                        )
+                                    "
+                                    r="4"
+                                    fill="#ef5b2a"
+                                />
+                                <circle
+                                    :cx="lineChart.xPos(hoveredDayIdx)"
+                                    :cy="
+                                        lineChart.yBal(
+                                            dailyData[hoveredDayIdx].balance,
+                                        )
+                                    "
+                                    r="4"
+                                    fill="#24231e"
+                                />
                             </template>
                         </svg>
-                        <!-- Info strip -->
-                        <div class="h-12 flex items-center justify-center gap-2 sm:gap-4 text-xs border-t mt-1 px-2 flex-wrap">
-                            <template v-if="hoveredDayIdx !== null && dailyData[hoveredDayIdx]">
-                                <span class="font-semibold text-muted-foreground shrink-0">{{ dailyData[hoveredDayIdx].date }}</span>
-                                <span class="text-green-600 tabular-nums shrink-0">+{{ fmt(dailyData[hoveredDayIdx].income) }}</span>
-                                <span class="text-red-600 tabular-nums shrink-0">-{{ fmt(dailyData[hoveredDayIdx].expense) }}</span>
-                                <span class="tabular-nums font-bold shrink-0"
-                                    :class="(dailyData[hoveredDayIdx].income - dailyData[hoveredDayIdx].expense) >= 0 ? 'text-emerald-600' : 'text-red-600'">
-                                    Net {{ fmt(dailyData[hoveredDayIdx].income - dailyData[hoveredDayIdx].expense) }}
-                                </span>
-                                <span class="text-blue-600 tabular-nums font-bold shrink-0">Bal {{ fmt(dailyData[hoveredDayIdx].balance) }}</span>
+                        <div class="fin-chart-readout" aria-live="polite">
+                            <template
+                                v-if="
+                                    hoveredDayIdx !== null &&
+                                    dailyData[hoveredDayIdx]
+                                "
+                            >
+                                <strong>{{
+                                    fmtDay(dailyData[hoveredDayIdx].date)
+                                }}</strong>
+                                <span class="is-in"
+                                    >+{{
+                                        fmt(dailyData[hoveredDayIdx].income)
+                                    }}</span
+                                >
+                                <span class="is-out"
+                                    >−{{
+                                        fmt(dailyData[hoveredDayIdx].expense)
+                                    }}</span
+                                >
+                                <span
+                                    :class="
+                                        dailyData[hoveredDayIdx].income -
+                                            dailyData[hoveredDayIdx].expense >=
+                                        0
+                                            ? 'is-in'
+                                            : 'is-out'
+                                    "
+                                    >Net
+                                    {{
+                                        fmt(
+                                            dailyData[hoveredDayIdx].income -
+                                                dailyData[hoveredDayIdx]
+                                                    .expense,
+                                        )
+                                    }}</span
+                                >
+                                <span class="fin-strong"
+                                    >Balance
+                                    {{
+                                        fmt(dailyData[hoveredDayIdx].balance)
+                                    }}</span
+                                >
                             </template>
-                            <span v-else class="text-muted-foreground">Tap or hover a day</span>
+                            <span v-else
+                                >Hover or drag across the chart to read a
+                                day</span
+                            >
                         </div>
                     </div>
-                    <div v-else class="p-8 text-center text-sm text-muted-foreground">No daily data available.</div>
-                </div>
-
-                <!-- Breakdown by type + by tender -->
-                <div class="grid md:grid-cols-2 gap-4">
-                    <!-- By type -->
-                    <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                        <div class="px-4 py-3 border-b">
-                            <h3 class="font-bold text-sm">By Transaction Type</h3>
-                            <p class="text-xs text-muted-foreground mt-0.5">{{ ftSummary.period?.start }} – {{ ftSummary.period?.end }}</p>
-                        </div>
-                        <div class="divide-y">
-                            <div v-for="row in typeBreakdown" :key="row.type"
-                                class="flex items-center justify-between px-4 py-3 hover:bg-muted/20 transition-colors">
-                                <div class="flex items-center gap-2 min-w-0">
-                                    <span :class="['px-2 py-0.5 rounded-full text-xs font-medium shrink-0', typeBadgeClass(row.type)]">
-                                        {{ typeLabel(row.type) }}
-                                    </span>
-                                    <span class="text-xs text-muted-foreground shrink-0">{{ row.count }} txn{{ row.count !== 1 ? 's' : '' }}</span>
-                                </div>
-                                <span class="text-sm font-bold tabular-nums shrink-0"
-                                    :class="isCredit(row.type) ? 'text-green-600' : 'text-red-600'">
-                                    {{ isCredit(row.type) ? '+' : '-' }}{{ fmt(row.total) }}
-                                </span>
-                            </div>
-                            <div class="flex items-center justify-between px-4 py-3 bg-muted/20">
-                                <span class="text-xs font-bold text-muted-foreground">Net</span>
-                                <span class="text-sm font-black tabular-nums"
-                                    :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
-                                    {{ fmt(ftSummary.net ?? 0) }}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- By tender -->
-                    <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
-                        <div class="px-4 py-3 border-b">
-                            <h3 class="font-bold text-sm">By Tender / Account</h3>
-                            <p class="text-xs text-muted-foreground mt-0.5">net flow this period</p>
-                        </div>
-                        <div class="divide-y">
-                            <div v-for="row in ftSummary.net_by_tender ?? []" :key="row.tender"
-                                class="px-4 py-3 hover:bg-muted/20 transition-colors">
-                                <div class="flex items-center justify-between mb-1.5">
-                                    <span class="text-sm font-semibold">{{ row.tender }}</span>
-                                    <span class="text-sm font-black tabular-nums"
-                                        :class="row.net >= 0 ? 'text-emerald-600' : 'text-red-600'">
-                                        {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
-                                    </span>
-                                </div>
-                                <div class="flex items-center gap-3 text-xs text-muted-foreground">
-                                    <span class="text-green-600 tabular-nums">+{{ fmt(row.total_in) }} in</span>
-                                    <span class="text-red-600 tabular-nums">-{{ fmt(row.total_out) }} out</span>
-                                </div>
-                            </div>
-                            <div class="flex items-center justify-between px-4 py-3 bg-muted/20">
-                                <span class="text-xs font-bold text-muted-foreground">Total Net</span>
-                                <span class="text-sm font-black tabular-nums"
-                                    :class="(ftSummary.net ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'">
-                                    {{ (ftSummary.net ?? 0) >= 0 ? '+' : '' }}{{ fmt(ftSummary.net ?? 0) }}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
+                    <p v-else class="fin-muted">No daily data available.</p>
+                </section>
             </template>
-            <div v-else class="text-center py-12 text-muted-foreground text-sm">Load the financial data first using the date filters.</div>
-        </div><!-- end performance tab -->
+        </div>
 
+        <footer class="fin-footer">
+            <span>BYPASS GRILL · GOOD FOOD. GOOD MOOD.</span
+            ><span
+                >Figures load for the period above. Select Refresh to
+                update.</span
+            >
+        </footer>
     </div>
 
-    <!-- ── Mobile FAB (teleported to body so fixed positioning is viewport-relative) -->
-    <teleport to="body">
-        <div class="md:hidden"
-             :style="{ position: 'fixed', bottom: '24px', left: fabX + 'px', zIndex: 9999 }"
-             style="touch-action:none; user-select:none">
+    <!-- Mobile: always-reachable record button -->
+    <button class="fin-theme fin-fab" @click="openNewEntry()">
+        <Plus :size="18" aria-hidden="true" />Record entry
+    </button>
 
-            <!-- Tap backdrop to close sub-menu -->
-            <div v-if="fabOpen" style="position:fixed;inset:0;z-index:-1" @click="fabOpen=false" />
-
-            <!-- Sub-buttons — open upward above the FAB -->
-            <transition
-                enter-active-class="transition-all duration-200 ease-out"
-                enter-from-class="opacity-0 scale-75 translate-y-3"
-                enter-to-class="opacity-100 scale-100 translate-y-0"
-                leave-active-class="transition-all duration-150 ease-in"
-                leave-to-class="opacity-0 scale-75 translate-y-3">
-                <div v-if="fabOpen" class="absolute bottom-14 left-1/2 -translate-x-1/2 flex gap-3">
-                    <div class="flex flex-col-reverse items-center gap-1">
-                        <button @click="showMobileFilter=true; fabOpen=false"
-                            class="w-11 h-11 rounded-full bg-blue-500 shadow-lg flex items-center justify-center text-white active:scale-95 transition-transform">
-                            <Filter class="h-4 w-4" />
-                        </button>
-                        <span class="text-[10px] font-medium text-foreground bg-card/90 rounded px-1 shadow-sm whitespace-nowrap">Filter</span>
-                    </div>
-                    <div class="flex flex-col-reverse items-center gap-1">
-                        <button @click="showMobileAddTx=true; fabOpen=false"
-                            class="w-11 h-11 rounded-full bg-emerald-500 shadow-lg flex items-center justify-center text-white active:scale-95 transition-transform">
-                            <Plus class="h-4 w-4" />
-                        </button>
-                        <span class="text-[10px] font-medium text-foreground bg-card/90 rounded px-1 shadow-sm whitespace-nowrap">Add</span>
-                    </div>
-                </div>
-            </transition>
-
-            <!-- Main FAB button -->
-            <button
-                @touchstart="onFabTouchStart($event as unknown as TouchEvent)"
-                :class="['w-12 h-12 rounded-full shadow-xl flex items-center justify-center transition-all duration-200',
-                    fabOpen ? 'bg-foreground text-background rotate-45' : 'bg-primary text-primary-foreground']">
-                <Plus class="h-5 w-5" />
-            </button>
-        </div>
-    </teleport>
-
-    <!-- ── Mobile Filter Modal (slides from top) ───────────────────────────────── -->
-    <teleport to="body">
-        <transition
-            enter-active-class="transition-all duration-300 ease-out"
-            enter-from-class="opacity-0"
-            enter-to-class="opacity-100"
-            leave-active-class="transition-all duration-200 ease-in"
-            leave-to-class="opacity-0">
-            <div v-if="showMobileFilter" class="fixed inset-0 z-[60] md:hidden flex flex-col">
-                <!-- Backdrop -->
-                <div class="absolute inset-0 bg-black/50" @click="showMobileFilter=false" />
-                <!-- Panel slides from top -->
-                <div class="relative bg-card rounded-b-2xl shadow-2xl p-4 max-h-[80vh] overflow-y-auto"
-                     style="animation: slideDown 0.3s ease-out">
-                    <div class="flex items-center justify-between mb-4">
+    <!-- ── Entry sheet (new + edit) ─────────────────────────────────────────── -->
+    <Teleport to="body">
+        <Transition name="fin-fade">
+            <div
+                v-if="sheet"
+                class="fin-theme fin-sheet-backdrop"
+                @click.self="closeSheet"
+            >
+                <FocusScope
+                    as="div"
+                    loop
+                    trapped
+                    class="fin-sheet"
+                    role="dialog"
+                    aria-modal="true"
+                    :aria-label="
+                        sheet === 'new' ? 'Record entry' : 'Edit transaction'
+                    "
+                    @keydown.esc.stop.prevent="closeSheet"
+                >
+                    <header class="fin-sheet-head">
                         <div>
-                            <p class="font-bold text-base">Filters</p>
-                            <p class="text-xs text-muted-foreground mt-0.5">Refine the ledger view</p>
+                            <p class="fin-kicker">
+                                {{
+                                    sheet === 'new'
+                                        ? 'NEW ENTRY'
+                                        : `EDIT #${editingTx?.id}`
+                                }}
+                            </p>
+                            <h2>
+                                {{
+                                    sheet === 'new'
+                                        ? 'Record entry'
+                                        : `Edit ${typeLabel(editingTx?.type ?? '')}`
+                                }}
+                            </h2>
                         </div>
-                        <button @click="showMobileFilter=false" class="w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center">
-                            <X class="h-4 w-4" />
+                        <button
+                            class="fin-icon-btn"
+                            aria-label="Close"
+                            @click="closeSheet"
+                        >
+                            <X :size="18" />
                         </button>
-                    </div>
-                    <div class="space-y-3">
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                                <input v-model="ftStartDate" type="date"
-                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                            </div>
-                            <div>
-                                <label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                                <input v-model="ftEndDate" type="date"
-                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                            </div>
-                        </div>
-                        <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
-                            <select v-model="ftTypeFilter"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                                <option value="">All Types</option>
-                                <option value="payment">Payment</option>
-                                <option value="expense">Expense</option>
-                                <option value="income_adjustment">Income Adjustment</option>
-                                <option value="payroll">Payroll</option>
-                                <option value="asset_deduction">Asset Deduction</option>
-                                <option value="payout_share">Payout Share</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Tender</label>
-                            <select v-model="ftTenderFilter"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
-                                <option value="">All Tenders</option>
-                                <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
-                            </select>
-                        </div>
-                        <div class="flex items-center justify-between rounded-lg border bg-background px-3 py-2.5">
-                            <label class="text-sm font-medium">Include Asset Deductions</label>
-                            <button @click="includeAssetDeductions = !includeAssetDeductions"
-                                :class="['relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200',
-                                    includeAssetDeductions ? 'bg-primary' : 'bg-muted-foreground/30']"
-                                role="switch" :aria-checked="includeAssetDeductions">
-                                <span :class="['pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200',
-                                    includeAssetDeductions ? 'translate-x-5' : 'translate-x-0']" />
+                    </header>
+
+                    <!-- New entry -->
+                    <form
+                        v-if="sheet === 'new'"
+                        class="fin-form"
+                        @submit.prevent="saveEntry"
+                    >
+                        <div
+                            class="fin-segment"
+                            role="radiogroup"
+                            aria-label="Entry type"
+                        >
+                            <button
+                                type="button"
+                                role="radio"
+                                :aria-checked="entryForm.type === 'expense'"
+                                @click="entryForm.type = 'expense'"
+                            >
+                                <ArrowUpRight
+                                    :size="15"
+                                    aria-hidden="true"
+                                />Expense<small>Money going out</small>
+                            </button>
+                            <button
+                                type="button"
+                                role="radio"
+                                :aria-checked="
+                                    entryForm.type === 'income_adjustment'
+                                "
+                                @click="entryForm.type = 'income_adjustment'"
+                            >
+                                <ArrowDownLeft
+                                    :size="15"
+                                    aria-hidden="true"
+                                />Income adjustment<small
+                                    >Money coming in</small
+                                >
                             </button>
                         </div>
-                    </div>
-                    <div class="flex gap-2 mt-4">
-                        <button @click="loadFinancial(); showMobileFilter=false"
-                            class="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90">
-                            Apply Filters
-                        </button>
-                        <button @click="ftStartDate=today; ftEndDate=today; ftTypeFilter=''; ftTenderFilter=''; loadFinancial(); showMobileFilter=false"
-                            class="rounded-lg border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-                            Reset
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </transition>
-    </teleport>
+                        <label
+                            >Amount
+                            <span class="fin-money"
+                                ><span aria-hidden="true">₱</span
+                                ><input
+                                    v-model="entryForm.amount"
+                                    type="number"
+                                    inputmode="decimal"
+                                    min="0.01"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    required
+                            /></span>
+                        </label>
+                        <label
+                            >Description<input
+                                v-model="entryForm.description"
+                                type="text"
+                                placeholder="e.g. Charcoal, LPG refill, customer refund"
+                                required
+                        /></label>
+                        <div class="fin-form-row">
+                            <label
+                                >Tender / account
+                                <select
+                                    v-model="entryForm.payment_tender_id"
+                                    required
+                                    :class="{
+                                        'is-empty':
+                                            !entryForm.payment_tender_id,
+                                    }"
+                                >
+                                    <option :value="null" disabled>
+                                        Select tender
+                                    </option>
+                                    <option
+                                        v-for="t in tenders"
+                                        :key="t.id"
+                                        :value="t.id"
+                                    >
+                                        {{ t.name }}
+                                    </option>
+                                </select>
+                            </label>
+                            <label
+                                >Date &amp; time<input
+                                    v-model="entryForm.transacted_at"
+                                    type="datetime-local"
+                                    min="2000-01-01T00:00"
+                                    max="2099-12-31T23:59"
+                                    required
+                            /></label>
+                        </div>
+                        <label
+                            >Notes <span class="fin-optional">(optional)</span
+                            ><input
+                                v-model="entryForm.notes"
+                                type="text"
+                                placeholder="Receipt number or reference"
+                        /></label>
+                        <footer class="fin-sheet-foot">
+                            <button
+                                type="button"
+                                class="fin-ghost-btn"
+                                @click="closeSheet"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                class="fin-primary-btn"
+                                :disabled="entrySaving || !entryValid"
+                            >
+                                {{
+                                    entrySaving
+                                        ? 'Saving…'
+                                        : `Record ${entryForm.type === 'expense' ? 'expense' : 'income'}${Number(entryForm.amount) > 0 ? ' · ' + fmt(entryForm.amount) : ''}`
+                                }}
+                            </button>
+                        </footer>
+                    </form>
 
-    <!-- ── Mobile Add Transaction Modal (center) ───────────────────────────────── -->
-    <teleport to="body">
-        <transition
-            enter-active-class="transition-all duration-200 ease-out"
-            enter-from-class="opacity-0 scale-95"
-            enter-to-class="opacity-100 scale-100"
-            leave-active-class="transition-all duration-150 ease-in"
-            leave-to-class="opacity-0 scale-95">
-            <div v-if="showMobileAddTx" class="fixed inset-0 z-[60] md:hidden flex items-center justify-center p-4">
-                <!-- Backdrop -->
-                <div class="absolute inset-0 bg-black/50" @click="showMobileAddTx=false" />
-                <!-- Modal -->
-                <div class="relative bg-card rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto">
-                    <div class="sticky top-0 bg-card rounded-t-2xl px-4 pt-4 pb-3 border-b flex items-center justify-between">
-                        <p class="text-base font-bold">Record Entry</p>
-                        <button @click="showMobileAddTx=false" class="w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center">
-                            <X class="h-4 w-4" />
-                        </button>
-                    </div>
-                    <div class="p-4 space-y-3">
-                        <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Type *</label>
-                            <select v-model="entryForm.type"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <!-- Edit -->
+                    <form v-else class="fin-form" @submit.prevent="saveEdit">
+                        <label v-if="editingTx?.type !== 'payment'"
+                            >Type
+                            <select v-model="editForm.type">
                                 <option value="expense">Expense</option>
-                                <option value="income_adjustment">Income Adjustment</option>
+                                <option value="income_adjustment">
+                                    Income Adjustment
+                                </option>
+                                <option value="asset_deduction">
+                                    Asset Deduction
+                                </option>
+                                <option value="payroll">Payroll</option>
+                                <option value="payout_share">
+                                    Payout Share
+                                </option>
                             </select>
+                        </label>
+                        <label
+                            >Amount
+                            <span class="fin-money"
+                                ><span aria-hidden="true">₱</span
+                                ><input
+                                    v-model="editForm.amount"
+                                    type="number"
+                                    inputmode="decimal"
+                                    min="0.01"
+                                    step="0.01"
+                                    required
+                            /></span>
+                        </label>
+                        <label
+                            >Description<input
+                                v-model="editForm.description"
+                                type="text"
+                                required
+                        /></label>
+                        <div class="fin-form-row">
+                            <label
+                                >Tender / account
+                                <select v-model="editForm.payment_tender_id">
+                                    <option :value="null">Not tagged</option>
+                                    <option
+                                        v-if="
+                                            editingTx?.tender &&
+                                            !tenders.some(
+                                                (t) =>
+                                                    t.id ===
+                                                    editingTx!.tender!.id,
+                                            )
+                                        "
+                                        :value="editingTx.tender.id"
+                                    >
+                                        {{ editingTx.tender.name }}
+                                    </option>
+                                    <option
+                                        v-for="t in tenders"
+                                        :key="t.id"
+                                        :value="t.id"
+                                    >
+                                        {{ t.name }}
+                                    </option>
+                                </select>
+                            </label>
+                            <label
+                                >Date &amp; time<input
+                                    v-model="editForm.transacted_at"
+                                    type="datetime-local"
+                                    min="2000-01-01T00:00"
+                                    max="2099-12-31T23:59"
+                            /></label>
                         </div>
-                        <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
-                            <input v-model="entryForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                        <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Description *</label>
-                            <input v-model="entryForm.description" type="text" placeholder="e.g. Office supplies"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                        <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Date/Time *</label>
-                            <input v-model="entryForm.transacted_at" type="datetime-local"
-                                min="2000-01-01T00:00" max="2099-12-31T23:59" required
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                        <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Tender / Account *</label>
-                            <select v-model="entryForm.payment_tender_id"
-                                :class="['w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary',
-                                    entryForm.payment_tender_id ? 'bg-background border-border' : 'bg-background border-red-400 text-muted-foreground']">
-                                <option :value="null" disabled>— Select tender —</option>
-                                <option v-for="t in tenders" :key="t.id" :value="t.id">{{ t.name }}</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Notes</label>
-                            <input v-model="entryForm.notes" type="text" placeholder="Optional reference"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                        </div>
-                    </div>
-                    <div class="px-4 pb-4 flex gap-2">
-                        <button @click="saveEntry"
-                            :disabled="entrySaving || !entryForm.description.trim() || !entryForm.amount || !entryForm.payment_tender_id || !entryForm.transacted_at"
-                            class="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                            {{ entrySaving ? 'Saving…' : 'Record Entry' }}
-                        </button>
-                        <button @click="showMobileAddTx=false" class="rounded-lg border px-4 py-2.5 text-sm font-medium hover:bg-muted">
-                            Cancel
-                        </button>
-                    </div>
-                </div>
+                        <label
+                            >Notes <span class="fin-optional">(optional)</span
+                            ><input
+                                v-model="editForm.notes"
+                                type="text"
+                                placeholder="Receipt number or reference"
+                        /></label>
+                        <footer class="fin-sheet-foot">
+                            <button
+                                v-if="editingTx && canDelete(editingTx)"
+                                type="button"
+                                class="fin-danger-btn"
+                                :disabled="ftDeleting === editingTx.id"
+                                @click="deleteTransaction(editingTx)"
+                            >
+                                <Trash2 :size="15" aria-hidden="true" />Delete
+                            </button>
+                            <button
+                                type="button"
+                                class="fin-ghost-btn"
+                                @click="closeSheet"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                class="fin-primary-btn"
+                                :disabled="
+                                    editSaving ||
+                                    !editForm.description.trim() ||
+                                    !(Number(editForm.amount) > 0)
+                                "
+                            >
+                                {{ editSaving ? 'Saving…' : 'Save changes' }}
+                            </button>
+                        </footer>
+                    </form>
+                </FocusScope>
             </div>
-        </transition>
-    </teleport>
-
+        </Transition>
+    </Teleport>
 </template>
 
 <style scoped>
-@keyframes slideDown {
-    from { transform: translateY(-100%); opacity: 0; }
-    to   { transform: translateY(0);     opacity: 1; }
+/* Welcome-page palette: ink, cream and grill orange. */
+.fin-theme {
+    --ink: #24231e;
+    --cream: #f6f2e9;
+    --paper: #fffcf6;
+    --orange: #ef5b2a;
+    --orange-deep: #c3441c;
+    --line: #ded7cb;
+    --line-soft: #ece5da;
+    --muted: #68665f;
+    --in: #3f7a33;
+    --out: #c0391b;
+    color: var(--ink);
+    color-scheme: light;
+    font-family: Arial, Helvetica, sans-serif;
+}
+.fin-theme :focus-visible {
+    outline: 2px solid var(--orange-deep);
+    outline-offset: 2px;
+}
+.fin-theme button:not(:disabled) {
+    cursor: pointer;
+}
+.fin-page {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-height: 100%;
+    padding: 32px clamp(16px, 3vw, 44px) 96px;
+    background: var(--cream);
+}
+.is-in {
+    color: var(--in);
+}
+.is-out {
+    color: var(--out);
+}
+.fin-strong {
+    font-weight: 800;
+}
+.fin-muted {
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--muted);
+}
+
+/* Heading */
+.fin-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 18px 24px;
+}
+.fin-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 2px;
+}
+.fin-eyebrow > span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--orange);
+}
+.fin-heading h1 {
+    margin: 14px 0 10px;
+    font-family: Impact, 'Arial Narrow', sans-serif;
+    font-size: clamp(44px, 6vw, 78px);
+    font-weight: 900;
+    line-height: 0.92;
+    letter-spacing: -1px;
+}
+.fin-heading h1 span {
+    color: var(--orange);
+}
+.fin-intro {
+    max-width: 420px;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--muted);
+}
+.fin-heading-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* Buttons */
+.fin-primary-btn,
+.fin-ghost-btn,
+.fin-danger-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 4px;
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+    transition:
+        background 0.15s,
+        border-color 0.15s;
+}
+.fin-primary-btn {
+    background: var(--orange);
+    color: #fff;
+}
+.fin-primary-btn:hover:not(:disabled) {
+    background: var(--orange-deep);
+}
+.fin-ghost-btn {
+    border: 1px solid #d4cdbf;
+    background: var(--paper);
+    color: var(--ink);
+}
+.fin-ghost-btn:hover:not(:disabled) {
+    background: #efeadf;
+}
+.fin-danger-btn {
+    margin-right: auto;
+    border: 1px solid #edc4b7;
+    background: #fbe9e4;
+    color: var(--out);
+}
+.fin-danger-btn:hover:not(:disabled) {
+    background: #f7d9d0;
+}
+.fin-primary-btn:disabled,
+.fin-ghost-btn:disabled,
+.fin-danger-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.fin-icon-btn {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    color: var(--muted);
+}
+.fin-icon-btn:hover {
+    background: #efeadf;
+    color: var(--ink);
+}
+.fin-text-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--orange-deep);
+}
+.fin-text-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+/* Period bar */
+.fin-period {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 18px;
+    border-radius: 6px;
+    background: var(--ink);
+    color: var(--cream);
+}
+.fin-period-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+}
+.fin-period-label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 15px;
+}
+.fin-period-label small {
+    border-radius: 20px;
+    padding: 2px 8px;
+    background: #ffffff1a;
+    color: #c3bfb3;
+    font-size: 10px;
+    font-weight: 700;
+}
+.fin-presets {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+}
+.fin-presets button {
+    flex-shrink: 0;
+    border: 1px solid #ffffff33;
+    border-radius: 20px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #e4dfd3;
+    transition:
+        background 0.15s,
+        color 0.15s;
+}
+.fin-presets button:hover {
+    background: #ffffff14;
+}
+.fin-presets button[aria-pressed='true'] {
+    border-color: var(--orange);
+    background: var(--orange);
+    color: #fff;
+}
+.fin-custom-range {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.fin-custom-range label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #c3bfb3;
+}
+.fin-custom-range input {
+    border: 1px solid #ffffff40;
+    border-radius: 4px;
+    padding: 7px 10px;
+    background: #ffffff10;
+    color: var(--cream);
+    color-scheme: dark;
+    font-size: 13px;
+}
+.fin-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #c3bfb3;
+    cursor: pointer;
+}
+.fin-switch input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.fin-switch-track {
+    position: relative;
+    width: 34px;
+    height: 20px;
+    border-radius: 20px;
+    background: #ffffff33;
+    transition: background 0.15s;
+}
+.fin-switch-track span {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.15s;
+}
+.fin-switch input:checked + .fin-switch-track {
+    background: var(--orange);
+}
+.fin-switch input:checked + .fin-switch-track span {
+    transform: translateX(14px);
+}
+.fin-switch input:focus-visible + .fin-switch-track {
+    outline: 2px solid var(--orange);
+    outline-offset: 2px;
+}
+
+/* KPIs */
+.fin-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+.fin-kpi {
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--paper);
+}
+.fin-kpi p {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+}
+.fin-kpi strong {
+    display: block;
+    margin: 10px 0 6px;
+    font-size: clamp(20px, 2.2vw, 28px);
+    letter-spacing: -1px;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.fin-kpi > span {
+    font-size: 10px;
+    line-height: 1.5;
+    color: #777268;
+}
+.fin-kpi.is-surplus {
+    border-color: #b9cfae;
+    background: #eef4ea;
+}
+.fin-kpi.is-surplus strong {
+    color: var(--in);
+}
+.fin-kpi.is-deficit {
+    border-color: #edc4b7;
+    background: #fbe9e4;
+}
+.fin-kpi.is-deficit strong {
+    color: var(--out);
+}
+.fin-kpi-dark {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: var(--cream);
+}
+.fin-kpi-dark p,
+.fin-kpi-dark > span {
+    color: #c3bfb3;
+}
+.fin-loading {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+/* Tabs */
+.fin-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    gap: 4px;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 4px;
+    border-radius: 6px;
+    background: #ebe5d8;
+}
+.fin-tabs button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border-radius: 4px;
+    padding: 9px 16px;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--muted);
+    white-space: nowrap;
+}
+.fin-tabs button:hover {
+    color: var(--ink);
+}
+.fin-tabs button[aria-selected='true'] {
+    background: var(--paper);
+    color: var(--orange-deep);
+    box-shadow: 0 1px 2px #24231e1a;
+}
+.fin-tab-count {
+    border-radius: 20px;
+    padding: 1px 7px;
+    background: #efeadf;
+    color: var(--muted);
+    font-size: 10px;
+}
+
+/* Panels */
+.fin-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+.fin-span-2 {
+    grid-column: span 2;
+}
+.fin-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.fin-panel {
+    min-width: 0;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--paper);
+}
+.fin-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-bottom: 16px;
+}
+.fin-panel-head h2 {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+}
+.fin-panel-head > small {
+    font-size: 10px;
+    color: #777268;
+    padding-top: 4px;
+}
+.fin-kicker {
+    margin-bottom: 5px;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    color: var(--orange-deep);
+}
+.fin-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 30px 12px;
+    border: 1px dashed #d4cdbf;
+    border-radius: 6px;
+    text-align: center;
+    color: #777268;
+}
+.fin-empty > svg {
+    color: var(--orange);
+}
+.fin-empty h3 {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--ink);
+}
+.fin-empty p {
+    font-size: 12px;
+}
+
+/* Dots / bars */
+.dot-in,
+.dot-out,
+.dot-bal {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.dot-in {
+    background: #5f8f4e;
+}
+.dot-out {
+    background: var(--orange);
+}
+.dot-bal {
+    background: var(--ink);
+}
+.bar-in {
+    background: #5f8f4e;
+}
+.bar-out {
+    background: var(--orange);
+}
+
+/* Money by type */
+.fin-type-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.fin-type-list li + li {
+    border-top: 1px solid var(--line-soft);
+}
+.fin-type-list button {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 16px;
+    width: 100%;
+    padding: 12px 8px;
+    border-radius: 4px;
+    text-align: left;
+    transition: background 0.15s;
+}
+.fin-type-list button:hover {
+    background: #f7f1e6;
+}
+.fin-type-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    font-size: 13px;
+    font-weight: 800;
+}
+.fin-type-name small {
+    font-size: 10px;
+    font-weight: 400;
+    color: #777268;
+}
+.fin-type-amount {
+    font-size: 14px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+.fin-bar {
+    grid-column: 1 / -1;
+    height: 6px;
+    border-radius: 3px;
+    background: #efeadf;
+    overflow: hidden;
+}
+.fin-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.4s;
+}
+
+/* Lists */
+.fin-list {
+    font-size: 12px;
+}
+.fin-list > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line-soft);
+}
+.fin-list dt {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--muted);
+}
+.fin-list dt small {
+    border-radius: 20px;
+    padding: 0 6px;
+    background: #efeadf;
+    font-size: 10px;
+}
+.fin-list dd {
+    font-weight: 800;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.fin-list-total {
+    border-bottom: 0 !important;
+}
+.fin-list-total dt {
+    color: var(--ink);
+    font-weight: 800;
+}
+.fin-flow-bars {
+    display: flex;
+    gap: 3px;
+    height: 14px;
+    margin-bottom: 14px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: #efeadf;
+}
+.fin-flow-bars span {
+    flex-basis: 0;
+    transition: flex-grow 0.4s;
+}
+.fin-bills {
+    background: #ebe8d3;
+    border-color: #d8d3b4;
+}
+.fin-bills-total {
+    margin-bottom: 10px;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    font-variant-numeric: tabular-nums;
+}
+.fin-bills .fin-list {
+    margin-bottom: 14px;
+}
+
+/* Tables */
+.fin-table-scroll {
+    overflow-x: auto;
+}
+.fin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.fin-table th {
+    padding: 0 12px 11px 0;
+    text-align: left;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #777268;
+}
+.fin-table td {
+    padding: 12px 12px 12px 0;
+    border-top: 1px solid var(--line-soft);
+    vertical-align: middle;
+}
+.fin-table td small {
+    display: block;
+    margin-top: 3px;
+    font-size: 10px;
+    color: #777268;
+}
+.fin-table tfoot td {
+    border-top: 1px solid var(--line);
+    font-weight: 800;
+}
+.fin-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.fin-table tbody tr {
+    transition: background 0.15s;
+}
+.fin-table tbody tr:hover {
+    background: #f7f1e6;
+}
+.fin-table tr.is-editing {
+    background: #f4dfcf;
+}
+.fin-nowrap {
+    white-space: nowrap;
+}
+.fin-desc {
+    white-space: normal;
+    min-width: 200px;
+}
+.fin-desc strong {
+    font-weight: 700;
+}
+.fin-muted-cell {
+    color: #777268;
+}
+.fin-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    color: inherit;
+}
+.fin-sort span {
+    opacity: 0.6;
+}
+.fin-sort:hover {
+    color: var(--ink);
+}
+.fin-row-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--orange-deep);
+}
+.fin-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+}
+.fin-actions button {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    color: var(--muted);
+}
+.fin-actions button:hover {
+    background: #efeadf;
+    color: var(--ink);
+}
+.fin-actions button.is-danger:hover {
+    background: #fbe9e4;
+    color: var(--out);
+}
+.fin-actions button:disabled {
+    opacity: 0.4;
+}
+
+/* Type pills */
+.fin-type-pill {
+    display: inline-block;
+    border-radius: 20px;
+    padding: 3px 9px;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+    background: #efeadf;
+    color: #625b4c;
+}
+.type-payment {
+    background: #e4edde;
+    color: #376229;
+}
+.type-income_adjustment {
+    background: #dfeee9;
+    color: #2b6a57;
+}
+.type-expense {
+    background: #fbe4dc;
+    color: #a8391a;
+}
+.type-payroll {
+    background: #ece4f3;
+    color: #5d3f7a;
+}
+.type-asset_deduction {
+    background: #f7eccf;
+    color: #7b5815;
+}
+.type-payout_share {
+    background: #f8e2d7;
+    color: #9d401d;
+}
+.type-order {
+    background: #e2e8f0;
+    color: #3d4b5e;
+}
+
+/* Ledger toolbar */
+.fin-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+}
+.fin-toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.fin-search {
+    position: relative;
+    flex: 1 1 260px;
+    display: flex;
+    align-items: center;
+}
+.fin-search svg {
+    position: absolute;
+    left: 12px;
+    color: #93897b;
+    pointer-events: none;
+}
+.fin-search input,
+.fin-select {
+    width: 100%;
+    height: 42px;
+    border: 1px solid #d4cdbf;
+    border-radius: 4px;
+    background: #fff;
+    font-size: 13px;
+    color: var(--ink);
+}
+.fin-search input {
+    padding: 0 12px 0 36px;
+}
+.fin-select {
+    flex: 0 1 200px;
+    padding: 0 10px;
+}
+.fin-search input:focus,
+.fin-select:focus {
+    outline: none;
+    border-color: var(--orange-deep);
+    box-shadow: 0 0 0 3px #c3441c26;
+}
+.fin-chips {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.fin-chips button {
+    flex-shrink: 0;
+    border-radius: 4px;
+    padding: 7px 12px;
+    background: #efeadf;
+    font-size: 12px;
+    font-weight: 700;
+    color: #575144;
+}
+.fin-chips button:hover {
+    background: #e4dccd;
+    color: var(--ink);
+}
+.fin-chips button[aria-pressed='true'] {
+    background: var(--ink);
+    color: var(--cream);
+}
+.fin-active-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 11px;
+    color: #777268;
+}
+.fin-active-filters button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid #e4c4ab;
+    border-radius: 20px;
+    padding: 3px 9px;
+    background: #f2e5d8;
+    font-weight: 700;
+    color: #a23817;
+}
+.fin-active-filters .fin-clear-all {
+    border: 0;
+    background: none;
+    text-decoration: underline;
+    color: var(--muted);
+}
+
+/* Mobile ledger cards */
+.fin-mobile {
+    display: none;
+}
+.fin-tx-cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.fin-tx-cards li {
+    padding: 14px 4px;
+    border-top: 1px solid var(--line-soft);
+}
+.fin-tx-cards li.is-editing {
+    background: #f4dfcf;
+}
+.fin-tx-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+.fin-tx-top strong {
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+}
+.fin-tx-desc {
+    margin-top: 7px;
+    font-size: 13px;
+    font-weight: 700;
+}
+.fin-tx-meta {
+    margin-top: 3px;
+    font-size: 11px;
+    color: #777268;
+}
+.fin-tx-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 6px;
+    font-size: 11px;
+    color: #777268;
+    font-variant-numeric: tabular-nums;
+}
+
+.fin-pager {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line-soft);
+    font-size: 12px;
+    color: var(--muted);
+}
+.fin-pager button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid #d4cdbf;
+    border-radius: 4px;
+    padding: 8px 12px;
+    background: var(--paper);
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--ink);
+}
+.fin-pager button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* Performance */
+.fin-help {
+    width: 28px;
+    height: 28px;
+    border: 1px solid #d4cdbf;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--muted);
+}
+.fin-help[aria-expanded='true'] {
+    background: var(--ink);
+    color: var(--cream);
+}
+.fin-help-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border-radius: 5px;
+    background: #f6f2e9;
+    font-size: 12px;
+    line-height: 1.6;
+}
+.fin-compare-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+.fin-compare {
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-top-width: 3px;
+    border-radius: 5px;
+    background: #fff;
+}
+.fin-compare p {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+}
+.fin-compare strong {
+    display: block;
+    margin: 8px 0 4px;
+    font-size: 20px;
+    letter-spacing: -0.6px;
+    font-variant-numeric: tabular-nums;
+}
+.fin-compare small {
+    display: block;
+    margin-top: 4px;
+    font-size: 10px;
+    color: #777268;
+}
+.fin-delta {
+    font-size: 12px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+.tone-good {
+    border-top-color: #6f9a5d;
+}
+.tone-good .fin-delta {
+    color: var(--in);
+}
+.tone-bad {
+    border-top-color: var(--orange);
+}
+.tone-bad .fin-delta {
+    color: var(--out);
+}
+.tone-flat {
+    border-top-color: #d4cdbf;
+}
+.tone-flat .fin-delta {
+    color: #777268;
+}
+.fin-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--muted);
+}
+.fin-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.fin-chart svg {
+    display: block;
+    width: 100%;
+    height: 220px;
+    touch-action: pan-y;
+}
+.fin-chart-readout {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    min-height: 44px;
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line-soft);
+    font-size: 12px;
+    color: #777268;
+    font-variant-numeric: tabular-nums;
+}
+.fin-chart-readout strong {
+    color: var(--ink);
+}
+
+.fin-footer {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 15px;
+    margin-top: 8px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-size: 9px;
+    color: #777268;
+}
+.fin-footer > span:first-child {
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+/* Mobile record button */
+.fin-fab {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    z-index: 30;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 6px;
+    padding: 14px;
+    background: var(--orange);
+    box-shadow: 0 12px 28px -12px #24231ecc;
+    font-size: 14px;
+    font-weight: 800;
+    color: #fff;
+}
+
+/* Entry sheet */
+.fin-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    justify-content: flex-end;
+    background: #24231e80;
+}
+.fin-sheet {
+    display: flex;
+    flex-direction: column;
+    width: min(460px, 100vw);
+    height: 100%;
+    overflow-y: auto;
+    background: var(--paper);
+    box-shadow: -20px 0 40px -20px #24231e80;
+    animation: fin-slide-in 0.22s ease-out;
+}
+.fin-sheet-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 20px 22px 16px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--paper);
+}
+.fin-sheet-head h2 {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+}
+.fin-form {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 14px;
+    padding: 20px 22px;
+}
+.fin-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 700;
+}
+.fin-form input,
+.fin-form select {
+    width: 100%;
+    height: 42px;
+    border: 1px solid #d4cdbf;
+    border-radius: 4px;
+    padding: 0 12px;
+    background: #fff;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--ink);
+}
+.fin-form input:focus,
+.fin-form select:focus {
+    outline: none;
+    border-color: var(--orange-deep);
+    box-shadow: 0 0 0 3px #c3441c26;
+}
+.fin-form select.is-empty {
+    color: #93897b;
+}
+.fin-optional {
+    font-weight: 400;
+    color: #777268;
+}
+.fin-form-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.fin-money {
+    display: flex;
+    align-items: center;
+    border: 1px solid #d4cdbf;
+    border-radius: 4px;
+    background: #fff;
+}
+.fin-money:focus-within {
+    border-color: var(--orange-deep);
+    box-shadow: 0 0 0 3px #c3441c26;
+}
+.fin-money > span {
+    padding-left: 12px;
+    font-size: 18px;
+    font-weight: 800;
+    color: #93897b;
+}
+.fin-form .fin-money input {
+    height: 52px;
+    border: 0;
+    padding-left: 6px;
+    font-size: 22px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    box-shadow: none;
+}
+.fin-segment {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+.fin-segment button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    border: 1px solid #d4cdbf;
+    border-radius: 5px;
+    padding: 12px;
+    background: #fff;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--ink);
+}
+.fin-segment button small {
+    font-size: 10px;
+    font-weight: 400;
+    color: #777268;
+}
+.fin-segment button[aria-checked='true'] {
+    border-color: var(--orange);
+    background: #fdf0e9;
+    box-shadow: inset 0 0 0 1px var(--orange);
+}
+.fin-segment button[aria-checked='true'] svg {
+    color: var(--orange-deep);
+}
+.fin-sheet-foot {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid var(--line-soft);
+}
+
+.spinning {
+    animation: fin-spin 1s linear infinite;
+}
+@keyframes fin-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+@keyframes fin-slide-in {
+    from {
+        transform: translateX(40px);
+        opacity: 0;
+    }
+    to {
+        transform: none;
+        opacity: 1;
+    }
+}
+.fin-fade-enter-active,
+.fin-fade-leave-active {
+    transition: opacity 0.15s;
+}
+.fin-fade-enter-from,
+.fin-fade-leave-to {
+    opacity: 0;
+}
+
+@media (max-width: 1100px) {
+    .fin-kpis {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .fin-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .fin-compare-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (max-width: 767px) {
+    .fin-desktop {
+        display: none;
+    }
+    .fin-mobile {
+        display: block;
+    }
+    .fin-grid {
+        grid-template-columns: 1fr;
+    }
+    .fin-span-2 {
+        grid-column: auto;
+    }
+    .fin-fab {
+        display: flex;
+    }
+    .fin-heading-actions .fin-primary-btn {
+        display: none;
+    }
+}
+@media (max-width: 540px) {
+    .fin-page {
+        padding: 24px 16px 96px;
+        gap: 16px;
+    }
+    .fin-kpis {
+        gap: 10px;
+    }
+    .fin-kpi {
+        padding: 14px;
+    }
+    .fin-panel {
+        padding: 16px;
+    }
+    .fin-tabs {
+        width: 100%;
+    }
+    .fin-tabs button {
+        flex: 1;
+        justify-content: center;
+        padding: 9px 8px;
+    }
+    .fin-form-row {
+        grid-template-columns: 1fr;
+    }
+    .fin-compare-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+    .fin-compare {
+        padding: 12px;
+    }
+    .fin-compare strong {
+        font-size: 16px;
+    }
+    .fin-sheet-foot > button {
+        flex: 1;
+    }
+    .fin-danger-btn {
+        flex-basis: 100%;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .spinning,
+    .fin-sheet {
+        animation: none;
+    }
+    .fin-bar > span,
+    .fin-flow-bars span {
+        transition: none;
+    }
 }
 </style>
