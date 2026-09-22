@@ -62,6 +62,7 @@ class HrisController extends Controller
 
     public function destroyEmployee(Employee $employee): JsonResponse
     {
+        abort_if(PayrollRecord::where('employee_id', $employee->id)->exists(), 422, 'This employee has payroll history. Set them inactive instead.');
         $employee->delete();
         return response()->json(null, 204);
     }
@@ -83,6 +84,53 @@ class HrisController extends Controller
         return response()->json(['data' => $records]);
     }
 
+    public function payrollReport(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'start_date' => 'required|date_format:Y-m-d',
+            'end_date' => 'required|date_format:Y-m-d|after_or_equal:start_date',
+            'employee_id' => 'nullable|integer|exists:employees,id',
+        ]);
+        // Aggregate the entire cash ledger, not the latest 100 payroll records.
+        // Unlinked/manual payroll remains visible so the total matches Financial.
+        $query = DB::table('financial_transactions as ft')
+            ->leftJoin('payroll_records as pr', 'pr.id', '=', 'ft.payroll_record_id')
+            ->leftJoin('employees as e', 'e.id', '=', 'pr.employee_id')
+            ->where('ft.type', 'payroll')
+            ->whereBetween('ft.transacted_at', [$data['start_date'].' 00:00:00', $data['end_date'].' 23:59:59'])
+            ->when($data['employee_id'] ?? null, fn ($q, $id) => $q->where('e.id', $id));
+
+        // Gross, deductions and days come from the linked payroll record; unassigned entries have none.
+        $employees = (clone $query)->selectRaw('e.id as employee_id, e.name, e.position, COUNT(*) as payments, SUM(ft.amount) as amount, SUM(pr.gross_pay) as gross, SUM(pr.deductions) as deductions, SUM(pr.days_worked) as days_worked')
+            ->groupBy('e.id', 'e.name', 'e.position')->orderByDesc('amount')->get()
+            ->map(fn ($row) => [
+                'employee_id' => $row->employee_id,
+                'name' => $row->name ?? 'Unassigned payroll',
+                'position' => $row->position,
+                'payments' => (int) $row->payments,
+                'days_worked' => round((float) $row->days_worked, 1),
+                'gross' => round((float) $row->gross, 2),
+                'deductions' => round((float) $row->deductions, 2),
+                'amount' => round((float) $row->amount, 2),
+            ]);
+        $total = round((float) $employees->sum('amount'), 2);
+        $daily = (clone $query)->selectRaw('DATE(ft.transacted_at) as date, SUM(ft.amount) as amount')
+            ->groupByRaw('DATE(ft.transacted_at)')->orderBy('date')->get()
+            ->map(fn ($row) => ['date' => $row->date, 'amount' => round((float) $row->amount, 2)]);
+
+        return response()->json([
+            'period' => ['start' => $data['start_date'], 'end' => $data['end_date']],
+            'total' => $total,
+            'gross_total' => round((float) $employees->sum('gross'), 2),
+            'deductions_total' => round((float) $employees->sum('deductions'), 2),
+            'payment_count' => (int) $employees->sum('payments'),
+            'employee_count' => $employees->whereNotNull('employee_id')->count(),
+            'unassigned' => round((float) $employees->whereNull('employee_id')->sum('amount'), 2),
+            'employees' => $employees,
+            'daily' => $daily,
+        ]);
+    }
+
     public function storePayroll(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -91,7 +139,7 @@ class HrisController extends Controller
             'period_end'   => 'required|date|after_or_equal:period_start',
             'days_worked'  => 'required|numeric|min:0',
             'gross_pay'    => 'required|numeric|min:0',
-            'deductions'   => 'nullable|numeric|min:0',
+            'deductions'   => 'nullable|numeric|min:0|lte:gross_pay',
             'notes'        => 'nullable|string',
         ]);
 
@@ -112,6 +160,8 @@ class HrisController extends Controller
         }
 
         DB::transaction(function () use ($payrollRecord) {
+            $payrollRecord = PayrollRecord::whereKey($payrollRecord->id)->lockForUpdate()->firstOrFail();
+            abort_if($payrollRecord->status === 'paid' || $payrollRecord->financial_transaction_id, 422, 'Already marked as paid.');
             $payrollRecord->update(['status' => 'approved']);
 
             $hrisSetting = HrisSetting::getSetting();

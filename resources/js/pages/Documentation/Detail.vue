@@ -532,6 +532,18 @@ const allModules: Record<string, ModuleDoc> = {
                 content: 'Payroll entries appear in the Financial ledger as outflows under the payroll type. They are included in the net balance and appear in the summary panel totals. They cannot be deleted from the Financial page — to reverse a payroll entry, the payroll record itself must be managed in the HRIS module.',
             },
             {
+                title: 'Payroll Report',
+                type: 'features',
+                items: [
+                    'The Payroll report tab shows how much was spent on payroll in any period, by the date the money was released. Unpaid payroll is not counted.',
+                    'Filter by date range, pick a quick period (this month, last month, last 90 days, this year), or narrow it to one employee.',
+                    'Totals show net payroll paid, gross payroll, deductions withheld, and the average paid per employee.',
+                    'Spending over time is charted by day, or by month for periods longer than about two months.',
+                    'Distribution per employee lists each person’s payments, days worked, gross, deductions, net paid, and share of the total. Payroll entries with no employee record appear as Unassigned payroll so the total matches Financial.',
+                    'Export CSV downloads the per-employee breakdown for the applied period.',
+                ],
+            },
+            {
                 title: 'HRIS Settings',
                 type: 'prose',
                 content: 'HRIS configuration is available at /settings/hris. This covers pay period defaults and deduction rate configuration (SSS, PhilHealth, Pag-IBIG percentages). These settings feed into payroll calculation suggestions but do not override manually entered deduction amounts.',
