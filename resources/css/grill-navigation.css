@@ -1,6 +1,12 @@
 /* Scoped to application navigation, including teleported mobile sheets and menus. */
 .grill-shell {
     background: #eee8dc;
+    overflow-x: clip;
+}
+/* The workspace never scrolls sideways. Wide tables and charts scroll inside
+   their own containers, so a stray wide element can't add a page scrollbar. */
+html:has(.grill-shell) {
+    overflow-x: hidden;
 }
 .grill-sidebar,
 .grill-user-menu {
