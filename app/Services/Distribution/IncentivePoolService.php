@@ -7,6 +7,7 @@ use App\Models\ProductOwnership;
 use App\Models\Shareholder;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class IncentivePoolService
 {
@@ -33,14 +34,14 @@ class IncentivePoolService
             return ['total' => 0.0, 'rules' => [], 'by_product' => [], 'by_shareholder' => [], 'company_retained' => 0.0];
         }
 
-        $totalRate  = (float) $rules->sum('rate');
-        $totalPool  = round(max(0, $netProfit) * $totalRate / 100, 2);
+        $totalRate = (float) $rules->sum('rate');
+        $totalPool = round(max(0, $netProfit) * $totalRate / 100, 2);
 
         $ruleResults = $rules->map(fn ($r) => [
-            'id'          => $r->id,
-            'name'        => $r->name,
-            'pool_type'   => $r->pool_type,
-            'rate'        => (float) $r->rate,
+            'id' => $r->id,
+            'name' => $r->name,
+            'pool_type' => $r->pool_type,
+            'rate' => (float) $r->rate,
             'pool_amount' => round(max(0, $netProfit) * $r->rate / 100, 2),
         ])->all();
 
@@ -52,10 +53,10 @@ class IncentivePoolService
         $distributed = $this->distributePool($totalPool, $from, $to);
 
         return [
-            'total'            => $totalPool,
-            'rules'            => $ruleResults,
-            'by_product'       => $distributed['by_product'],
-            'by_shareholder'   => $distributed['by_shareholder'],
+            'total' => $totalPool,
+            'rules' => $ruleResults,
+            'by_product' => $distributed['by_product'],
+            'by_shareholder' => $distributed['by_shareholder'],
             'company_retained' => $distributed['company_retained'],
         ];
     }
@@ -71,31 +72,31 @@ class IncentivePoolService
 
         if ($rules->isEmpty()) {
             return [
-                'total'           => 0.0,
-                'rules'           => [],
-                'by_product'      => [],
-                'by_shareholder'  => [],
-                'company_retained'=> 0.0,
+                'total' => 0.0,
+                'rules' => [],
+                'by_product' => [],
+                'by_shareholder' => [],
+                'company_retained' => 0.0,
             ];
         }
 
         $grossProfit = max(0, round($metrics['net_sales'] - $metrics['cogs'], 2));
-        $totalPool   = 0.0;
+        $totalPool = 0.0;
         $ruleResults = [];
 
         foreach ($rules as $rule) {
             $pool = match ($rule->pool_type) {
-                'gross_sales_pct'  => round($metrics['gross_sales'] * $rule->rate / 100, 2),
+                'gross_sales_pct' => round($metrics['gross_sales'] * $rule->rate / 100, 2),
                 'gross_profit_pct' => round($grossProfit * $rule->rate / 100, 2),
-                'net_profit_pct'   => round(max(0, $netProfit) * $rule->rate / 100, 2),
-                'fixed_amount'     => round((float) $rule->rate, 2),
+                'net_profit_pct' => round(max(0, $netProfit) * $rule->rate / 100, 2),
+                'fixed_amount' => round((float) $rule->rate, 2),
             };
-            $totalPool     = round($totalPool + $pool, 2);
+            $totalPool = round($totalPool + $pool, 2);
             $ruleResults[] = [
-                'id'          => $rule->id,
-                'name'        => $rule->name,
-                'pool_type'   => $rule->pool_type,
-                'rate'        => (float) $rule->rate,
+                'id' => $rule->id,
+                'name' => $rule->name,
+                'pool_type' => $rule->pool_type,
+                'rate' => (float) $rule->rate,
                 'pool_amount' => $pool,
             ];
         }
@@ -103,11 +104,11 @@ class IncentivePoolService
         $distributed = $this->distributePool($totalPool, $from, $to);
 
         return [
-            'total'           => $totalPool,
-            'rules'           => $ruleResults,
-            'by_product'      => $distributed['by_product'],
-            'by_shareholder'  => $distributed['by_shareholder'],
-            'company_retained'=> $distributed['company_retained'],
+            'total' => $totalPool,
+            'rules' => $ruleResults,
+            'by_product' => $distributed['by_product'],
+            'by_shareholder' => $distributed['by_shareholder'],
+            'company_retained' => $distributed['company_retained'],
         ];
     }
 
@@ -121,7 +122,7 @@ class IncentivePoolService
             ->join('orders', 'orders.id', '=', 'order_items.order_id')
             ->join('products', 'products.id', '=', 'order_items.product_id')
             ->where('orders.payment_status', 'paid')
-            ->whereBetween('orders.created_at', [$from, $to])
+            ->whereIn('orders.id', DB::table('financial_transactions')->select('order_id')->where('type', 'payment')->where('amount', '>', 0)->whereBetween('transacted_at', [$from, $to]))
             ->groupBy('products.id', 'products.name')
             ->selectRaw('products.id as product_id, products.name as product_name, COALESCE(SUM(order_items.subtotal), 0) as sales_amount')
             ->get();
@@ -134,53 +135,63 @@ class IncentivePoolService
 
         $allOwnerships = ProductOwnership::with('shareholder:id,name')
             ->whereIn('product_id', $productSalesRows->pluck('product_id'))
+            ->whereHas('shareholder', fn ($q) => $q->active())
+            ->orderBy('id')
             ->get()
             ->groupBy('product_id');
 
         $shareholderTotals = [];
-        $companyRetained   = 0.0;
-        $byProduct         = [];
+        $companyRetained = 0.0;
+        $byProduct = [];
 
+        $productAmounts = MoneyAllocation::split($pool, $productSalesRows->pluck('sales_amount', 'product_id')->map(fn ($v) => (float) $v)->all());
         foreach ($productSalesRows as $row) {
-            $sales            = (float) $row->sales_amount;
-            $contributionPct  = round($sales / $totalItemSales * 100, 4);
-            $productIncentive = round($sales / $totalItemSales * $pool, 2);
-            $productId        = (int) $row->product_id;
+            $sales = (float) $row->sales_amount;
+            $contributionPct = round($sales / $totalItemSales * 100, 4);
+            $productIncentive = $productAmounts[$row->product_id];
+            $productId = (int) $row->product_id;
 
             $ownerships = $allOwnerships->get($productId);
 
             if (! $ownerships || $ownerships->isEmpty()) {
                 $companyRetained = round($companyRetained + $productIncentive, 2);
                 $byProduct[] = [
-                    'product_id'        => $productId,
-                    'product_name'      => $row->product_name,
-                    'sales_amount'      => round($sales, 2),
-                    'contribution_pct'  => round($contributionPct, 2),
+                    'product_id' => $productId,
+                    'product_name' => $row->product_name,
+                    'sales_amount' => round($sales, 2),
+                    'contribution_pct' => round($contributionPct, 2),
                     'product_incentive' => $productIncentive,
-                    'company_retained'  => $productIncentive,
-                    'owners'            => [],
+                    'company_retained' => $productIncentive,
+                    'owners' => [],
                 ];
             } else {
+                $weights = $ownerships->pluck('ownership_percentage', 'shareholder_id')->map(fn ($v) => (float) $v)->all();
+                if (array_sum($weights) > 100 || min($weights) < 0) {
+                    throw ValidationException::withMessages(['ownership' => 'Product ownership exceeds 100% or contains a negative percentage.']);
+                }
+                $weights['company'] = 100 - array_sum($weights);
+                $amounts = MoneyAllocation::split($productIncentive, $weights);
+                $companyRetained = round($companyRetained + $amounts['company'], 2);
                 $owners = [];
                 foreach ($ownerships as $ownership) {
-                    $amount = round($productIncentive * $ownership->ownership_percentage / 100, 2);
-                    $sid    = (int) $ownership->shareholder_id;
+                    $amount = $amounts[$ownership->shareholder_id];
+                    $sid = (int) $ownership->shareholder_id;
                     $shareholderTotals[$sid] = round(($shareholderTotals[$sid] ?? 0.0) + $amount, 2);
                     $owners[] = [
                         'shareholder_id' => $sid,
-                        'name'           => $ownership->shareholder->name,
-                        'ownership_pct'  => (float) $ownership->ownership_percentage,
-                        'amount'         => $amount,
+                        'name' => $ownership->shareholder->name,
+                        'ownership_pct' => (float) $ownership->ownership_percentage,
+                        'amount' => $amount,
                     ];
                 }
                 $byProduct[] = [
-                    'product_id'        => $productId,
-                    'product_name'      => $row->product_name,
-                    'sales_amount'      => round($sales, 2),
-                    'contribution_pct'  => round($contributionPct, 2),
+                    'product_id' => $productId,
+                    'product_name' => $row->product_name,
+                    'sales_amount' => round($sales, 2),
+                    'contribution_pct' => round($contributionPct, 2),
                     'product_incentive' => $productIncentive,
-                    'company_retained'  => 0.0,
-                    'owners'            => $owners,
+                    'company_retained' => $amounts['company'],
+                    'owners' => $owners,
                 ];
             }
         }
@@ -195,8 +206,8 @@ class IncentivePoolService
 
             foreach ($shareholderTotals as $id => $amount) {
                 $byShareholder[] = [
-                    'shareholder_id'   => $id,
-                    'name'             => $names[$id] ?? '—',
+                    'shareholder_id' => $id,
+                    'name' => $names[$id] ?? '—',
                     'incentive_amount' => $amount,
                 ];
             }
@@ -204,9 +215,9 @@ class IncentivePoolService
         }
 
         return [
-            'by_product'      => $byProduct,
-            'by_shareholder'  => $byShareholder,
-            'company_retained'=> $companyRetained,
+            'by_product' => $byProduct,
+            'by_shareholder' => $byShareholder,
+            'company_retained' => $companyRetained,
         ];
     }
 
