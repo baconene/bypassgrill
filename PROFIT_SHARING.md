@@ -2,6 +2,8 @@
 
 The `/distribution` page uses the dashboard palette, touch-sized controls, horizontally scrollable navigation, mobile recipient/history cards and retained pie charts. Filters must be recomputed before a payout snapshot can be saved.
 
+The page uses Profit mode only for previews, exports, trends and new snapshots. The Sales selector has been removed. Historical Sales snapshots retain their original labels and amounts.
+
 ## Financial rules
 
 - Unfiltered allocations use Financial closing balance: the balance brought forward from all earlier dates plus period net movement. Period movement is payments + income adjustments - all cash expenses - payroll - asset deductions - recorded payouts. Compare the same dates with Financial asset deductions enabled. Inventory purchases remain cash expenses; COGS is reference-only and is not deducted again. Opening balances, including earlier expenses and payouts, are included in the distribution pool. New snapshots record opening balance and period movement in their metadata. This cash allocation policy is distinct from the COGS-based profit-and-loss report.

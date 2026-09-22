@@ -53,7 +53,7 @@ const dateKey = (d: Date) =>
         String(d.getMonth() + 1).padStart(2, '0'),
         String(d.getDate()).padStart(2, '0'),
     ].join('-');
-const basis = ref<'sales' | 'profit'>('sales');
+const basis = 'profit' as const;
 const startDate = ref(monthStart);
 const endDate = ref(today);
 const categoryId = ref<number | ''>('');
@@ -93,7 +93,7 @@ const canSave = computed(
 );
 
 const params = () => ({
-    basis: basis.value,
+    basis,
     start_date: startDate.value,
     end_date: endDate.value,
     category_id: categoryId.value || undefined,
@@ -633,7 +633,7 @@ const trend = ref<any[]>([]);
 const loadTrends = async () => {
     const yearStart = today.slice(0, 4) + '-01-01';
     const res = await api.get('/api/v1/distribution/trend', {
-        params: { basis: basis.value, start_date: yearStart, end_date: today },
+        params: { basis, start_date: yearStart, end_date: today },
     });
     trend.value = res.data;
 };
@@ -803,42 +803,6 @@ const tabs = [
             <div class="rounded-xl border bg-card p-4 shadow-sm">
                 <div class="space-y-3">
                     <div class="sharing-filters flex flex-wrap items-end gap-3">
-                        <div>
-                            <label
-                                class="mb-1 block text-xs font-medium text-muted-foreground"
-                                >Basis</label
-                            >
-                            <div class="flex overflow-hidden rounded-lg border">
-                                <button
-                                    @click="
-                                        basis = 'sales';
-                                        loadPreview();
-                                    "
-                                    :class="[
-                                        'px-3 py-2 text-sm font-semibold',
-                                        basis === 'sales'
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'hover:bg-muted',
-                                    ]"
-                                >
-                                    Sales
-                                </button>
-                                <button
-                                    @click="
-                                        basis = 'profit';
-                                        loadPreview();
-                                    "
-                                    :class="[
-                                        'px-3 py-2 text-sm font-semibold',
-                                        basis === 'profit'
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'hover:bg-muted',
-                                    ]"
-                                >
-                                    Profit
-                                </button>
-                            </div>
-                        </div>
                         <div>
                             <label
                                 for="sharing-from"

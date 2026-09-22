@@ -189,7 +189,7 @@ class DistributionController extends Controller
         ]);
 
         return [
-            $request->input('basis', 'sales'),
+            $request->input('basis', 'profit'),
             $request->input('start_date', Carbon::now('Asia/Manila')->startOfMonth()->toDateString()),
             $request->input('end_date', Carbon::now('Asia/Manila')->toDateString()),
             $request->input('category_id') ? (int) $request->input('category_id') : null,
