@@ -24,7 +24,7 @@ const clock = computed(() => (page.props as any).systemClock as { active: boolea
 <template>
     <AppShell variant="sidebar">
         <AppSidebar />
-        <AppContent variant="sidebar" class="overflow-x-hidden">
+        <AppContent variant="sidebar" class="min-w-0 overflow-x-clip">
             <AppSidebarHeader :breadcrumbs="breadcrumbs" />
             <Link v-if="clock?.active" href="/settings/clock"
                 class="flex items-center justify-center gap-2 bg-amber-500 text-amber-950 text-xs font-semibold px-4 py-1.5 hover:bg-amber-400 transition">
