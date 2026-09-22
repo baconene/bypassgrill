@@ -3265,7 +3265,7 @@ const tabs = [
 .sharing-page :deep(.text-red-500) {
     color: #b52c24;
 }
-.sharing-page :deep(.text-[10px]) {
+.sharing-page :deep([class~='text-[10px]']) {
     font-size: 11px;
 }
 .sharing-page :deep(th) {
