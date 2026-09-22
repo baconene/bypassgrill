@@ -4,6 +4,7 @@ import {
     BarChart3,
     CheckCircle,
     Flame,
+    Layers,
     Pencil,
     Plus,
     Search,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import BulkPayrollWizard from '@/components/BulkPayrollWizard.vue';
 import PayrollReport from '@/components/PayrollReport.vue';
 import api from '@/utils/api';
 
@@ -66,6 +68,13 @@ const employees = ref<Employee[]>([...props.employees]);
 const payrollRecords = ref<PayrollRecord[]>([...props.payrollRecords]);
 const tab = ref<Tab>('employees');
 const loading = ref(false);
+const showBulk = ref(false);
+
+function onBulkReleased(records: unknown[]) {
+    payrollRecords.value.unshift(...(records as PayrollRecord[]));
+    showBulk.value = false;
+    tab.value = 'payroll';
+}
 const tabs = [
     { key: 'employees' as const, label: 'Employees', icon: Users },
     { key: 'payroll' as const, label: 'Payroll', icon: Wallet },
@@ -469,7 +478,9 @@ const statusLabel: Record<string, string> = {
                 }}</span>
             </div>
             <div class="work-actions">
-                <button class="primary-action" @click="openAddPayroll">
+                <button class="primary-action" @click="showBulk = true">
+                    <Layers :size="17" aria-hidden="true" />Bulk payroll</button
+                ><button class="secondary-action" @click="openAddPayroll">
                     <Plus :size="17" aria-hidden="true" />New payroll</button
                 ><button class="secondary-action" @click="openAddEmp">
                     <UserPlus :size="17" aria-hidden="true" />Add employee
@@ -742,9 +753,13 @@ const statusLabel: Record<string, string> = {
                         }}</span>
                     </h2>
                 </div>
-                <button class="text-action" @click="openAddPayroll">
-                    <Plus :size="15" aria-hidden="true" />New payroll
-                </button>
+                <div class="heading-actions">
+                    <button class="text-action" @click="showBulk = true">
+                        <Layers :size="15" aria-hidden="true" />Bulk payroll</button
+                    ><button class="text-action" @click="openAddPayroll">
+                        <Plus :size="15" aria-hidden="true" />New payroll
+                    </button>
+                </div>
             </div>
             <div class="toolbar">
                 <div class="chips" role="group" aria-label="Filter by status">
@@ -968,6 +983,14 @@ const statusLabel: Record<string, string> = {
             v-if="tab === 'reports'"
             role="tabpanel"
             :employees="employees"
+        />
+
+        <BulkPayrollWizard
+            v-if="showBulk"
+            :employees="employees"
+            :payroll-records="payrollRecords"
+            @close="showBulk = false"
+            @released="onBulkReleased"
         />
 
         <footer class="hris-footer">
@@ -1480,6 +1503,11 @@ const statusLabel: Record<string, string> = {
     font-weight: 700;
     color: #ad3b19;
     white-space: nowrap;
+}
+.heading-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
 }
 .text-action:hover {
     text-decoration: underline;

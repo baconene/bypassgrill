@@ -532,6 +532,16 @@ const allModules: Record<string, ModuleDoc> = {
                 content: 'Payroll entries appear in the Financial ledger as outflows under the payroll type. They are included in the net balance and appear in the summary panel totals. They cannot be deleted from the Financial page — to reverse a payroll entry, the payroll record itself must be managed in the HRIS module.',
             },
             {
+                title: 'Bulk Payroll',
+                type: 'steps',
+                items: [
+                    'Pay frequency: choose Daily, Weekly, Monthly or Custom. The pay period is filled in (a day, a 7-day week, a calendar month, or any start and end date) and can be changed.',
+                    'Employees: select the active employees to pay. Selected employees are highlighted; Select all and Clear work on the current search.',
+                    'Review & release: each employee’s amount is generated from their rate — daily rate × days, hourly rate × 8 hours × days, monthly salary in full for Monthly, × 12 ÷ 52 for Weekly, or ÷ 22 per day otherwise. Every amount can be edited, and employees who already have payroll overlapping the period are flagged.',
+                    'Release creates a paid payroll record for each employee and records each payment in Financial as a payroll expense, using the payroll tender from HRIS settings. Cancel discards the run without saving anything.',
+                ],
+            },
+            {
                 title: 'Payroll Report',
                 type: 'features',
                 items: [

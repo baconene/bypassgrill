@@ -130,6 +130,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/hris/payroll', [HrisController::class, 'payrollRecords']);
         Route::get('/hris/payroll-report', [HrisController::class, 'payrollReport'])->middleware('role:admin');
         Route::post('/hris/payroll', [HrisController::class, 'storePayroll']);
+        Route::post('/hris/payroll/bulk-release', [HrisController::class, 'bulkReleasePayroll'])->middleware('role:admin');
         Route::post('/hris/payroll/{payrollRecord}/pay', [HrisController::class, 'markPayrollPaid']);
         Route::delete('/hris/payroll/{payrollRecord}', [HrisController::class, 'destroyPayroll']);
 

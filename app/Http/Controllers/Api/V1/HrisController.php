@@ -160,39 +160,86 @@ class HrisController extends Controller
         }
 
         DB::transaction(function () use ($payrollRecord) {
-            $payrollRecord = PayrollRecord::whereKey($payrollRecord->id)->lockForUpdate()->firstOrFail();
-            abort_if($payrollRecord->status === 'paid' || $payrollRecord->financial_transaction_id, 422, 'Already marked as paid.');
-            $payrollRecord->update(['status' => 'approved']);
-
-            $hrisSetting = HrisSetting::getSetting();
-
-            $ft = FinancialTransaction::create([
-                'type'              => 'payroll',
-                'amount'            => (float) $payrollRecord->net_pay,
-                'description'       => 'Payroll: ' . $payrollRecord->employee->name,
-                'notes'             => sprintf(
-                    '%s – %s | %s days worked | Gross: ₱%s | Deductions: ₱%s',
-                    $payrollRecord->period_start->format('M d'),
-                    $payrollRecord->period_end->format('M d, Y'),
-                    number_format((float) $payrollRecord->days_worked, 1),
-                    number_format((float) $payrollRecord->gross_pay, 2),
-                    number_format((float) $payrollRecord->deductions, 2)
-                ),
-                'payroll_record_id' => $payrollRecord->id,
-                'payment_tender_id' => $hrisSetting->payroll_tender_id,
-                'user_id'           => auth()->id(),
-                'transacted_at'     => now(),
-            ]);
-
-            $payrollRecord->update([
-                'status'                 => 'paid',
-                'paid_at'                => now(),
-                'financial_transaction_id' => $ft->id,
-            ]);
+            $locked = PayrollRecord::whereKey($payrollRecord->id)->lockForUpdate()->firstOrFail();
+            abort_if($locked->status === 'paid' || $locked->financial_transaction_id, 422, 'Already marked as paid.');
+            $this->releasePayroll($locked, HrisSetting::getSetting());
         });
 
         $payrollRecord->load('employee');
         return response()->json(['data' => $this->formatPayrollRecord($payrollRecord->fresh())]);
+    }
+
+    /**
+     * Create payroll records for several employees over one period and pay them together.
+     */
+    public function bulkReleasePayroll(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'frequency'           => 'required|in:daily,weekly,monthly,custom',
+            'period_start'        => 'required|date_format:Y-m-d',
+            'period_end'          => 'required|date_format:Y-m-d|after_or_equal:period_start',
+            'items'               => 'required|array|min:1|max:200',
+            'items.*.employee_id' => 'required|integer|distinct|exists:employees,id',
+            'items.*.amount'      => 'required|numeric|min:0.01|max:9999999.99',
+            'items.*.days_worked' => 'required|numeric|min:0|max:366',
+        ]);
+
+        $employees = Employee::whereIn('id', collect($data['items'])->pluck('employee_id'))->get();
+        abort_if($employees->contains(fn ($e) => ! $e->is_active), 422, 'Inactive employees cannot be paid.');
+
+        $setting = HrisSetting::getSetting();
+
+        $records = DB::transaction(fn () => collect($data['items'])->map(function ($item) use ($data, $setting) {
+            $record = PayrollRecord::create([
+                'employee_id'  => $item['employee_id'],
+                'period_start' => $data['period_start'],
+                'period_end'   => $data['period_end'],
+                'days_worked'  => $item['days_worked'],
+                'gross_pay'    => $item['amount'],
+                'deductions'   => 0,
+                'net_pay'      => $item['amount'],
+                'status'       => 'pending',
+                'notes'        => ucfirst($data['frequency']) . ' bulk payroll',
+            ]);
+
+            $this->releasePayroll($record, $setting);
+
+            return $record->fresh('employee');
+        }));
+
+        return response()->json(['data' => $records->map(fn ($r) => $this->formatPayrollRecord($r))->values()], 201);
+    }
+
+    /**
+     * Pay a payroll record: record the payroll expense in Financial and mark it paid.
+     */
+    private function releasePayroll(PayrollRecord $payrollRecord, HrisSetting $hrisSetting): void
+    {
+        $payrollRecord->update(['status' => 'approved']);
+
+        $ft = FinancialTransaction::create([
+            'type'              => 'payroll',
+            'amount'            => (float) $payrollRecord->net_pay,
+            'description'       => 'Payroll: ' . $payrollRecord->employee->name,
+            'notes'             => sprintf(
+                '%s – %s | %s days worked | Gross: ₱%s | Deductions: ₱%s',
+                $payrollRecord->period_start->format('M d'),
+                $payrollRecord->period_end->format('M d, Y'),
+                number_format((float) $payrollRecord->days_worked, 1),
+                number_format((float) $payrollRecord->gross_pay, 2),
+                number_format((float) $payrollRecord->deductions, 2)
+            ),
+            'payroll_record_id' => $payrollRecord->id,
+            'payment_tender_id' => $hrisSetting->payroll_tender_id,
+            'user_id'           => auth()->id(),
+            'transacted_at'     => now(),
+        ]);
+
+        $payrollRecord->update([
+            'status'                   => 'paid',
+            'paid_at'                  => now(),
+            'financial_transaction_id' => $ft->id,
+        ]);
     }
 
     public function destroyPayroll(PayrollRecord $payrollRecord): JsonResponse
