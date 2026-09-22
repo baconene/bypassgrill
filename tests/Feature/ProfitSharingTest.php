@@ -17,6 +17,7 @@ use App\Services\Distribution\MoneyAllocation;
 use App\Services\Distribution\ProfitDistributionService;
 use App\Services\Distribution\ShareDistributionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -101,7 +102,7 @@ class ProfitSharingTest extends TestCase
         $this->assertEquals(50, $snapshot->expenses_amount);
     }
 
-    public function test_profit_uses_ledger_payment_date_cogs_and_reserves_incentives(): void
+    public function test_distribution_uses_cash_movement_and_reserves_incentives(): void
     {
         $user = $this->admin();
         $category = Category::create(['name' => 'Grill', 'slug' => 'grill']);
@@ -114,17 +115,49 @@ class ProfitSharingTest extends TestCase
         FinancialTransaction::create(['type' => 'payment', 'amount' => 90, 'order_id' => $order->id, 'user_id' => $user->id, 'description' => 'Payment', 'transacted_at' => '2026-09-01 12:00:00']);
         IncentiveRule::create(['name' => 'Pool', 'pool_type' => 'net_profit_pct', 'rate' => 10, 'distribution_method' => 'sales_contribution', 'is_active' => true, 'effective_date' => '2026-01-01']);
         $result = app(ProfitDistributionService::class)->compute('profit', '2026-09-01', '2026-09-22');
-        $this->assertEquals(60, $result['base_amount']);
+        $this->assertEquals(90, $result['base_amount']);
+        $this->assertEquals(30, $result['financial_summary']['cogs']);
         $this->assertEquals(90, $result['financial_summary']['net_sales']);
-        $this->assertEquals(6, $result['incentive_pool']);
-        $this->assertEquals(54, $result['distributable']);
-        $this->assertEquals(6, $result['incentive']['by_shareholder'][0]['incentive_amount']);
-        $this->assertEquals(60, $result['members_total'] + $result['company_amount'] + $result['incentive_pool']);
+        $this->assertEquals(9, $result['incentive_pool']);
+        $this->assertEquals(81, $result['distributable']);
+        $this->assertEquals(9, $result['incentive']['by_shareholder'][0]['incentive_amount']);
+        $this->assertEquals(90, $result['members_total'] + $result['company_amount'] + $result['incentive_pool']);
         $this->assertTrue($result['can_snapshot']);
         IncentiveRule::query()->update(['rate' => 200]);
         ProfitDistributionService::bumpCacheVersion();
         $result = app(ProfitDistributionService::class)->compute('profit', '2026-09-01', '2026-09-22');
         $this->assertFalse($result['can_snapshot']);
         $this->assertTrue($result['over_budget']);
+    }
+
+    public function test_distribution_matches_financial_net_including_inventory_assets_refunds_and_payouts(): void
+    {
+        $user = $this->admin();
+        Permission::findOrCreate('view reports', 'web');
+        $user->givePermissionTo('view reports');
+        foreach ([
+            ['payment', 143885, 'Sales'],
+            ['income_adjustment', 2899.63, 'Other income'],
+            ['expense', 115953.39, 'Expenses'],
+            ['payroll', 31595, 'Payroll'],
+            ['payout_share', 10919.08, 'Recorded payouts'],
+        ] as [$type, $amount, $description]) {
+            FinancialTransaction::create(['type' => $type, 'amount' => $amount, 'description' => $description, 'user_id' => $user->id, 'transacted_at' => '2026-09-10 12:00:00']);
+        }
+        $service = app(ProfitDistributionService::class);
+        $this->assertEquals(-11682.84, $service->compute('profit', '2026-09-01', '2026-09-22')['base_amount']);
+        foreach ([['expense', 300, 'Inventory Stock In: Pork'], ['asset_deduction', 100, 'Equipment'], ['payment', -50, 'Refund']] as [$type, $amount, $description]) {
+            FinancialTransaction::create(['type' => $type, 'amount' => $amount, 'description' => $description, 'user_id' => $user->id, 'transacted_at' => '2026-09-10 12:00:00']);
+        }
+        FinancialTransaction::create(['type' => 'income_adjustment', 'amount' => 44854.75, 'description' => 'Earlier income', 'user_id' => $user->id, 'transacted_at' => '2026-08-31 12:00:00']);
+        $financial = $this->getJson('/api/v1/financial-transactions/summary?start_date=2026-09-01&end_date=2026-09-22&include_asset_deductions=1')->assertOk()->json();
+        foreach (['sales', 'profit'] as $basis) {
+            $result = $service->compute($basis, '2026-09-01', '2026-09-22');
+            $this->assertEquals(round($financial['net'], 2), $result['base_amount']);
+            $this->assertEquals(116253.39, $result['financial_summary']['expenses']);
+            $this->assertEquals(100, $result['financial_summary']['asset_deductions']);
+            $this->assertEquals(0, $result['distributable']);
+        }
+        $this->assertEquals(44854.75, $financial['opening_balance']);
     }
 }

@@ -4,8 +4,8 @@ The `/distribution` page uses the dashboard palette, touch-sized controls, horiz
 
 ## Financial rules
 
-- Unfiltered available profit uses the same payment ledger, payment dates and COGS-enabled report as the financial dashboard. That existing report deducts recorded payouts from available profit.
-- Both incentive modes reserve their pool before calculating ownership dividends. An incentive pool exceeding available profit is visible but cannot be saved for payout.
+- Unfiltered allocations use Financial net cash movement: payments + income adjustments - all cash expenses - payroll - asset deductions - recorded payouts. Compare the same dates with Financial asset deductions enabled. Inventory purchases remain cash expenses; COGS is reference-only and is not deducted again. Opening balances are excluded from the distribution pool. This cash allocation policy is distinct from the COGS-based profit-and-loss report.
+- Both incentive modes reserve their pool from positive net cash movement before calculating ownership dividends. Net-profit percentage incentive rules use this cash distribution base on this page. An incentive pool exceeding available profit is visible but cannot be saved for payout.
 - Product/category views are estimates before shared expenses. Clear filters before saving a payout snapshot.
 - Dividend and incentive allocations use largest-remainder cent allocation so all recipient amounts reconcile with their pool. Inactive product owners' shares remain with the company.
 - New snapshots include member dividends plus incentives, including product owners without equity. Company totals include company incentives. Old snapshots keep their recorded amounts.
@@ -14,4 +14,4 @@ The `/distribution` page uses the dashboard palette, touch-sized controls, horiz
 
 ## Validation
 
-`tests/Feature/ProfitSharingTest.php` covers rounding, filtered allocation consistency, payment-date/COGS alignment, incentive budgets, combined snapshots, retained earnings, duplicate and overlapping payouts, and date/filter validation. Run with the financial-report and deposit-reconciliation suites.
+`tests/Feature/ProfitSharingTest.php` covers rounding, filtered allocation consistency, payment-date alignment, reference-only COGS, direct Financial endpoint reconciliation, incentive budgets, combined snapshots, retained earnings, duplicate and overlapping payouts, and date/filter validation. Run with the financial-report and deposit-reconciliation suites.

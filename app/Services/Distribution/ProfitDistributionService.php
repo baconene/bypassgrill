@@ -24,11 +24,11 @@ class ProfitDistributionService
     public function compute(string $basis, string $start, string $end, ?int $categoryId = null, ?int $productId = null, ?int $shareholderId = null): array
     {
         $ver = Cache::get(self::VERSION_KEY, 0);
-        $key = 'dist:balanced:v'.$ver.':'.md5(implode('|', [$basis, $start, $end, $categoryId, $productId, $shareholderId]));
+        $key = 'dist:cash:v'.$ver.':'.md5(implode('|', [$basis, $start, $end, $categoryId, $productId, $shareholderId]));
 
         return Cache::remember($key, 300, function () use ($basis, $start, $end, $categoryId, $productId, $shareholderId) {
             $metrics = $this->sales->salesMetrics($start, $end, $categoryId, $productId);
-            // Use the same payment ledger and COGS policy as the financial dashboard.
+            // Financial shows cash movement, not the COGS-based profit-and-loss report.
             if (! $categoryId && ! $productId) {
                 $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), true);
                 $metrics = [
@@ -45,7 +45,7 @@ class ProfitDistributionService
             $scoped = $categoryId || $productId;
             $detail = $this->profitDetail($start, $end, $categoryId, $productId, $metrics);
             $base = $detail['net_profit'];
-            $baseLabel = $scoped ? 'Estimated gross profit' : 'Available net profit';
+            $baseLabel = $scoped ? 'Estimated gross profit' : 'Net cash movement';
 
             $profitBase = $detail['net_profit'];
 
@@ -81,6 +81,8 @@ class ProfitDistributionService
                     'expenses' => $detail['expenses'],
                     'payroll' => $detail['payroll'],
                     'previous_payouts' => $detail['previous_payouts'],
+                    'asset_deductions' => $detail['asset_deductions'],
+                    'calculation' => $scoped ? 'scoped_estimate' : 'financial_cash',
                     'sales_base' => $salesBase,
                     'net_profit' => $profitBase,
                     'period_end' => $end,
@@ -104,13 +106,19 @@ class ProfitDistributionService
                 'expenses' => 0.0,
                 'payroll' => 0.0,
                 'previous_payouts' => 0.0,
+                'asset_deductions' => 0.0,
             ];
         }
 
-        $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), true);
+        // Keep all cash expenses (including inventory purchases). COGS is informational
+        // here; deducting it as well would mix cash movement with accrual costs.
+        $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), false);
+        $assets = (float) DB::table('financial_transactions')->where('type', 'asset_deduction')
+            ->whereBetween('transacted_at', [Carbon::parse($start)->startOfDay(), Carbon::parse($end)->endOfDay()])->sum('amount');
 
         return [
-            'net_profit' => round((float) ($pl['net_profit'] ?? 0), 2),
+            'net_profit' => round((float) ($pl['net_profit'] ?? 0) - $assets, 2),
+            'asset_deductions' => round($assets, 2),
             'income_adjustments' => round((float) ($pl['income_adjustments']['total'] ?? 0), 2),
             'expenses' => round((float) ($pl['expenses']['total'] ?? 0), 2),
             'payroll' => round((float) ($pl['payroll']['total'] ?? 0), 2),
@@ -159,7 +167,7 @@ class ProfitDistributionService
                 'distributable_amount' => $result['distributable'],
                 'members_amount' => $result['members_total'],
                 'company_amount' => $result['company_amount'],
-                'filters_applied' => $filters,
+                'filters_applied' => array_merge($filters ?? [], ['calculation' => 'financial_cash', 'include_asset_deductions' => true]),
                 'created_by' => auth()->id(),
             ]);
 

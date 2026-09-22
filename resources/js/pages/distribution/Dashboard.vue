@@ -987,9 +987,9 @@ const tabs = [
                         </p>
                         <h2>Your profit, accounted for.</h2>
                         <p>
-                            Available profit funds incentives first, then
-                            ownership dividends. Company earnings stay in the
-                            business.
+                            Positive net cash movement funds incentives first,
+                            then ownership dividends. Company earnings stay in
+                            the business.
                         </p>
                     </div>
                     <div>
@@ -1007,6 +1007,19 @@ const tabs = [
                     </div>
                 </div>
                 <!-- Financial Summary -->
+                <p
+                    v-if="
+                        result.financial_summary.calculation ===
+                        'financial_cash'
+                    "
+                    class="sharing-notice"
+                >
+                    Cash basis: matches Financial's net movement for these dates
+                    with asset deductions included. COGS is shown for reference
+                    and is not deducted again. Opening balances are not earnings
+                    for this period. Product/category filters are estimates
+                    only.
+                </p>
                 <div
                     v-if="result.financial_summary"
                     class="rounded-xl border bg-card p-4 shadow-sm"
@@ -1056,10 +1069,15 @@ const tabs = [
                             <p
                                 class="text-[10px] tracking-wide text-muted-foreground uppercase"
                             >
-                                Cost of goods sold
+                                {{
+                                    result.financial_summary.calculation ===
+                                    'financial_cash'
+                                        ? 'COGS (reference only)'
+                                        : 'COGS (deducted from estimate)'
+                                }}
                             </p>
                             <p class="text-base font-bold">
-                                -{{ fmt(result.financial_summary.cogs) }}
+                                {{ fmt(result.financial_summary.cogs) }}
                             </p>
                         </div>
                         <div
@@ -1137,7 +1155,12 @@ const tabs = [
                                 class="text-[10px] tracking-wide text-muted-foreground uppercase"
                                 title="Cash basis: only paid bills and expenses are deducted — upcoming or unpaid bills are not reflected until paid. Includes manual Other Income / Expenses / Payroll."
                             >
-                                Net Profit
+                                {{
+                                    result.financial_summary.calculation ===
+                                    'financial_cash'
+                                        ? 'Net cash movement'
+                                        : 'Estimated gross profit'
+                                }}
                             </p>
                             <p
                                 class="text-base font-bold"
@@ -1150,13 +1173,31 @@ const tabs = [
                                 {{ fmt(result.financial_summary.net_profit) }}
                             </p>
                         </div>
+                        <div
+                            v-if="result.financial_summary.asset_deductions"
+                            class="space-y-0.5"
+                        >
+                            <p
+                                class="text-[10px] tracking-wide text-muted-foreground uppercase"
+                            >
+                                Asset deductions
+                            </p>
+                            <p class="text-base font-bold text-red-500">
+                                -{{
+                                    fmt(
+                                        result.financial_summary
+                                            .asset_deductions,
+                                    )
+                                }}
+                            </p>
+                        </div>
                         <div class="space-y-0.5 border-l pl-3">
                             <p
                                 class="text-[10px] tracking-wide text-muted-foreground uppercase"
                             >
                                 {{
                                     result.basis === 'profit'
-                                        ? 'Profit Margin'
+                                        ? 'Net cash / gross sales'
                                         : 'Sales Basis'
                                 }}
                             </p>
