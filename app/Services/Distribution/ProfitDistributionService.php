@@ -24,7 +24,7 @@ class ProfitDistributionService
     public function compute(string $basis, string $start, string $end, ?int $categoryId = null, ?int $productId = null, ?int $shareholderId = null): array
     {
         $ver = Cache::get(self::VERSION_KEY, 0);
-        $key = 'dist:cash:v'.$ver.':'.md5(implode('|', [$basis, $start, $end, $categoryId, $productId, $shareholderId]));
+        $key = 'dist:carried-cash:v'.$ver.':'.md5(implode('|', [$basis, $start, $end, $categoryId, $productId, $shareholderId]));
 
         return Cache::remember($key, 300, function () use ($basis, $start, $end, $categoryId, $productId, $shareholderId) {
             $metrics = $this->sales->salesMetrics($start, $end, $categoryId, $productId);
@@ -44,12 +44,12 @@ class ProfitDistributionService
 
             $scoped = $categoryId || $productId;
             $detail = $this->profitDetail($start, $end, $categoryId, $productId, $metrics);
-            $base = $detail['net_profit'];
-            $baseLabel = $scoped ? 'Estimated gross profit' : 'Net cash movement';
+            $base = $detail['closing_balance'];
+            $baseLabel = $scoped ? 'Estimated gross profit' : 'Available closing balance';
 
             $profitBase = $detail['net_profit'];
 
-            $incentive = $this->incentive->compute($start, $end, $metrics, $profitBase, $basis);
+            $incentive = $this->incentive->compute($start, $end, $metrics, $base, $basis);
             $overBudget = round($incentive['total'] * 100) > round(max(0, $base) * 100);
             $dividendBase = round(max(0, $base - $incentive['total']), 2);
             $distributable = $dividendBase;
@@ -82,6 +82,8 @@ class ProfitDistributionService
                     'payroll' => $detail['payroll'],
                     'previous_payouts' => $detail['previous_payouts'],
                     'asset_deductions' => $detail['asset_deductions'],
+                    'opening_balance' => $detail['opening_balance'],
+                    'closing_balance' => $detail['closing_balance'],
                     'calculation' => $scoped ? 'scoped_estimate' : 'financial_cash',
                     'sales_base' => $salesBase,
                     'net_profit' => $profitBase,
@@ -102,6 +104,8 @@ class ProfitDistributionService
         if ($categoryId || $productId) {
             return [
                 'net_profit' => round($metrics['net_sales'] - $metrics['cogs'], 2),
+                'opening_balance' => 0.0,
+                'closing_balance' => round($metrics['net_sales'] - $metrics['cogs'], 2),
                 'income_adjustments' => 0.0,
                 'expenses' => 0.0,
                 'payroll' => 0.0,
@@ -115,9 +119,17 @@ class ProfitDistributionService
         $pl = $this->reports->getProfitLossReport(Carbon::parse($start), Carbon::parse($end), false);
         $assets = (float) DB::table('financial_transactions')->where('type', 'asset_deduction')
             ->whereBetween('transacted_at', [Carbon::parse($start)->startOfDay(), Carbon::parse($end)->endOfDay()])->sum('amount');
+        // Same brought-forward ledger balance as Financial, including earlier payouts.
+        $opening = (float) (DB::table('financial_transactions')->where('type', '!=', 'order')
+            ->whereDate('transacted_at', '<', $start)
+            ->selectRaw("SUM(CASE WHEN type IN ('payment','income_adjustment') THEN amount ELSE -amount END) as balance")
+            ->value('balance') ?? 0);
+        $net = round((float) ($pl['net_profit'] ?? 0) - $assets, 2);
 
         return [
-            'net_profit' => round((float) ($pl['net_profit'] ?? 0) - $assets, 2),
+            'net_profit' => $net,
+            'opening_balance' => round($opening, 2),
+            'closing_balance' => round($opening + $net, 2),
             'asset_deductions' => round($assets, 2),
             'income_adjustments' => round((float) ($pl['income_adjustments']['total'] ?? 0), 2),
             'expenses' => round((float) ($pl['expenses']['total'] ?? 0), 2),
@@ -167,7 +179,11 @@ class ProfitDistributionService
                 'distributable_amount' => $result['distributable'],
                 'members_amount' => $result['members_total'],
                 'company_amount' => $result['company_amount'],
-                'filters_applied' => array_merge($filters ?? [], ['calculation' => 'financial_cash', 'include_asset_deductions' => true]),
+                'filters_applied' => array_merge($filters ?? [], [
+                    'calculation' => 'financial_closing_balance', 'include_asset_deductions' => true,
+                    'opening_balance' => $result['financial_summary']['opening_balance'] ?? 0,
+                    'period_net' => $result['financial_summary']['net_profit'] ?? 0,
+                ]),
                 'created_by' => auth()->id(),
             ]);
 

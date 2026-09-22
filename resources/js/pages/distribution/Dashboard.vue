@@ -987,7 +987,7 @@ const tabs = [
                         </p>
                         <h2>Your profit, accounted for.</h2>
                         <p>
-                            Positive net cash movement funds incentives first,
+                            The positive closing balance funds incentives first,
                             then ownership dividends. Company earnings stay in
                             the business.
                         </p>
@@ -1014,12 +1014,53 @@ const tabs = [
                     "
                     class="sharing-notice"
                 >
-                    Cash basis: matches Financial's net movement for these dates
-                    with asset deductions included. COGS is shown for reference
-                    and is not deducted again. Opening balances are not earnings
-                    for this period. Product/category filters are estimates
-                    only.
+                    Cash basis: matches Financial's closing balance for these
+                    dates with asset deductions included. COGS is shown for
+                    reference and is not deducted again. The balance brought
+                    forward from previous months is included. Product/category
+                    filters are estimates only.
                 </p>
+                <div
+                    v-if="
+                        result.financial_summary.calculation ===
+                        'financial_cash'
+                    "
+                    class="grid gap-3 sm:grid-cols-3"
+                >
+                    <div class="rounded-xl border bg-card p-4">
+                        <p class="text-xs text-muted-foreground">
+                            Balance brought forward
+                        </p>
+                        <p class="mt-1 text-xl font-bold">
+                            {{ fmt(result.financial_summary.opening_balance) }}
+                        </p>
+                        <p class="mt-1 text-xs text-muted-foreground">
+                            Before {{ result.range.start }}
+                        </p>
+                    </div>
+                    <div class="rounded-xl border bg-card p-4">
+                        <p class="text-xs text-muted-foreground">
+                            Period net movement
+                        </p>
+                        <p class="mt-1 text-xl font-bold">
+                            {{ fmt(result.financial_summary.net_profit) }}
+                        </p>
+                        <p class="mt-1 text-xs text-muted-foreground">
+                            Money in minus money out
+                        </p>
+                    </div>
+                    <div class="rounded-xl border bg-card p-4">
+                        <p class="text-xs text-muted-foreground">
+                            Available closing balance
+                        </p>
+                        <p class="mt-1 text-xl font-bold text-primary">
+                            {{ fmt(result.financial_summary.closing_balance) }}
+                        </p>
+                        <p class="mt-1 text-xs text-muted-foreground">
+                            Brought forward + period movement
+                        </p>
+                    </div>
+                </div>
                 <div
                     v-if="result.financial_summary"
                     class="rounded-xl border bg-card p-4 shadow-sm"

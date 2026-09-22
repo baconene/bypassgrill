@@ -153,10 +153,12 @@ class ProfitSharingTest extends TestCase
         $financial = $this->getJson('/api/v1/financial-transactions/summary?start_date=2026-09-01&end_date=2026-09-22&include_asset_deductions=1')->assertOk()->json();
         foreach (['sales', 'profit'] as $basis) {
             $result = $service->compute($basis, '2026-09-01', '2026-09-22');
-            $this->assertEquals(round($financial['net'], 2), $result['base_amount']);
+            $this->assertEquals(round($financial['balance_as_of_end'], 2), $result['base_amount']);
+            $this->assertEquals(round($financial['net'], 2), $result['financial_summary']['net_profit']);
+            $this->assertEquals(44854.75, $result['financial_summary']['opening_balance']);
             $this->assertEquals(116253.39, $result['financial_summary']['expenses']);
             $this->assertEquals(100, $result['financial_summary']['asset_deductions']);
-            $this->assertEquals(0, $result['distributable']);
+            $this->assertEquals(32721.91, $result['distributable']);
         }
         $this->assertEquals(44854.75, $financial['opening_balance']);
     }
