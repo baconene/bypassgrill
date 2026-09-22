@@ -1429,11 +1429,18 @@ const statusLabel: Record<string, string> = {
     color: #777268;
     display: block;
 }
+/* The baseline is an inset shadow so the tab underline never overflows the row
+   (which made the browser draw a stray scrollbar). Narrow screens can still swipe. */
 .tabs {
     display: flex;
     gap: 6px;
-    border-bottom: 1px solid #ded7cb;
+    box-shadow: inset 0 -1px 0 #ded7cb;
     overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+    display: none;
 }
 .tabs button {
     display: inline-flex;
@@ -1444,7 +1451,6 @@ const statusLabel: Record<string, string> = {
     font-weight: 700;
     color: #68665f;
     border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
     white-space: nowrap;
 }
 .tabs button:hover {
