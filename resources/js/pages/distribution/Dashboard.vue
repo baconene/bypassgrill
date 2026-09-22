@@ -778,7 +778,7 @@ const tabs = [
 
         <!-- Sub-tabs -->
         <nav
-            class="sharing-tabs flex gap-1 overflow-x-auto"
+            class="sharing-tabs flex flex-wrap gap-1"
             aria-label="Profit sharing sections"
         >
             <button
@@ -2075,7 +2075,7 @@ const tabs = [
         <template v-if="subTab === 'incentives'">
             <!-- Info banner -->
             <div
-                class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200"
+                class="rounded-xl border bg-muted/50 p-4 text-sm text-foreground"
             >
                 <strong>How it works:</strong> Set an incentive rate (e.g., 2%
                 of gross sales). Each product's share of the pool is
