@@ -1638,6 +1638,15 @@ h2 em {
     .rib-stamp {
         right: 0;
     }
+    /* The grill photo is zoomed from its bottom-left corner to hide the price sign
+       on its right. Narrow phone frames need the zoom centred on the ribs instead,
+       or they sit at the top above a band of empty grill. */
+    .grill-crop img,
+    .story-visual > img {
+        object-position: 28% 50%;
+        transform: scale(1.6);
+        transform-origin: 50% 80%;
+    }
     .photo-controls {
         margin-top: 20px;
     }
