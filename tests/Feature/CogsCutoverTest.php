@@ -165,6 +165,29 @@ class CogsCutoverTest extends TestCase
         $this->assertNull(DB::table('cogs_ledger_settings')->value('cogs_ledger_start_at'));
     }
 
+    public function test_a_ledger_that_started_mid_day_names_the_next_usable_date(): void
+    {
+        // --at lands on midnight, so today is genuinely too early when the ledger only
+        // started this afternoon. The message has to say which date does work.
+        DB::table('cogs_ledger_settings')->update(['shadow_started_at' => Carbon::today()->setTime(15, 30)->toDateTimeString()]);
+
+        $this->artisan('cogs:cutover', ['--at' => Carbon::today()->toDateString()])
+            ->expectsOutputToContain(Carbon::today()->addDay()->toDateString())
+            ->assertExitCode(1);
+
+        $this->assertNull(DB::table('cogs_ledger_settings')->value('cogs_ledger_start_at'));
+    }
+
+    public function test_a_ledger_that_started_at_midnight_allows_that_same_day(): void
+    {
+        DB::table('cogs_ledger_settings')->update(['shadow_started_at' => Carbon::today()->toDateTimeString()]);
+
+        $this->artisan('cogs:cutover', ['--at' => Carbon::today()->toDateString(), '--no-interaction' => true])
+            ->assertExitCode(0);
+
+        $this->assertNotNull(DB::table('cogs_ledger_settings')->value('cogs_ledger_start_at'));
+    }
+
     public function test_the_cutover_command_can_be_undone(): void
     {
         $this->cutover(Carbon::today()->toDateTimeString());

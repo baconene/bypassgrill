@@ -44,8 +44,16 @@ class SetCogsLedgerCutover extends Command
         $shadowStart = Carbon::parse($settings->shadow_started_at);
 
         if ($at->lt($shadowStart)) {
-            $this->error('The cutover cannot predate the shadow ledger, which started '.$shadowStart->toDateString().'.');
+            // --at is a date, so it lands on midnight. Naming the earliest date that will
+            // actually be accepted saves guessing when the ledger started mid-afternoon.
+            $earliest = $shadowStart->copy()->startOfDay()->lt($shadowStart)
+                ? $shadowStart->copy()->addDay()->startOfDay()
+                : $shadowStart->copy()->startOfDay();
+
+            $this->error('The cutover cannot predate the shadow ledger, which started '.$shadowStart->toDateTimeString().'.');
             $this->line('Orders before that have no ledger entries, so their COGS would read as zero.');
+            $this->line('The earliest date you can use is '.$earliest->toDateString().':');
+            $this->line('  php artisan cogs:cutover --at='.$earliest->toDateString());
 
             return self::FAILURE;
         }
