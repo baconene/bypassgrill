@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { Plus, Pencil, Trash2, X, PlusCircle, MinusCircle, FolderPlus, Check, ImageIcon, Upload, Calculator, Eye, TrendingUp, PackagePlus } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, X, PlusCircle, MinusCircle, FolderPlus, Check, ImageIcon, Upload, Calculator, Eye, TrendingUp, PackagePlus, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 
 defineOptions({
     layout: {
@@ -134,6 +134,30 @@ const toggleSort = (key: SortKey) => {
 const ariaSort = (key: SortKey) =>
     sortKey.value === key ? (sortDir.value === 'asc' ? 'ascending' : 'descending') : undefined
 
+// Cards have no column headers to click, so narrow screens get a plain select.
+const SORT_OPTIONS: { value: string; label: string; key: SortKey; dir: 'asc' | 'desc' }[] = [
+    { value: 'name:asc', label: 'Name (A–Z)', key: 'name', dir: 'asc' },
+    { value: 'margin:desc', label: 'Margin (highest first)', key: 'margin', dir: 'desc' },
+    { value: 'margin:asc', label: 'Margin (lowest first)', key: 'margin', dir: 'asc' },
+    { value: 'price:desc', label: 'Price (highest first)', key: 'price', dir: 'desc' },
+    { value: 'cost:desc', label: 'Cost (highest first)', key: 'cost', dir: 'desc' },
+    { value: 'category:asc', label: 'Category (A–Z)', key: 'category', dir: 'asc' },
+]
+
+const sortChoice = computed({
+    get: () => `${sortKey.value}:${sortDir.value}`,
+    set: (v: string) => {
+        const opt = SORT_OPTIONS.find((o) => o.value === v)
+
+        if (!opt) {
+            return
+        }
+
+        sortKey.value = opt.key
+        sortDir.value = opt.dir
+    },
+})
+
 const toggleAttention = (state: CostState) => {
     attentionOnly.value = attentionOnly.value === state ? null : state
 }
@@ -173,6 +197,40 @@ const filtered = computed(() => {
 
         return (x > y ? 1 : -1) * dir
     })
+})
+
+// ─── Pagination ───────────────────────────────────────────────────────────────
+// Paged in the browser: every product is already loaded for the combo builder, so
+// slicing here keeps search, sort and filter instant across the whole menu rather
+// than only across the visible page.
+const PER_PAGE = 20
+const page = ref(1)
+
+const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / PER_PAGE)))
+
+const paged = computed(() => {
+    const start = (page.value - 1) * PER_PAGE
+
+    return filtered.value.slice(start, start + PER_PAGE)
+})
+
+const rangeStart = computed(() => (filtered.value.length === 0 ? 0 : (page.value - 1) * PER_PAGE + 1))
+const rangeEnd = computed(() => Math.min(page.value * PER_PAGE, filtered.value.length))
+
+const goToPage = (n: number) => {
+    page.value = Math.min(Math.max(1, n), pageCount.value)
+    expandedId.value = null
+}
+
+// Narrowing the list can strand you past the last page; step back rather than
+// showing an empty result for a filter that does match something.
+watch(pageCount, (count) => {
+    if (page.value > count) {
+        page.value = count
+    }
+})
+watch([search, categoryFilter, attentionOnly, sortKey, sortDir], () => {
+    page.value = 1
 })
 
 const clearFilters = () => {
@@ -561,7 +619,104 @@ const doDelete = async () => {
             </button>
         </div>
 
-        <div class="product-panel">
+        <!-- Narrow screens get cards. A table this wide can only be squeezed or scrolled
+             sideways, and both make you hunt for the number you came for. -->
+        <div class="product-cards">
+            <label class="product-sort">
+                <span>Sort</span>
+                <select v-model="sortChoice">
+                    <option v-for="o in SORT_OPTIONS" :key="o.value" :value="o.value">
+                        {{ o.label }}
+                    </option>
+                </select>
+            </label>
+
+            <article v-for="p in paged" :key="p.id" class="product-card">
+                <header>
+                    <div class="min-w-0">
+                        <h3>{{ p.name }}</h3>
+                        <p class="product-sub">
+                            {{ p.category_name ?? 'Uncategorised' }}
+                            <template v-if="p.sku"> · {{ p.sku }}</template>
+                            <template v-if="!p.is_active"> · Inactive</template>
+                        </p>
+                    </div>
+                    <strong>{{ peso(p.price) }}</strong>
+                </header>
+
+                <dl class="product-card-figures">
+                    <div>
+                        <dt>Stored cost</dt>
+                        <dd>{{ peso(p.cost) }}</dd>
+                    </div>
+                    <div>
+                        <dt>Recipe cost</dt>
+                        <dd v-if="p.has_recipe">
+                            {{ peso(p.recipe_cost) }}
+                            <span v-if="costState(p) === 'drifted'" class="product-sub">
+                                {{ p.cost_drift > 0 ? '+' : '' }}{{ peso(p.cost_drift) }}
+                            </span>
+                        </dd>
+                        <dd v-else class="product-sub">—</dd>
+                    </div>
+                    <div>
+                        <dt>Margin</dt>
+                        <dd :class="marginTone(p)">{{ marginLabel(p) }}</dd>
+                    </div>
+                </dl>
+
+                <p class="product-card-tag">
+                    <span v-if="costState(p) === 'drifted'" class="product-tag tag-drift">Out of date</span>
+                    <span v-else-if="costState(p) === 'norecipe'" class="product-tag tag-norecipe">No recipe</span>
+                    <span v-else class="product-tag tag-ok">
+                        {{ p.recipes.length }} ingredient{{ p.recipes.length === 1 ? '' : 's' }}
+                    </span>
+                </p>
+
+                <div v-if="expandedId === p.id" class="product-card-breakdown">
+                    <p v-if="!p.has_recipe">
+                        No recipe linked. COGS uses the stored cost of {{ peso(p.cost) }} whenever
+                        this sells, and that figure only changes when someone edits it.
+                    </p>
+                    <template v-else>
+                        <div v-for="r in p.recipes" :key="r.ingredient_id">
+                            <span>{{ r.ingredient_name ?? 'Removed ingredient' }}</span>
+                            <span class="product-sub">{{ r.quantity }} {{ r.unit }} × {{ peso(r.cost_per_unit) }}</span>
+                            <strong>{{ peso(r.line_cost) }}</strong>
+                        </div>
+                        <div class="product-card-breakdown-total">
+                            <span>Recipe cost today</span>
+                            <strong>{{ peso(p.recipe_cost) }}</strong>
+                        </div>
+                    </template>
+                </div>
+
+                <footer>
+                    <button
+                        class="product-card-action"
+                        :aria-expanded="expandedId === p.id"
+                        @click="expandedId = expandedId === p.id ? null : p.id"
+                    >
+                        {{ expandedId === p.id ? 'Hide recipe' : 'Recipe' }}
+                    </button>
+                    <button class="product-card-action" @click="openView(p)">
+                        <Eye class="h-4 w-4" /> View
+                    </button>
+                    <button class="product-card-action" @click="openEdit(p)">
+                        <Pencil class="h-4 w-4" /> Edit
+                    </button>
+                    <button class="product-card-action is-danger" @click="confirmDelete(p)">
+                        <Trash2 class="h-4 w-4" /> Delete
+                    </button>
+                </footer>
+            </article>
+
+            <p v-if="filtered.length === 0" class="product-empty">
+                {{ filtersActive ? 'No products match those filters.' : 'No products yet.' }}
+            </p>
+        </div>
+
+        <div class="product-panel product-table-wrap">
             <div class="overflow-x-auto">
                 <table>
                     <thead>
@@ -587,7 +742,7 @@ const doDelete = async () => {
                         </tr>
                     </thead>
                     <tbody>
-                        <template v-for="p in filtered" :key="p.id">
+                        <template v-for="p in paged" :key="p.id">
                             <tr
                                 class="cursor-pointer"
                                 @click="expandedId = expandedId === p.id ? null : p.id"
@@ -703,6 +858,24 @@ const doDelete = async () => {
                 </table>
             </div>
         </div>
+
+        <nav v-if="filtered.length > 0" class="product-pager" aria-label="Product pages">
+            <p>
+                Showing <strong>{{ rangeStart }}–{{ rangeEnd }}</strong> of
+                <strong>{{ filtered.length }}</strong>
+                <template v-if="filtersActive"> matching</template>
+                product{{ filtered.length === 1 ? '' : 's' }}
+            </p>
+            <div v-if="pageCount > 1" class="product-pager-controls">
+                <button :disabled="page === 1" @click="goToPage(page - 1)">
+                    <ChevronLeft class="h-4 w-4" /> Previous
+                </button>
+                <span>Page {{ page }} of {{ pageCount }}</span>
+                <button :disabled="page === pageCount" @click="goToPage(page + 1)">
+                    Next <ChevronRight class="h-4 w-4" />
+                </button>
+            </div>
+        </nav>
     </div>
 
     <!-- Add / Edit Modal -->
@@ -710,7 +883,7 @@ const doDelete = async () => {
         <Transition name="fade">
             <div
                 v-if="showModal"
-                class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
+                class="product-theme product-modal fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
                 @click.self="showModal = false"
             >
                 <div class="w-full max-w-2xl rounded-2xl bg-background shadow-2xl my-8">
@@ -918,7 +1091,7 @@ const doDelete = async () => {
     <!-- View Product Details Modal -->
     <Teleport to="body">
         <Transition name="fade">
-            <div v-if="viewProduct" class="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto" @click.self="viewProduct = null">
+            <div v-if="viewProduct" class="product-theme product-modal fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto" @click.self="viewProduct = null">
                 <div class="w-full max-w-lg rounded-2xl bg-background shadow-2xl my-8">
                     <!-- Header -->
                     <div class="p-5 border-b flex items-center justify-between">
@@ -1005,7 +1178,7 @@ const doDelete = async () => {
     <!-- Delete Confirmation -->
     <Teleport to="body">
         <Transition name="fade">
-            <div v-if="deleteTarget" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="deleteTarget = null">
+            <div v-if="deleteTarget" class="product-theme product-modal fixed inset-0 z-50 flex items-center justify-center p-4" @click.self="deleteTarget = null">
                 <div class="w-full max-w-sm rounded-2xl bg-background shadow-2xl p-6 space-y-4">
                     <h3 class="text-lg font-bold">Delete Product?</h3>
                     <p class="text-sm text-muted-foreground">

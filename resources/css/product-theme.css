@@ -296,6 +296,195 @@ button.product-metric[aria-pressed='true'] {
     border-bottom: 0;
 }
 
+/* Card list, for narrow screens. Hidden by default; the media query swaps which
+   of the two views is present so neither is a squeezed version of the other. */
+.product-cards {
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+}
+.product-sort {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    color: #68665f;
+}
+.product-sort select {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid #ded7cb;
+    border-radius: 4px;
+    background: #fffcf6;
+    padding: 10px 12px;
+    font-size: 16px; /* 16px or iOS zooms the page on focus */
+    font-weight: 400;
+    color: #24231e;
+}
+.product-card {
+    background: #fffcf6;
+    border: 1px solid #ded7cb;
+    border-radius: 6px;
+    padding: 16px;
+    min-width: 0;
+}
+.product-card header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.product-card h3 {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+.product-card header strong {
+    font-size: 17px;
+    font-weight: 850;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+.product-card-figures {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #ebe5db;
+}
+.product-card-figures dt {
+    font-size: 10px;
+    font-weight: 700;
+    color: #777268;
+    margin-bottom: 4px;
+}
+.product-card-figures dd {
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.product-card-figures dd .product-sub {
+    display: block;
+    font-weight: 400;
+}
+.product-card-tag {
+    margin-top: 12px;
+}
+.product-card-breakdown {
+    margin-top: 12px;
+    padding: 12px;
+    background: #f6f2e9;
+    border-radius: 4px;
+    font-size: 12px;
+}
+.product-card-breakdown > div {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid #e6e0d4;
+}
+.product-card-breakdown > div:last-child {
+    border-bottom: 0;
+}
+.product-card-breakdown > div .product-sub {
+    grid-column: 1;
+}
+.product-card-breakdown > div strong {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+    align-self: center;
+    font-variant-numeric: tabular-nums;
+}
+.product-card-breakdown-total {
+    font-weight: 800;
+    border-top: 1px solid #ded7cb;
+}
+.product-card footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #ebe5db;
+}
+.product-card-action {
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid #ded7cb;
+    border-radius: 4px;
+    padding: 11px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    background: #fffcf6;
+}
+.product-card-action:hover {
+    background: #f1eddf;
+}
+.product-card-action.is-danger {
+    color: #b52c24;
+}
+.product-card-action.is-danger:hover {
+    background: #f9e8df;
+}
+.product-empty {
+    padding: 32px 16px;
+    text-align: center;
+    font-size: 13px;
+    color: #777268;
+    background: #fffcf6;
+    border: 1px solid #ded7cb;
+    border-radius: 6px;
+}
+
+/* Pager */
+.product-pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.product-pager p {
+    font-size: 12px;
+    color: #68665f;
+}
+.product-pager-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.product-pager-controls span {
+    font-size: 12px;
+    font-weight: 700;
+    color: #68665f;
+    white-space: nowrap;
+}
+.product-pager-controls button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #ded7cb;
+    border-radius: 4px;
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    background: #fffcf6;
+}
+.product-pager-controls button:hover:not(:disabled) {
+    background: #f1eddf;
+}
+
 .product-modal {
     background: #24231e88;
 }
@@ -309,23 +498,79 @@ button.product-metric[aria-pressed='true'] {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
+
+/* Below this the table has more columns than a phone has room for, so the cards
+   take over entirely rather than the table being scrolled sideways. */
+@media (max-width: 767px) {
+    .product-table-wrap {
+        display: none;
+    }
+    .product-cards {
+        display: flex;
+    }
+}
+
 @media (max-width: 639px) {
     .product-page {
         padding: 18px 12px;
     }
+    .product-heading {
+        align-items: stretch;
+    }
     .product-heading h1 {
         font-size: 32px;
+    }
+    /* Stacked full-width so the primary action is reachable with a thumb. */
+    .product-heading > div:last-child {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .product-heading .product-primary,
+    .product-heading .product-ghost {
+        width: 100%;
     }
     .product-toolbar input[type='search'] {
         flex-basis: 100%;
         font-size: 16px;
     }
+    .product-chips {
+        width: 100%;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        scrollbar-width: none;
+        padding-bottom: 2px;
+    }
+    .product-chips::-webkit-scrollbar {
+        display: none;
+    }
+    .product-chips button {
+        white-space: nowrap;
+        flex: 0 0 auto;
+    }
+    .product-metric {
+        padding: 16px;
+    }
     .product-theme th,
     .product-theme td {
         padding: 10px 12px;
     }
+    .product-pager {
+        justify-content: center;
+        text-align: center;
+    }
+    .product-pager p,
+    .product-pager-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
     .product-modal {
         padding: 8px;
+    }
+}
+@media (max-width: 380px) {
+    .product-card-figures {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 @media (prefers-reduced-motion: reduce) {
