@@ -39,8 +39,15 @@ class InventoryCostService
                     'Order #'.$order->id.' / '.$item->product->name,
                     recordCost: false, orderId: $order->id, orderItemId: $item->id,
                 ) : null;
+                // Food is tracked like any other stock but reports separately, so the
+                // ledger can say how much of COGS was prepped rather than raw.
+                $source = match (true) {
+                    $ingredient->isFood() => 'food',
+                    $ingredient->track_inventory => 'ingredient',
+                    default => 'untracked_ingredient',
+                };
                 InventoryCostEntry::create([
-                    'kind' => 'consumption', 'source' => $ingredient->track_inventory ? 'ingredient' : 'untracked_ingredient',
+                    'kind' => 'consumption', 'source' => $source,
                     'inventory_transaction_id' => $tx?->id, 'ingredient_id' => $ingredient->id, 'ingredient_name' => $ingredient->name,
                     'order_id' => $order->id, 'order_item_id' => $item->id, 'reference' => $reference,
                     'quantity' => $quantity, 'unit_cost' => $ingredient->cost_per_unit,

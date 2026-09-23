@@ -39,7 +39,11 @@ class InventoryService
             $movementCost = $type === InventoryTransactionType::STOCK_IN
                 ? ($unitCost ?? (float) $ingredient->cost_per_unit)
                 : (float) $ingredient->cost_per_unit;
-            if ($type === InventoryTransactionType::STOCK_IN && $recordCost && $quantity > 0 && $unitCost !== null) {
+            // Deliberately not gated on $recordCost: a production run brings food in at a
+            // known cost per unit and must move the average, but writes its own pair of
+            // ledger entries rather than a purchase. No caller passes a unit cost without
+            // wanting the average moved.
+            if ($type === InventoryTransactionType::STOCK_IN && $quantity > 0 && $unitCost !== null) {
                 $weight = max(0, $oldQuantity);
                 $ingredient->update(['cost_per_unit' => round(($weight * (float) $ingredient->cost_per_unit + $quantity * $unitCost) / ($weight + $quantity), 4)]);
             }
