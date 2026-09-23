@@ -234,8 +234,11 @@ class ReportService
             ]);
 
         // Inventory losses: stock used up without being sold, recognised on the date it
-        // went missing rather than when it was bought. Ledger-only, so periods before the
-        // ledger existed report zero. Never a cash movement.
+        // went missing rather than when it was bought. Never a cash movement.
+        //
+        // Gated on the cutover, like COGS. Entries written while the ledger was still in
+        // shadow mode must not reach profit: setting the ledger up means correcting stock,
+        // and those corrections are recorded as count losses. Shadow mode changes nothing.
         //
         // Count gains are deliberately left out. Finding stock is not income, and counting
         // it up is a way of adding inventory, which must leave profit at exactly zero.
@@ -244,12 +247,14 @@ class ReportService
             InventoryCostKind::WASTE->value,
             InventoryCostKind::COUNT_LOSS->value,
         ];
+        $lossFrom = $cutover ? max(Carbon::parse($cutover), $start->copy()->startOfDay()) : null;
         $lossBase = InventoryCostEntry::whereIn('kind', $lossKinds)
-            ->whereBetween('recognized_at', [$start->copy()->startOfDay(), $end->copy()->endOfDay()]);
+            ->whereBetween('recognized_at', [$lossFrom ?? $start->copy()->startOfDay(), $end->copy()->endOfDay()]);
 
-        $totalInvLosses = $accrualBasis ? round((float) (clone $lossBase)->sum('total_cost'), 2) : 0.0;
-        $invLossCount = $accrualBasis ? (clone $lossBase)->count() : 0;
-        $invLossBreakdown = $accrualBasis
+        $deductLosses = $accrualBasis && $cutover !== null;
+        $totalInvLosses = $deductLosses ? round((float) (clone $lossBase)->sum('total_cost'), 2) : 0.0;
+        $invLossCount = $deductLosses ? (clone $lossBase)->count() : 0;
+        $invLossBreakdown = $deductLosses
             ? (clone $lossBase)->orderByDesc('recognized_at')
                 ->get(['kind', 'ingredient_name', 'quantity', 'total_cost', 'recognized_at'])
                 ->map(fn ($e) => [

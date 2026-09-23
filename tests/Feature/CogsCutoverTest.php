@@ -111,6 +111,35 @@ class CogsCutoverTest extends TestCase
         $this->assertEquals(round($before - 60, 2), round($this->pl()['net_profit'], 2));
     }
 
+    public function test_shadow_mode_does_not_deduct_losses_recorded_while_setting_up(): void
+    {
+        // Setting the ledger up means correcting stock, and those corrections land as
+        // count losses. Until the cutover is run, none of it may touch profit.
+        $this->cutover(null);
+        $before = $this->pl()['net_profit'];
+
+        app(InventoryService::class)->recordTransaction($this->ingredient, 40, Movement::ADJUSTMENT, notes: 'Opening count');
+        app(InventoryService::class)->recordTransaction($this->ingredient, 5, Movement::WASTE, notes: 'Spoiled');
+
+        $this->assertEquals(0, $this->pl()['inventory_losses']['total']);
+        $this->assertEquals($before, $this->pl()['net_profit']);
+    }
+
+    public function test_losses_from_before_the_cutover_stay_out_of_profit_after_it(): void
+    {
+        $this->cutover(null);
+        app(InventoryService::class)->recordTransaction($this->ingredient, 40, Movement::ADJUSTMENT, notes: 'Opening count');
+        $setupLoss = (float) InventoryCostEntry::where('kind', 'count_loss')->sum('total_cost');
+        $this->assertGreaterThan(0, $setupLoss);
+        // The setup happened while the ledger was still in shadow mode, an hour ago.
+        InventoryCostEntry::where('kind', 'count_loss')->update(['recognized_at' => Carbon::now()->subHour()]);
+
+        $this->cutover(Carbon::now()->subMinutes(5)->toDateTimeString());
+        app(InventoryService::class)->recordTransaction($this->ingredient, 3, Movement::WASTE, notes: 'Spoiled');
+
+        $this->assertEquals(60, $this->pl()['inventory_losses']['total'], 'Only the waste after the cutover.');
+    }
+
     public function test_buying_stock_leaves_net_profit_exactly_unchanged(): void
     {
         $this->cutover(Carbon::today()->startOfDay()->toDateTimeString());
