@@ -42,12 +42,23 @@ interface Order {
     items_count: number;
     created_at: string | null;
 }
+interface DepositShift {
+    id: number;
+    user_id: number;
+    user_name: string | null;
+    is_mine: boolean;
+    opened_at: string | null;
+    closed_at: string | null;
+    opening_cash: number;
+    stage: 'counting' | 'awaiting_submission';
+}
 const props = defineProps<{
     stats: Record<string, number>;
     recentOrders: Order[];
     pl: PlSummary | null;
     servingTime: ServingTime | null;
     pendingProductBreakdown: { name: string; qty: number }[];
+    depositShift: DepositShift | null;
 }>();
 const page = usePage<{
     auth: Auth & { roles: string[]; permissions?: string[] };
@@ -58,6 +69,77 @@ const canSell = computed(() => hasRole('admin', 'cashier'));
 const canCook = computed(() => hasRole('admin', 'kitchen'));
 const canReport = computed(() => hasRole('admin', 'auditor'));
 const canDeposit = computed(() => hasRole('admin', 'cashier', 'auditor'));
+
+// ── Open deposit shift ────────────────────────────────────────────────────────
+// Only the cashier who opened a shift may close and submit it, so the card names
+// them rather than inviting someone else to start one they cannot finish.
+const shift = computed(() => props.depositShift);
+
+const shiftOpenedAt = computed(() =>
+    shift.value?.opened_at ? timeLabel(new Date(shift.value.opened_at)) : '',
+);
+
+// Same clock the rest of the shift is measured against. A shift opened before
+// midnight is still open, so it has to say which day it started.
+const shiftOpenedOn = computed(() => {
+    const at = shift.value?.opened_at;
+
+    if (!at) {
+        return '';
+    }
+
+    const manila = (d: Date) =>
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(d);
+
+    return manila(new Date(at)) === manila(new Date())
+        ? 'today'
+        : new Intl.DateTimeFormat('en-PH', {
+              timeZone: 'Asia/Manila',
+              month: 'short',
+              day: 'numeric',
+          }).format(new Date(at));
+});
+
+const shiftHeadline = computed(() => {
+    if (!shift.value) {
+        return canSell.value ? 'Start. Count. Close.' : 'Review the shift.';
+    }
+
+    return shift.value.stage === 'counting'
+        ? 'A shift is open.'
+        : 'Counts are waiting.';
+});
+
+const shiftBody = computed(() => {
+    const s = shift.value;
+
+    if (!s) {
+        return 'Save opening and closing snapshots, then compare drawer cash, GCash, and the lockbox against system balances.';
+    }
+
+    const who = s.is_mine ? 'You' : (s.user_name ?? 'Another cashier');
+    const opened = `${who} opened it at ${shiftOpenedAt.value} ${shiftOpenedOn.value}`;
+
+    if (s.stage === 'counting') {
+        return s.is_mine
+            ? `${opened}. Capture the closing count before the drawer is handed over.`
+            : `${opened}. Only they can close and submit it, so no one else can start one until they do.`;
+    }
+
+    return s.is_mine
+        ? `${opened}, and the closing count is in. Submit the reconciliation to finish the shift.`
+        : `${opened}, and the closing count is in. It is waiting on them to submit the reconciliation.`;
+});
+
+const shiftAction = computed(() => {
+    if (!shift.value) {
+        return canSell.value
+            ? 'Open deposit control'
+            : 'Review deposit control';
+    }
+
+    return shift.value.is_mine ? 'Continue your shift' : 'View the open shift';
+});
 const canViewOrders = computed(
     () =>
         hasRole('admin') ||
@@ -521,23 +603,47 @@ function refresh() {
                         ><Wallet :size="23" aria-hidden="true"
                     /></span>
                     <p class="eyebrow">MAKE EVERY PESO COUNT</p>
-                    <h2>
-                        {{
-                            canSell
-                                ? 'Start. Count. Close.'
-                                : 'Review the shift.'
-                        }}
-                    </h2>
-                    <p>
-                        Save opening and closing snapshots, then compare drawer
-                        cash, GCash, and the lockbox against system balances.
-                    </p>
+                    <h2>{{ shiftHeadline }}</h2>
+
+                    <div v-if="shift" class="shift-open">
+                        <p class="shift-who">
+                            <span class="shift-dot" aria-hidden="true"></span>
+                            <span>
+                                <strong>{{
+                                    shift.is_mine
+                                        ? 'Your shift'
+                                        : (shift.user_name ?? 'A cashier')
+                                }}</strong>
+                                <span>{{
+                                    shift.stage === 'counting'
+                                        ? 'Counting in progress'
+                                        : 'Closed, awaiting submission'
+                                }}</span>
+                            </span>
+                        </p>
+                        <dl class="shift-figures">
+                            <div>
+                                <dt>Opened</dt>
+                                <dd>
+                                    <time
+                                        v-if="shift.opened_at"
+                                        :datetime="shift.opened_at"
+                                        >{{ shiftOpenedAt }}</time
+                                    >
+                                    <span v-else>—</span>
+                                </dd>
+                            </div>
+                            <div>
+                                <dt>Opening cash</dt>
+                                <dd>{{ money(shift.opening_cash) }}</dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <p>{{ shiftBody }}</p>
+
                     <Link href="/deposit-control" class="text-link"
-                        >{{
-                            canSell
-                                ? 'Open deposit control'
-                                : 'Review deposit control'
-                        }}
+                        >{{ shiftAction }}
                         <ArrowUpRight :size="16" aria-hidden="true" /></Link
                     ><Link href="/deposit-control/history" class="history-link"
                         >Previous snapshots</Link
@@ -1018,6 +1124,68 @@ td small {
     line-height: 1.8;
     color: #69644e;
     margin-bottom: 20px;
+}
+/* Shown only while a shift is actually open, so it can afford to be loud. */
+.shift-open {
+    background: #fffcf6;
+    border: 1px solid #ddd6bb;
+    border-radius: 6px;
+    padding: 14px;
+    margin-bottom: 16px;
+}
+.shift-who {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+}
+.shift-who > span {
+    min-width: 0;
+}
+.shift-who strong {
+    display: block;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: -0.2px;
+    color: #24231e;
+    overflow-wrap: anywhere;
+}
+.shift-who span span {
+    display: block;
+    font-size: 11px;
+    color: #77704f;
+    margin-top: 2px;
+}
+.shift-dot {
+    width: 8px;
+    height: 8px;
+    margin-top: 4px;
+    border-radius: 50%;
+    background: #ad3b19;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 3px #ad3b1926;
+}
+.shift-figures {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #ebe5cf;
+}
+.shift-figures dt {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: #8a8368;
+}
+.shift-figures dd {
+    font-size: 13px;
+    font-weight: 700;
+    color: #24231e;
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
 }
 .history-link {
     display: block;
