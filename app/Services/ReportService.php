@@ -81,7 +81,7 @@ class ReportService
     public function getInventoryValuation()
     {
         return \App\Models\Ingredient::where('is_active', true)
-            ->selectRaw('*, (current_quantity) as valuation')
+            ->selectRaw('*, ROUND(current_quantity * cost_per_unit, 2) as valuation')
             ->get();
     }
 

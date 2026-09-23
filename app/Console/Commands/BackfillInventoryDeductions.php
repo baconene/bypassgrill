@@ -8,6 +8,7 @@ use App\Models\InventoryTransaction;
 use App\Models\Order;
 use App\Services\InventoryService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 class BackfillInventoryDeductions extends Command
 {
@@ -34,22 +35,25 @@ class BackfillInventoryDeductions extends Command
         $this->info("Found {$orders->count()} non-cancelled orders.");
 
         $deducted = 0;
-        $skipped  = 0;
+        $skipped = 0;
 
         foreach ($orders as $order) {
-            $alreadyDeducted = InventoryTransaction::where('reference', 'order_' . $order->id)
+            $alreadyDeducted = InventoryTransaction::where('reference', 'order_'.$order->id)
                 ->where('type', InventoryTransactionType::STOCK_OUT->value)
                 ->exists();
 
             if ($alreadyDeducted) {
                 $this->line("  Order #{$order->id} — already deducted, skipping.");
                 $skipped++;
+
                 continue;
             }
 
-            foreach ($order->items as $item) {
-                $this->inventoryService->deductForOrder($item);
-            }
+            DB::transaction(function () use ($order) {
+                foreach ($order->items as $item) {
+                    $this->inventoryService->deductForOrder($item);
+                }
+            });
 
             $this->line("  Order #{$order->id} — deducted ({$order->items->count()} item(s)).");
             $deducted++;

@@ -62,7 +62,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/inventory/adjust', [InventoryController::class, 'adjust']);
         Route::patch('/inventory/{ingredient}', [InventoryController::class, 'update']);
         Route::delete('/inventory/{ingredient}', [InventoryController::class, 'destroy']);
-        Route::get('/inventory/{ingredient}/transactions', [InventoryController::class, 'transactions']);
+        Route::get('/inventory/{ingredient}/transactions', [InventoryController::class, 'transactions'])->withTrashed();
 
         Route::get('/reports/daily-sales', [ReportController::class, 'dailySales']);
         Route::get('/reports/monthly-sales', [ReportController::class, 'monthlySales']);

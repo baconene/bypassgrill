@@ -38,9 +38,9 @@ class InventoryPageController extends Controller
                 'new_quantity' => (float) $t->new_quantity,
                 'user_name' => $t->user?->name,
                 'reference' => $t->reference,
-                'order_id' => str_starts_with((string) $t->reference, 'order_')
+                'order_id' => $t->order_id ?? (str_starts_with((string) $t->reference, 'order_')
                     ? (int) substr($t->reference, 6)
-                    : null,
+                    : null),
                 'notes' => $t->notes,
                 'created_at' => $t->created_at?->toDateTimeString(),
             ]);

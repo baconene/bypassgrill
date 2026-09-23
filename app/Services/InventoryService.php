@@ -2,54 +2,21 @@
 
 namespace App\Services;
 
+use App\Enums\InventoryTransactionType;
+use App\Models\FinancialTransaction;
 use App\Models\Ingredient;
+use App\Models\InventoryCostEntry;
 use App\Models\InventoryTransaction;
 use App\Models\Order;
 use App\Models\OrderItem;
-use App\Enums\InventoryTransactionType;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class InventoryService
 {
     public function deductForOrder(OrderItem $orderItem): bool
     {
-        $product = $orderItem->product;
-        $recipes = $product->recipes()->with('ingredient')->get();
-
-        $order = Order::find($orderItem->order_id);
-        $orderTypeLabel = match($order?->order_type) {
-            'dine_in'  => 'Dine In',
-            'takeout'  => 'Takeout',
-            'delivery' => 'Delivery',
-            default    => $order?->order_type ?? 'Order',
-        };
-        $tableInfo = $order?->table_number ? " · Table {$order->table_number}" : '';
-        $notes = "Order #{$orderItem->order_id} · {$orderTypeLabel}{$tableInfo} · {$product->name} ×{$orderItem->quantity}";
-
-        foreach ($recipes as $recipe) {
-            $ingredient = $recipe->ingredient;
-
-            if (! $ingredient || ! $ingredient->track_inventory) {
-                continue;
-            }
-
-            $required  = (float) $recipe->quantity * (int) $orderItem->quantity;
-            $available = (float) $ingredient->current_quantity;
-
-            if ($available < $required) {
-                return false;
-            }
-
-            $this->recordTransaction(
-                $ingredient,
-                $required,
-                InventoryTransactionType::STOCK_OUT,
-                'order_' . $orderItem->order_id,
-                $notes,
-            );
-        }
-
-        return true;
+        return app(InventoryCostService::class)->consume($orderItem);
     }
 
     public function recordTransaction(
@@ -59,51 +26,86 @@ class InventoryService
         ?string $reference = null,
         ?string $notes = null,
         bool $recordExpense = true,
+        bool $recordCost = true,
+        ?int $orderId = null,
+        ?int $orderItemId = null,
+        ?float $unitCost = null,
     ): InventoryTransaction {
-        $oldQuantity = (float) $ingredient->current_quantity;
+        return DB::transaction(function () use ($ingredient, $quantity, $type, $reference, $notes, $recordExpense, $recordCost, $orderId, $orderItemId, $unitCost) {
+            abort_if($quantity < 0 || ($unitCost !== null && $unitCost < 0), 422, 'Quantity and cost cannot be negative.');
+            $ingredient = Ingredient::withTrashed()->whereKey($ingredient->id)->lockForUpdate()->firstOrFail();
+            $oldQuantity = (float) $ingredient->current_quantity;
 
-        match ($type) {
-            InventoryTransactionType::STOCK_IN   => $ingredient->increment('current_quantity', $quantity),
-            InventoryTransactionType::STOCK_OUT  => $ingredient->decrement('current_quantity', $quantity),
-            InventoryTransactionType::ADJUSTMENT => $ingredient->update(['current_quantity' => $quantity]),
-            InventoryTransactionType::WASTE      => $ingredient->decrement('current_quantity', $quantity),
-        };
-
-        $ingredient->refresh();
-        $newQuantity = (float) $ingredient->current_quantity;
-
-        $tx = InventoryTransaction::create([
-            'ingredient_id' => $ingredient->id,
-            'user_id'       => Auth::id(),
-            'type'          => $type,
-            'quantity'      => $quantity,
-            'old_quantity'  => $oldQuantity,
-            'new_quantity'  => $newQuantity,
-            'reference'     => $reference,
-            'notes'         => $notes,
-        ]);
-
-        // Record a financial expense for stock purchases and positive adjustments
-        $costPerUnit = (float) $ingredient->cost_per_unit;
-        if ($recordExpense && $costPerUnit > 0) {
-            $costDelta = match ($type) {
-                InventoryTransactionType::STOCK_IN   => $quantity * $costPerUnit,
-                InventoryTransactionType::ADJUSTMENT => max(0.0, ($newQuantity - $oldQuantity)) * $costPerUnit,
-                default                              => 0.0,
+            $movementCost = $type === InventoryTransactionType::STOCK_IN
+                ? ($unitCost ?? (float) $ingredient->cost_per_unit)
+                : (float) $ingredient->cost_per_unit;
+            if ($type === InventoryTransactionType::STOCK_IN && $recordCost && $quantity > 0 && $unitCost !== null) {
+                $weight = max(0, $oldQuantity);
+                $ingredient->update(['cost_per_unit' => round(($weight * (float) $ingredient->cost_per_unit + $quantity * $unitCost) / ($weight + $quantity), 4)]);
+            }
+            match ($type) {
+                InventoryTransactionType::STOCK_IN => $ingredient->increment('current_quantity', $quantity),
+                InventoryTransactionType::STOCK_OUT => $ingredient->decrement('current_quantity', $quantity),
+                InventoryTransactionType::ADJUSTMENT => $ingredient->update(['current_quantity' => $quantity]),
+                InventoryTransactionType::WASTE => $ingredient->decrement('current_quantity', $quantity),
             };
 
-            if ($costDelta > 0) {
-                \App\Models\FinancialTransaction::create([
-                    'type'          => 'expense',
-                    'amount'        => round($costDelta, 2),
-                    'description'   => "Inventory {$type->label()}: {$ingredient->name}",
-                    'user_id'       => Auth::id(),
-                    'transacted_at' => now(),
+            $ingredient->refresh();
+            $newQuantity = (float) $ingredient->current_quantity;
+
+            $tx = InventoryTransaction::create([
+                'ingredient_id' => $ingredient->id,
+                'order_id' => $orderId,
+                'order_item_id' => $orderItemId,
+                'user_id' => Auth::id(),
+                'type' => $type,
+                'quantity' => $quantity,
+                'old_quantity' => $oldQuantity,
+                'new_quantity' => $newQuantity,
+                'reference' => $reference,
+                'notes' => $notes,
+            ]);
+
+            // Record a financial expense for stock purchases and positive adjustments
+            $costPerUnit = $movementCost;
+            $financial = null;
+            if ($recordExpense && $costPerUnit > 0) {
+                $costDelta = match ($type) {
+                    InventoryTransactionType::STOCK_IN => $quantity * $costPerUnit,
+                    InventoryTransactionType::ADJUSTMENT => max(0.0, ($newQuantity - $oldQuantity)) * $costPerUnit,
+                    default => 0.0,
+                };
+
+                if ($costDelta > 0) {
+                    $financial = FinancialTransaction::create([
+                        'type' => 'expense',
+                        'amount' => round($costDelta, 2),
+                        'description' => "Inventory {$type->label()}: {$ingredient->name}",
+                        'user_id' => Auth::id(),
+                        'transacted_at' => now(),
+                    ]);
+                }
+            }
+
+            if ($recordCost) {
+                $delta = $newQuantity - $oldQuantity;
+                $kind = match ($type) {
+                    InventoryTransactionType::STOCK_IN => 'purchase',
+                    InventoryTransactionType::WASTE => 'waste',
+                    InventoryTransactionType::STOCK_OUT => 'count_loss',
+                    InventoryTransactionType::ADJUSTMENT => $delta >= 0 ? 'count_gain' : 'count_loss',
+                };
+                $costQuantity = $type === InventoryTransactionType::STOCK_IN ? $delta : -$delta;
+                InventoryCostEntry::create([
+                    'kind' => $kind, 'source' => 'ingredient', 'inventory_transaction_id' => $tx->id,
+                    'ingredient_id' => $ingredient->id, 'ingredient_name' => $ingredient->name,
+                    'quantity' => $costQuantity, 'unit_cost' => $movementCost, 'total_cost' => round($costQuantity * $movementCost, 2),
+                    'financial_transaction_id' => $financial?->id, 'user_id' => Auth::id(), 'recognized_at' => now(), 'reference' => $reference,
                 ]);
             }
-        }
 
-        return $tx;
+            return $tx;
+        }, 3);
     }
 
     /**
@@ -121,7 +123,7 @@ class InventoryService
                 continue;
             }
 
-            $required  = (float) $recipe->quantity * (int) $orderItem->quantity;
+            $required = (float) $recipe->quantity * (int) $orderItem->quantity;
             $available = (float) $ingredient->current_quantity;
 
             if ($available < $required) {
@@ -148,38 +150,43 @@ class InventoryService
      */
     public function restoreOrderStock(Order $order, string $action): void
     {
-        $label = match ($action) {
-            'cancel' => 'Cancelled',
-            'delete' => 'Deleted',
-        };
+        DB::transaction(function () use ($order, $action) {
+            Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+            app(InventoryCostService::class)->restore($order, $action);
+            $label = match ($action) {
+                'cancel' => 'Cancelled',
+                'delete' => 'Deleted',
+                'edit' => 'Edited',
+            };
 
-        $sumByIngredient = fn (array $references, InventoryTransactionType $type) => InventoryTransaction::whereIn('reference', $references)
-            ->where('type', $type->value)
-            ->selectRaw('ingredient_id, SUM(quantity) as total')
-            ->groupBy('ingredient_id')
-            ->pluck('total', 'ingredient_id');
+            $sumByIngredient = fn (array $references, InventoryTransactionType $type) => InventoryTransaction::whereIn('reference', $references)
+                ->where('type', $type->value)->whereNull('order_id')
+                ->selectRaw('ingredient_id, SUM(quantity) as total')
+                ->groupBy('ingredient_id')
+                ->pluck('total', 'ingredient_id');
 
-        $prefix   = 'order_' . $order->id;
-        $deducted = $sumByIngredient([$prefix], InventoryTransactionType::STOCK_OUT);
-        $restored = $sumByIngredient([$prefix . '_cancel', $prefix . '_delete'], InventoryTransactionType::STOCK_IN);
+            $prefix = 'order_'.$order->id;
+            $deducted = $sumByIngredient([$prefix], InventoryTransactionType::STOCK_OUT);
+            $restored = $sumByIngredient([$prefix.'_cancel', $prefix.'_delete', $prefix.'_edit'], InventoryTransactionType::STOCK_IN);
 
-        foreach ($deducted as $ingredientId => $total) {
-            $quantity = round((float) $total - (float) ($restored[$ingredientId] ?? 0), 3);
-            $ingredient = Ingredient::find($ingredientId);
+            foreach ($deducted as $ingredientId => $total) {
+                $quantity = round((float) $total - (float) ($restored[$ingredientId] ?? 0), 3);
+                $ingredient = Ingredient::withTrashed()->find($ingredientId);
 
-            if ($quantity <= 0 || ! $ingredient) {
-                continue;
+                if ($quantity <= 0 || ! $ingredient) {
+                    continue;
+                }
+
+                $this->recordTransaction(
+                    $ingredient,
+                    $quantity,
+                    InventoryTransactionType::STOCK_IN,
+                    $prefix.'_'.$action,
+                    "{$label} Order #{$order->id}",
+                    recordExpense: false, recordCost: false,
+                );
             }
-
-            $this->recordTransaction(
-                $ingredient,
-                $quantity,
-                InventoryTransactionType::STOCK_IN,
-                $prefix . '_' . $action,
-                "{$label} Order #{$order->id}",
-                recordExpense: false,
-            );
-        }
+        }, 3);
     }
 
     public function getLowStockItems()

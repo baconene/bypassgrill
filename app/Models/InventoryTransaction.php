@@ -15,6 +15,8 @@ class InventoryTransaction extends Model
         'new_quantity',
         'reference',
         'notes',
+        'order_id',
+        'order_item_id',
     ];
 
     protected $casts = [
@@ -25,7 +27,7 @@ class InventoryTransaction extends Model
 
     public function ingredient()
     {
-        return $this->belongsTo(Ingredient::class);
+        return $this->belongsTo(Ingredient::class)->withTrashed();
     }
 
     public function user()

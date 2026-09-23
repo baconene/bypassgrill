@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\InventoryTransactionType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreInventoryAdjustmentRequest;
 use App\Http\Resources\InventoryResource;
-use App\Enums\InventoryTransactionType;
 use App\Models\Ingredient;
 use App\Repositories\InventoryRepository;
 use App\Services\InventoryService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 
 class InventoryController extends Controller
 {
@@ -18,59 +21,54 @@ class InventoryController extends Controller
         private InventoryRepository $inventoryRepository
     ) {}
 
-    public function store(\Illuminate\Http\Request $request): JsonResponse
+    public function store(Request $request): JsonResponse
     {
         if (! auth()->user()?->hasAnyRole('admin', 'auditor')) {
             abort(403, 'Unauthorized');
         }
 
         $data = $request->validate([
-            'name'             => 'required|string|max:255',
-            'item_type'        => 'nullable|in:ingredient,tool,equipment,supply',
-            'unit'             => 'required|string|max:50',
+            'name' => 'required|string|max:255',
+            'item_type' => 'nullable|in:ingredient,tool,equipment,supply',
+            'unit' => 'required|string|max:50',
             'current_quantity' => 'required|numeric|min:0',
-            'min_quantity'     => 'required|numeric|min:0',
-            'cost_per_unit'    => 'nullable|numeric|min:0',
-            'track_inventory'  => 'boolean',
+            'min_quantity' => 'required|numeric|min:0',
+            'cost_per_unit' => 'nullable|numeric|min:0',
+            'track_inventory' => 'boolean',
         ]);
 
-        $ingredient = Ingredient::create([
-            ...$data,
-            'item_type'       => $data['item_type'] ?? 'ingredient',
-            'is_active'       => true,
-            'track_inventory' => $data['track_inventory'] ?? true,
-            'cost_per_unit'   => $data['cost_per_unit'] ?? 0,
-        ]);
-
-        // Record the cost of initial stock as an expense
-        $initialCost = (float) $ingredient->current_quantity * (float) $ingredient->cost_per_unit;
-        if ($initialCost > 0) {
-            \App\Models\FinancialTransaction::create([
-                'type'          => 'expense',
-                'amount'        => round($initialCost, 2),
-                'description'   => "Initial stock: {$ingredient->name}",
-                'user_id'       => auth()->id(),
-                'transacted_at' => now(),
+        $ingredient = DB::transaction(function () use ($data) {
+            $quantity = (float) $data['current_quantity'];
+            $ingredient = Ingredient::create([
+                ...$data, 'current_quantity' => 0,
+                'item_type' => $data['item_type'] ?? 'ingredient', 'is_active' => true,
+                'track_inventory' => $data['track_inventory'] ?? true,
+                'cost_per_unit' => $data['cost_per_unit'] ?? 0,
             ]);
-        }
+            if ($quantity > 0) {
+                $this->inventoryService->recordTransaction($ingredient, $quantity, InventoryTransactionType::STOCK_IN, notes: 'Opening stock');
+            }
+
+            return $ingredient->fresh();
+        });
 
         return response()->json(new InventoryResource($ingredient), 201);
     }
 
-    public function update(\Illuminate\Http\Request $request, Ingredient $ingredient): JsonResponse
+    public function update(Request $request, Ingredient $ingredient): JsonResponse
     {
         if (! auth()->user()?->hasAnyRole('admin', 'auditor')) {
             abort(403, 'Unauthorized');
         }
 
         $data = $request->validate([
-            'name'            => 'sometimes|string|max:255',
-            'item_type'       => 'sometimes|in:ingredient,tool,equipment,supply',
-            'unit'            => 'sometimes|string|max:50',
-            'min_quantity'    => 'sometimes|numeric|min:0',
-            'cost_per_unit'   => 'sometimes|numeric|min:0',
+            'name' => 'sometimes|string|max:255',
+            'item_type' => 'sometimes|in:ingredient,tool,equipment,supply',
+            'unit' => 'sometimes|string|max:50',
+            'min_quantity' => 'sometimes|numeric|min:0',
+            'cost_per_unit' => 'sometimes|numeric|min:0',
             'track_inventory' => 'boolean',
-            'is_active'       => 'boolean',
+            'is_active' => 'boolean',
         ]);
 
         $ingredient->update($data);
@@ -105,6 +103,7 @@ class InventoryController extends Controller
             $type,
             $data['reference'] ?? null,
             $data['notes'] ?? null,
+            unitCost: isset($data['unit_cost']) ? (float) $data['unit_cost'] : null,
         );
 
         return response()->json(['transaction' => $transaction], 201);
@@ -117,7 +116,7 @@ class InventoryController extends Controller
         return response()->json($transactions);
     }
 
-    public function destroy(Ingredient $ingredient): \Illuminate\Http\Response
+    public function destroy(Ingredient $ingredient): Response
     {
         if (! auth()->user()?->hasAnyRole('admin', 'auditor')) {
             abort(403, 'Unauthorized');
