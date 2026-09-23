@@ -25,24 +25,25 @@
     gap: 20px;
 }
 .inventory-eyebrow {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    color: #68665f;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    color: #ad3b19;
 }
 .inventory-heading h1 {
-    font-family: Impact, 'Arial Narrow', sans-serif;
-    font-size: clamp(38px, 5vw, 64px);
+    font-size: clamp(32px, 3.5vw, 48px);
+    font-weight: 850;
+    letter-spacing: -1.8px;
     line-height: 1.1;
-    margin: 10px 0;
+    margin: 12px 0;
 }
 .inventory-heading h1 em {
     font-family: Georgia, serif;
-    color: #c3441c;
+    color: #ad3b19;
     font-weight: 400;
 }
 .inventory-heading p:last-child {
-    font-size: 14px;
+    font-size: 13px;
     color: #68665f;
     line-height: 1.6;
 }
@@ -64,51 +65,61 @@
 }
 .inventory-theme .inventory-primary {
     display: inline-flex;
-    gap: 8px;
+    gap: 9px;
     align-items: center;
     justify-content: center;
-    border-radius: 10px;
-    padding: 10px 16px;
+    border-radius: 4px;
+    padding: 13px 15px;
     background: #c3441c;
-    color: white;
-    font-weight: 700;
-    font-size: 14px;
+    color: #fff;
+    font-weight: 800;
+    font-size: 11px;
+    letter-spacing: 0.4px;
 }
 .inventory-theme .inventory-primary:hover {
     background: #a73513;
 }
-.inventory-total {
+.inventory-theme .inventory-total {
+    border-radius: 6px;
     background: #24231e;
     color: #fffcf6;
 }
-.inventory-total p:first-child,
-.inventory-total p:last-child:not(:first-child) {
+.inventory-theme .inventory-total p:first-child,
+.inventory-theme .inventory-total p:last-child:not(:first-child) {
     color: #e2dacd;
 }
 .inventory-tabs {
     display: flex;
-    flex-wrap: wrap;
     gap: 6px;
-    padding: 5px;
-    background: #ebe8dd;
-    border-radius: 14px;
+    box-shadow: inset 0 -1px 0 #ded7cb;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+.inventory-tabs::-webkit-scrollbar {
+    display: none;
 }
 .inventory-tabs button {
-    padding: 10px 18px;
-    border-radius: 10px;
-    font-size: 14px;
+    padding: 12px 14px;
+    font-size: 12px;
     font-weight: 700;
+    color: #68665f;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+}
+.inventory-tabs button:hover {
+    color: #24231e;
 }
 .inventory-tabs button[aria-current='page'] {
-    background: #24231e;
-    color: #fff;
+    color: #ad3b19;
+    border-bottom-color: #ad3b19;
 }
 .inventory-notice {
     padding: 14px 18px;
     background: #efe9dc;
     color: #514937;
     border: 1px solid #ded3bf;
-    border-radius: 12px;
+    border-radius: 6px;
     font-size: 13px;
     line-height: 1.6;
 }
@@ -132,7 +143,7 @@
     width: 100%;
     min-width: 0;
     border: 1px solid #ded7cb;
-    border-radius: 8px;
+    border-radius: 4px;
     background: #fffcf6;
     padding: 8px 10px;
     font-weight: 400;
@@ -146,7 +157,7 @@
 .inventory-shortcuts button {
     border: 1px solid #ded7cb;
     padding: 8px 14px;
-    border-radius: 8px;
+    border-radius: 4px;
     font-size: 12px;
 }
 .inventory-theme th,
@@ -162,7 +173,7 @@
     font-size: 11px;
 }
 .inventory-theme .bg-card {
-    border-radius: 16px;
+    border-radius: 6px;
 }
 .inventory-theme .text-green-600,
 .inventory-theme .text-green-700 {
@@ -195,7 +206,7 @@
         padding: 18px 12px;
     }
     .inventory-heading h1 {
-        font-size: 40px;
+        font-size: 32px;
     }
     .inventory-report-filters label {
         flex-basis: 100%;
