@@ -9,6 +9,7 @@ use App\Models\InventoryCostEntry;
 use App\Models\Order;
 use App\Models\OrderItem;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class ReportService
@@ -305,6 +306,9 @@ class ReportService
             ],
             'gross_profit' => $grossProfit,
             'gross_margin' => $grossMargin,
+            // Costs here sum to the COGS total above, so the statement can be read down
+            // to a line and then across to the dishes that produced it.
+            'product_margins' => $this->productMargins($paymentOrderIds, $ledgerOrderIds, $legacyOrderIds),
             'income_adjustments' => [
                 'total' => $totalIncomeAdj,
                 'count' => (int) ($incomeAdjRows->count ?? 0),
@@ -349,5 +353,59 @@ class ReportService
                 'count' => (int) ($unpaidCompleted->cnt ?? 0),
             ],
         ];
+    }
+
+    /**
+     * What each product sold for against what it cost, drawn from the same two sources
+     * as the COGS figure above, so these costs add up to that total. Answers the
+     * question the headline numbers cannot: which dishes are actually worth cooking.
+     *
+     * @param  Collection  $paymentOrderIds  paid orders in the period
+     * @param  Collection  $ledgerOrderIds  the subset costed by the ledger
+     * @param  Collection  $legacyOrderIds  the subset costed by their items
+     */
+    private function productMargins($paymentOrderIds, $ledgerOrderIds, $legacyOrderIds): array
+    {
+        if ($paymentOrderIds->isEmpty()) {
+            return [];
+        }
+
+        $sold = OrderItem::whereIn('order_items.order_id', $paymentOrderIds)
+            ->join('products', 'order_items.product_id', '=', 'products.id')
+            ->selectRaw('order_items.product_id, products.name as product_name, SUM(order_items.quantity) as quantity, SUM(order_items.subtotal) as sales')
+            ->groupBy('order_items.product_id', 'products.name')
+            ->get();
+
+        // Ledger rows carry the order item, so the product comes from the join.
+        $ledgerCost = $ledgerOrderIds->isEmpty()
+            ? collect()
+            : InventoryCostEntry::whereIn('inventory_cost_entries.order_id', $ledgerOrderIds)
+                ->whereIn('inventory_cost_entries.kind', [InventoryCostKind::CONSUMPTION->value, InventoryCostKind::CONSUMPTION_REVERSAL->value])
+                ->join('order_items', 'inventory_cost_entries.order_item_id', '=', 'order_items.id')
+                ->selectRaw('order_items.product_id, SUM(inventory_cost_entries.total_cost) as cost')
+                ->groupBy('order_items.product_id')
+                ->pluck('cost', 'product_id');
+
+        $legacyCost = $legacyOrderIds->isEmpty()
+            ? collect()
+            : OrderItem::whereIn('order_id', $legacyOrderIds)
+                ->selectRaw('product_id, SUM(cost_subtotal) as cost')
+                ->groupBy('product_id')
+                ->pluck('cost', 'product_id');
+
+        return $sold->map(function ($row) use ($ledgerCost, $legacyCost) {
+            $amount = (float) $row->sales;
+            $cost = (float) ($ledgerCost[$row->product_id] ?? 0) + (float) ($legacyCost[$row->product_id] ?? 0);
+
+            return [
+                'product_id' => (int) $row->product_id,
+                'product_name' => $row->product_name,
+                'quantity' => (float) $row->quantity,
+                'sales' => round($amount, 2),
+                'cost' => round($cost, 2),
+                'gross_profit' => round($amount - $cost, 2),
+                'margin' => $amount > 0 ? round((($amount - $cost) / $amount) * 100, 2) : 0.0,
+            ];
+        })->sortByDesc('gross_profit')->values()->all();
     }
 }

@@ -230,6 +230,10 @@ const saveAdjust = async () => {
 
 // ── P&L ───────────────────────────────────────────────────────────────────────
 interface PLBreakdownItem { description: string; amount: number; transacted_at: string }
+interface ProductMargin {
+    product_id: number; product_name: string; quantity: number
+    sales: number; cost: number; gross_profit: number; margin: number
+}
 interface PL {
     period: { start: string; end: string }
     revenue: { order_count: number; gross_sales: number; discounts: number; net_revenue: number }
@@ -239,6 +243,7 @@ interface PL {
     expenses: { total: number; count: number; breakdown: PLBreakdownItem[] }
     inventory_purchases: { total: number; count: number; included_in_expenses: boolean; breakdown: PLBreakdownItem[] }
     inventory_losses?: { total: number; count: number; breakdown: PLBreakdownItem[] }
+    product_margins?: ProductMargin[]
     payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
     payout_share?: { total: number; count: number; breakdown: PLBreakdownItem[] }
     net_profit: number; net_margin: number
@@ -392,6 +397,53 @@ const plKpis = computed(() => {
     )
     return kpis
 })
+
+// ── Product margins: the COGS line opened up by dish ──────────────────────────
+type MarginKey = 'product_name' | 'quantity' | 'sales' | 'cost' | 'gross_profit' | 'margin'
+const plMarginSort = ref<MarginKey>('gross_profit')
+const plMarginDir = ref<'asc' | 'desc'>('desc')
+
+const sortProducts = (key: MarginKey) => {
+    if (plMarginSort.value === key) {
+        plMarginDir.value = plMarginDir.value === 'asc' ? 'desc' : 'asc'
+    } else {
+        plMarginSort.value = key
+        plMarginDir.value = key === 'product_name' ? 'asc' : 'desc'
+    }
+}
+
+const plProducts = computed<ProductMargin[]>(() => {
+    const rows = plReport.value?.product_margins ?? []
+    const dir = plMarginDir.value === 'asc' ? 1 : -1
+    const key = plMarginSort.value
+
+    return [...rows].sort((a, b) => {
+        const x = a[key]
+        const y = b[key]
+        if (x === y) return a.product_name.localeCompare(b.product_name)
+
+        return (x > y ? 1 : -1) * dir
+    })
+})
+
+const plProductTotals = computed(() => {
+    const rows = plProducts.value
+    const sales = rows.reduce((s, r) => s + r.sales, 0)
+    const cost = rows.reduce((s, r) => s + r.cost, 0)
+
+    return {
+        quantity: rows.reduce((s, r) => s + r.quantity, 0),
+        sales,
+        cost,
+        gross_profit: sales - cost,
+        margin: sales > 0 ? ((sales - cost) / sales) * 100 : 0,
+    }
+})
+
+// A dish that sold but recorded no cost flatters its own margin, and the COGS line.
+const plZeroCost = computed(
+    () => plProducts.value.filter((r) => r.cost === 0 && r.sales > 0).length,
+)
 
 // Income split into costs and profit, in pesos per ₱100.
 const plSpend = computed(() => {
@@ -2270,6 +2322,74 @@ onMounted(async () => {
                     </p>
                 </section>
 
+                <!-- The COGS line, opened up by dish. Costs here add up to that line. -->
+                <section v-if="plProducts.length > 0" class="rpt-panel">
+                    <div class="rpt-panel-head">
+                        <h2>Sales against cost, by product</h2>
+                        <small>{{ plProducts.length }} product{{ plProducts.length === 1 ? '' : 's' }} sold in this period</small>
+                    </div>
+                    <div class="rpt-table-scroll">
+                        <table class="rpt-margin-table">
+                            <thead>
+                                <tr>
+                                    <th>
+                                        <button type="button" @click="sortProducts('product_name')">Product</button>
+                                    </th>
+                                    <th class="num">
+                                        <button type="button" @click="sortProducts('quantity')">Sold</button>
+                                    </th>
+                                    <th class="num">
+                                        <button type="button" @click="sortProducts('sales')">Gross sales</button>
+                                    </th>
+                                    <th class="num">
+                                        <button type="button" @click="sortProducts('cost')">Product cost</button>
+                                    </th>
+                                    <th class="num">
+                                        <button type="button" @click="sortProducts('gross_profit')">Difference</button>
+                                    </th>
+                                    <th class="num">
+                                        <button type="button" @click="sortProducts('margin')">Margin</button>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="row in plProducts" :key="row.product_id">
+                                    <td>{{ row.product_name }}</td>
+                                    <td class="num">{{ row.quantity }}</td>
+                                    <td class="num">{{ fmt(row.sales) }}</td>
+                                    <td class="num">{{ fmt(row.cost) }}</td>
+                                    <td class="num" :class="row.gross_profit < 0 ? 'is-loss' : 'is-gain'">
+                                        {{ fmtSigned(row.gross_profit) }}
+                                    </td>
+                                    <td class="num" :class="row.gross_profit < 0 ? 'is-loss' : ''">
+                                        {{ row.sales > 0 ? row.margin.toFixed(1) + '%' : '—' }}
+                                    </td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td>All products</td>
+                                    <td class="num">{{ plProductTotals.quantity }}</td>
+                                    <td class="num">{{ fmt(plProductTotals.sales) }}</td>
+                                    <td class="num">{{ fmt(plProductTotals.cost) }}</td>
+                                    <td class="num">{{ fmtSigned(plProductTotals.gross_profit) }}</td>
+                                    <td class="num">
+                                        {{ plProductTotals.sales > 0 ? plProductTotals.margin.toFixed(1) + '%' : '—' }}
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <p class="rpt-footnote">
+                        Product cost is the same figure as Cost of goods sold above, split by dish.
+                        <template v-if="plZeroCost > 0">
+                            {{ plZeroCost }} product{{ plZeroCost === 1 ? ' has' : 's have' }} no cost recorded,
+                            so {{ plZeroCost === 1 ? 'its' : 'their' }} margin is overstated — give
+                            {{ plZeroCost === 1 ? 'it a recipe' : 'them recipes' }} on the Products page.
+                        </template>
+                    </p>
+                </section>
+
                 <div v-if="(plReport.unpaid_completed?.count ?? 0) > 0" class="rpt-callout" role="status">
                     <TrendingDown :size="18" aria-hidden="true" />
                     <div>
@@ -3651,6 +3771,56 @@ onMounted(async () => {
     font-size: 11px;
     line-height: 1.7;
     color: #777268;
+}
+.rpt-margin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.rpt-margin-table th,
+.rpt-margin-table td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid #ebe5db;
+    white-space: nowrap;
+}
+.rpt-margin-table th {
+    background: #f1eddf;
+    color: #68665f;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+}
+.rpt-margin-table th button {
+    font: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+    background: none;
+    cursor: pointer;
+}
+.rpt-margin-table th button:hover {
+    color: #24231e;
+}
+.rpt-margin-table td.num,
+.rpt-margin-table th.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.rpt-margin-table tbody tr:hover {
+    background: #f6f2e9;
+}
+.rpt-margin-table .is-gain {
+    color: #52643c;
+    font-weight: 700;
+}
+.rpt-margin-table .is-loss {
+    color: #b52c24;
+    font-weight: 700;
+}
+.rpt-margin-table tfoot td {
+    background: #f1eddf;
+    font-weight: 800;
+    border-bottom: 0;
 }
 .rpt-callout {
     display: flex;

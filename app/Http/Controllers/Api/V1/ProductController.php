@@ -150,6 +150,38 @@ class ProductController extends Controller
         return response()->json(['cost' => round($calculatedCost, 2)]);
     }
 
+    /**
+     * Re-cost every product that has a recipe, so stored costs catch up with what
+     * ingredients are worth now. Products without a recipe are left alone: their
+     * stored cost is the only figure COGS has to fall back on.
+     */
+    public function recalculateCosts(): JsonResponse
+    {
+        $this->adminOnly();
+
+        $updated = 0;
+        $unchanged = 0;
+
+        Product::with('recipes.ingredient')->has('recipes')->chunkById(100, function ($products) use (&$updated, &$unchanged) {
+            foreach ($products as $product) {
+                $recipeCost = round($product->recipes->sum(
+                    fn ($r) => (float) $r->quantity * (float) ($r->ingredient?->cost_per_unit ?? 0)
+                ), 2);
+
+                if (round((float) $product->cost, 2) === $recipeCost) {
+                    $unchanged++;
+
+                    continue;
+                }
+
+                $product->update(['cost' => $recipeCost]);
+                $updated++;
+            }
+        });
+
+        return response()->json(['updated' => $updated, 'unchanged' => $unchanged]);
+    }
+
     public function destroy(Product $product): Response
     {
         $this->adminOnly();

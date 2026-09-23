@@ -40,6 +40,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/categories', [CategoryController::class, 'store']);
         Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
 
+        // Before the {product} routes, or the literal segment binds as a product id.
+        Route::post('/products/recalculate-costs', [ProductController::class, 'recalculateCosts']);
         Route::post('/products', [ProductController::class, 'store']);
         Route::put('/products/{product}', [ProductController::class, 'update']);
         Route::post('/products/{product}', [ProductController::class, 'update']);
