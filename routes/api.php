@@ -63,6 +63,7 @@ Route::prefix('v1')->group(function () {
         Route::patch('/inventory/{ingredient}', [InventoryController::class, 'update']);
         Route::delete('/inventory/{ingredient}', [InventoryController::class, 'destroy']);
         Route::get('/inventory/{ingredient}/transactions', [InventoryController::class, 'transactions'])->withTrashed();
+        Route::get('/inventory-cost-report', \App\Http\Controllers\Api\V1\InventoryReportController::class)->middleware('role:admin|auditor');
 
         Route::get('/reports/daily-sales', [ReportController::class, 'dailySales']);
         Route::get('/reports/monthly-sales', [ReportController::class, 'monthlySales']);

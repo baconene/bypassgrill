@@ -13,6 +13,7 @@ import {
 } from 'lucide-vue-next';
 import { ref, computed } from 'vue';
 import { toast } from 'vue-sonner';
+import InventoryCostReport from '@/components/InventoryCostReport.vue';
 import api from '@/utils/api';
 
 defineOptions({
@@ -81,6 +82,13 @@ const props = defineProps<{
     recentTransactions: Transaction[];
 }>();
 
+const view = ref<'stock' | 'reports'>('stock');
+const stockValue = computed(() =>
+    props.ingredients.reduce(
+        (sum, i) => sum + i.current_quantity * i.cost_per_unit,
+        0,
+    ),
+);
 const search = ref('');
 const typeFilter = ref(''); // '' = all
 const selectedItem = ref<Ingredient | null>(null);
@@ -301,268 +309,346 @@ const typeColor: Record<string, string> = {
 <template>
     <Head title="Inventory Management" />
 
-    <div class="space-y-6">
-        <!-- Low Stock Alert Banner -->
-        <div
-            v-if="lowCount > 0"
-            class="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/20"
-        >
-            <AlertTriangle class="h-5 w-5 shrink-0 text-red-500" />
-            <div class="flex-1">
-                <p class="text-sm font-semibold text-red-700 dark:text-red-400">
-                    {{ lowCount }} item{{ lowCount > 1 ? 's are' : ' is' }}
-                    below minimum stock level
-                </p>
-                <p class="text-xs text-red-600/70 dark:text-red-400/70">
-                    Review and restock as needed
+    <div class="inventory-theme inventory-page space-y-6">
+        <header class="inventory-heading">
+            <div>
+                <p class="inventory-eyebrow">BYPASS GRILL / STOCK ROOM</p>
+                <h1>Stock <em>&amp; supplies.</em></h1>
+                <p>
+                    Keep the kitchen stocked and every movement accounted for.
                 </p>
             </div>
-            <button
-                @click="showLowOnly = !showLowOnly"
-                class="shrink-0 text-xs text-red-700 underline dark:text-red-400"
-            >
-                {{ showLowOnly ? 'Show all' : 'Show only low stock' }}
+            <button class="inventory-primary" @click="showAddIngredient = true">
+                <Plus class="h-4 w-4" /> Add item
             </button>
-        </div>
-
-        <!-- Type filter tabs -->
-        <div
-            class="flex flex-wrap gap-1 rounded-xl border bg-card p-1.5 shadow-sm"
-        >
-            <button
-                @click="typeFilter = ''"
-                :class="[
-                    'rounded-lg px-3 py-1.5 text-sm font-medium transition',
-                    typeFilter === ''
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                ]"
-            >
-                All Items
-            </button>
-            <button
-                v-for="t in ITEM_TYPES"
-                :key="t.value"
-                @click="typeFilter = t.value"
-                :class="[
-                    'rounded-lg px-3 py-1.5 text-sm font-medium transition',
-                    typeFilter === t.value
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                ]"
-            >
-                {{ t.label }}s
-            </button>
-        </div>
-
-        <!-- Controls -->
-        <div class="flex flex-wrap items-center gap-3">
-            <input
-                v-model="search"
-                type="text"
-                placeholder="Search inventory…"
-                class="min-w-48 flex-1 rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-            />
-            <button
-                @click="router.reload()"
-                class="flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-sm hover:bg-muted"
-            >
-                <RefreshCw class="h-3.5 w-3.5" /> Refresh
-            </button>
-            <button
-                @click="openAddIngredient"
-                class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-            >
-                <Plus class="h-3.5 w-3.5" /> Add Item
-            </button>
-            <button
-                @click="showHelp = true"
-                class="flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
-                title="Help & Instructions"
-            >
-                <HelpCircle class="h-3.5 w-3.5" /> Help
-            </button>
-        </div>
-
-        <!-- Inventory Cards -->
-        <div class="overflow-hidden rounded-xl border bg-card shadow-sm">
+        </header>
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <div class="rounded-xl border bg-card p-5">
+                <p class="text-xs text-muted-foreground">
+                    Active inventory items
+                </p>
+                <p class="mt-2 text-3xl font-bold">{{ ingredients.length }}</p>
+            </div>
+            <div class="rounded-xl border bg-card p-5">
+                <p class="text-xs text-muted-foreground">Need restocking</p>
+                <p class="mt-2 text-3xl font-bold">{{ lowCount }}</p>
+            </div>
             <div
-                class="divide-y sm:grid sm:grid-cols-2 sm:gap-2 sm:divide-none sm:p-3 lg:grid-cols-3"
+                class="inventory-total col-span-2 rounded-xl p-5 lg:col-span-1"
             >
-                <div
-                    v-for="item in filtered"
-                    :key="item.id"
-                    @click="openAdjust(item)"
+                <p class="text-xs">Current stock value</p>
+                <p class="mt-2 text-2xl font-bold">
+                    {{
+                        new Intl.NumberFormat('en-PH', {
+                            style: 'currency',
+                            currency: 'PHP',
+                        }).format(stockValue)
+                    }}
+                </p>
+                <p class="mt-1 text-xs">
+                    Current quantity multiplied by average cost
+                </p>
+            </div>
+        </div>
+        <nav class="inventory-tabs" aria-label="Inventory views">
+            <button
+                :aria-current="view === 'stock' ? 'page' : undefined"
+                @click="view = 'stock'"
+            >
+                Manage stock</button
+            ><button
+                :aria-current="view === 'reports' ? 'page' : undefined"
+                @click="view = 'reports'"
+            >
+                Inventory reports
+            </button>
+        </nav>
+        <InventoryCostReport v-if="view === 'reports'" />
+        <template v-else>
+            <p class="inventory-notice">
+                Stock entries update inventory quantity and value only. They do
+                not create Financial expenses or change Cash / GCash balances.
+                Record actual payments separately in Financial.
+            </p>
+            <!-- Low Stock Alert Banner -->
+            <div
+                v-if="lowCount > 0"
+                class="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950/20"
+            >
+                <AlertTriangle class="h-5 w-5 shrink-0 text-red-500" />
+                <div class="flex-1">
+                    <p
+                        class="text-sm font-semibold text-red-700 dark:text-red-400"
+                    >
+                        {{ lowCount }} item{{ lowCount > 1 ? 's are' : ' is' }}
+                        below minimum stock level
+                    </p>
+                    <p class="text-xs text-red-600/70 dark:text-red-400/70">
+                        Review and restock as needed
+                    </p>
+                </div>
+                <button
+                    @click="showLowOnly = !showLowOnly"
+                    class="shrink-0 text-xs text-red-700 underline dark:text-red-400"
+                >
+                    {{ showLowOnly ? 'Show all' : 'Show only low stock' }}
+                </button>
+            </div>
+
+            <!-- Type filter tabs -->
+            <div
+                class="flex flex-wrap gap-1 rounded-xl border bg-card p-1.5 shadow-sm"
+            >
+                <button
+                    @click="typeFilter = ''"
                     :class="[
-                        'flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors sm:rounded-xl sm:border sm:px-3 sm:py-3',
-                        item.is_low_stock
-                            ? 'bg-red-50/60 hover:bg-red-100/60 sm:border-red-200 dark:bg-red-950/10 dark:hover:bg-red-950/20 dark:sm:border-red-800/60'
-                            : 'hover:bg-muted/30 sm:border-border',
+                        'rounded-lg px-3 py-1.5 text-sm font-medium transition',
+                        typeFilter === ''
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                     ]"
                 >
-                    <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-1.5">
-                            <Package
-                                class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                            />
-                            <p class="truncate text-sm font-semibold">
-                                {{ item.name }}
-                            </p>
-                        </div>
-                        <div class="mt-1 flex flex-wrap items-center gap-1.5">
-                            <span
-                                :class="[
-                                    'rounded-full px-2 py-0.5 text-xs font-semibold',
-                                    itemTypeColor(item.item_type),
-                                ]"
-                            >
-                                {{ itemTypeLabel(item.item_type) }}
-                            </span>
-                            <span class="text-xs text-muted-foreground">{{
-                                item.unit
-                            }}</span>
-                            <span
-                                v-if="item.is_low_stock"
-                                class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/40 dark:text-red-300"
-                            >
-                                Low
-                            </span>
-                        </div>
-                    </div>
-                    <div class="flex shrink-0 items-center gap-1.5">
-                        <div class="text-right">
-                            <p
-                                class="text-lg leading-none font-bold tabular-nums"
-                                :class="item.is_low_stock ? 'text-red-600' : ''"
-                            >
-                                {{ item.current_quantity.toFixed(2) }}
-                            </p>
-                            <p class="text-xs text-muted-foreground">
-                                {{ item.unit }}
-                            </p>
-                        </div>
-                        <button
-                            @click.stop="openEdit(item)"
-                            class="shrink-0 rounded-full p-1.5 text-muted-foreground transition hover:bg-muted"
-                            title="Edit item"
-                        >
-                            <Pencil class="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                            @click.stop="openDelete(item)"
-                            class="shrink-0 rounded-full p-1.5 text-muted-foreground transition hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-                            title="Delete item"
-                        >
-                            <Trash2 class="h-3.5 w-3.5" />
-                        </button>
-                    </div>
-                </div>
-                <div
-                    v-if="filtered.length === 0"
-                    class="px-4 py-10 text-center text-sm text-muted-foreground sm:col-span-3"
+                    All Items
+                </button>
+                <button
+                    v-for="t in ITEM_TYPES"
+                    :key="t.value"
+                    @click="typeFilter = t.value"
+                    :class="[
+                        'rounded-lg px-3 py-1.5 text-sm font-medium transition',
+                        typeFilter === t.value
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    ]"
                 >
-                    No items found.
-                </div>
+                    {{ t.label }}s
+                </button>
             </div>
-        </div>
 
-        <!-- Recent Transactions — card list -->
-        <div class="overflow-hidden rounded-xl border bg-card shadow-sm">
-            <div class="border-b p-4">
-                <h2 class="text-sm font-semibold">Recent Transactions</h2>
-            </div>
-            <div class="divide-y">
-                <div
-                    v-for="tx in recentTransactions"
-                    :key="tx.id"
-                    class="px-4 py-3"
+            <!-- Controls -->
+            <div class="flex flex-wrap items-center gap-3">
+                <input
+                    v-model="search"
+                    type="text"
+                    placeholder="Search inventory…"
+                    class="min-w-48 flex-1 rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+                <button
+                    @click="router.reload()"
+                    class="flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-sm hover:bg-muted"
                 >
-                    <div class="flex items-start justify-between gap-2">
+                    <RefreshCw class="h-3.5 w-3.5" /> Refresh
+                </button>
+                <button
+                    @click="openAddIngredient"
+                    class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+                >
+                    <Plus class="h-3.5 w-3.5" /> Add Item
+                </button>
+                <button
+                    @click="showHelp = true"
+                    class="flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
+                    title="Help & Instructions"
+                >
+                    <HelpCircle class="h-3.5 w-3.5" /> Help
+                </button>
+            </div>
+
+            <!-- Inventory Cards -->
+            <div class="overflow-hidden rounded-xl border bg-card shadow-sm">
+                <div
+                    class="divide-y sm:grid sm:grid-cols-2 sm:gap-2 sm:divide-none sm:p-3 lg:grid-cols-3"
+                >
+                    <div
+                        v-for="item in filtered"
+                        :key="item.id"
+                        @click="openAdjust(item)"
+                        role="button"
+                        tabindex="0"
+                        :aria-label="'Adjust stock for ' + item.name"
+                        @keydown.enter.self="openAdjust(item)"
+                        @keydown.space.self.prevent="openAdjust(item)"
+                        :class="[
+                            'flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors sm:rounded-xl sm:border sm:px-3 sm:py-3',
+                            item.is_low_stock
+                                ? 'bg-red-50/60 hover:bg-red-100/60 sm:border-red-200 dark:bg-red-950/10 dark:hover:bg-red-950/20 dark:sm:border-red-800/60'
+                                : 'hover:bg-muted/30 sm:border-border',
+                        ]"
+                    >
                         <div class="min-w-0 flex-1">
-                            <p class="truncate text-sm font-semibold">
-                                {{ tx.ingredient_name }}
-                            </p>
-                            <div class="mt-1 flex flex-wrap items-center gap-2">
-                                <span
-                                    :class="[
-                                        'text-xs font-semibold',
-                                        typeColor[tx.type] ??
-                                            'text-muted-foreground',
-                                    ]"
-                                >
-                                    {{ typeLabel[tx.type] ?? tx.type }}
-                                </span>
-                                <span
-                                    class="text-xs text-muted-foreground tabular-nums"
-                                >
-                                    {{ tx.old_quantity.toFixed(2) }} →
-                                    <strong class="text-foreground">{{
-                                        tx.new_quantity.toFixed(2)
-                                    }}</strong>
-                                </span>
+                            <div class="flex items-center gap-1.5">
+                                <Package
+                                    class="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                                />
+                                <p class="truncate text-sm font-semibold">
+                                    {{ item.name }}
+                                </p>
                             </div>
                             <div
-                                class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground"
+                                class="mt-1 flex flex-wrap items-center gap-1.5"
                             >
-                                <span v-if="tx.user_name">{{
-                                    tx.user_name
+                                <span
+                                    :class="[
+                                        'rounded-full px-2 py-0.5 text-xs font-semibold',
+                                        itemTypeColor(item.item_type),
+                                    ]"
+                                >
+                                    {{ itemTypeLabel(item.item_type) }}
+                                </span>
+                                <span class="text-xs text-muted-foreground">{{
+                                    item.unit
                                 }}</span>
                                 <span
-                                    v-if="tx.notes"
-                                    class="max-w-[200px] truncate"
-                                    >{{ tx.notes }}</span
+                                    v-if="item.is_low_stock"
+                                    class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/40 dark:text-red-300"
                                 >
+                                    Low
+                                </span>
                             </div>
-                            <a
-                                v-if="tx.order_id"
-                                :href="`/orders/${tx.order_id}`"
-                                class="mt-1 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary hover:bg-primary/20"
-                            >
-                                <ShoppingBag class="h-3 w-3" /> Order #{{
-                                    tx.order_id
-                                }}
-                            </a>
                         </div>
-                        <div class="shrink-0 text-right">
-                            <p
-                                class="font-bold tabular-nums"
-                                :class="
-                                    ['stock_in', 'purchase'].includes(tx.type)
-                                        ? 'text-green-600'
-                                        : 'text-red-600'
-                                "
+                        <div class="flex shrink-0 items-center gap-1.5">
+                            <div class="text-right">
+                                <p
+                                    class="text-lg leading-none font-bold tabular-nums"
+                                    :class="
+                                        item.is_low_stock ? 'text-red-600' : ''
+                                    "
+                                >
+                                    {{ item.current_quantity.toFixed(2) }}
+                                </p>
+                                <p class="text-xs text-muted-foreground">
+                                    {{ item.unit }}
+                                </p>
+                            </div>
+                            <button
+                                @click.stop="openEdit(item)"
+                                class="shrink-0 rounded-full p-1.5 text-muted-foreground transition hover:bg-muted"
+                                title="Edit item"
                             >
-                                {{
-                                    ['stock_in', 'purchase'].includes(tx.type)
-                                        ? '+'
-                                        : '-'
-                                }}{{ tx.quantity }}
-                            </p>
-                            <p
-                                class="mt-0.5 text-xs whitespace-nowrap text-muted-foreground"
+                                <Pencil class="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                                @click.stop="openDelete(item)"
+                                class="shrink-0 rounded-full p-1.5 text-muted-foreground transition hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+                                title="Delete item"
                             >
-                                {{
-                                    tx.created_at
-                                        ? new Date(
-                                              tx.created_at,
-                                          ).toLocaleDateString('en-PH', {
-                                              month: 'short',
-                                              day: 'numeric',
-                                          })
-                                        : '—'
-                                }}
-                            </p>
+                                <Trash2 class="h-3.5 w-3.5" />
+                            </button>
                         </div>
                     </div>
-                </div>
-                <div
-                    v-if="recentTransactions.length === 0"
-                    class="px-4 py-8 text-center text-sm text-muted-foreground"
-                >
-                    No recent transactions.
+                    <div
+                        v-if="filtered.length === 0"
+                        class="px-4 py-10 text-center text-sm text-muted-foreground sm:col-span-3"
+                    >
+                        No items found.
+                    </div>
                 </div>
             </div>
-        </div>
+
+            <!-- Recent Transactions — card list -->
+            <div class="overflow-hidden rounded-xl border bg-card shadow-sm">
+                <div class="border-b p-4">
+                    <h2 class="text-sm font-semibold">Recent Transactions</h2>
+                </div>
+                <div class="divide-y">
+                    <div
+                        v-for="tx in recentTransactions"
+                        :key="tx.id"
+                        class="px-4 py-3"
+                    >
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0 flex-1">
+                                <p class="truncate text-sm font-semibold">
+                                    {{ tx.ingredient_name }}
+                                </p>
+                                <div
+                                    class="mt-1 flex flex-wrap items-center gap-2"
+                                >
+                                    <span
+                                        :class="[
+                                            'text-xs font-semibold',
+                                            typeColor[tx.type] ??
+                                                'text-muted-foreground',
+                                        ]"
+                                    >
+                                        {{ typeLabel[tx.type] ?? tx.type }}
+                                    </span>
+                                    <span
+                                        class="text-xs text-muted-foreground tabular-nums"
+                                    >
+                                        {{ tx.old_quantity.toFixed(2) }} →
+                                        <strong class="text-foreground">{{
+                                            tx.new_quantity.toFixed(2)
+                                        }}</strong>
+                                    </span>
+                                </div>
+                                <div
+                                    class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground"
+                                >
+                                    <span v-if="tx.user_name">{{
+                                        tx.user_name
+                                    }}</span>
+                                    <span
+                                        v-if="tx.notes"
+                                        class="max-w-[200px] truncate"
+                                        >{{ tx.notes }}</span
+                                    >
+                                </div>
+                                <a
+                                    v-if="tx.order_id"
+                                    :href="`/orders/${tx.order_id}`"
+                                    class="mt-1 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary hover:bg-primary/20"
+                                >
+                                    <ShoppingBag class="h-3 w-3" /> Order #{{
+                                        tx.order_id
+                                    }}
+                                </a>
+                            </div>
+                            <div class="shrink-0 text-right">
+                                <p
+                                    class="font-bold tabular-nums"
+                                    :class="
+                                        ['stock_in', 'purchase'].includes(
+                                            tx.type,
+                                        )
+                                            ? 'text-green-600'
+                                            : 'text-red-600'
+                                    "
+                                >
+                                    {{
+                                        ['stock_in', 'purchase'].includes(
+                                            tx.type,
+                                        )
+                                            ? '+'
+                                            : '-'
+                                    }}{{ tx.quantity }}
+                                </p>
+                                <p
+                                    class="mt-0.5 text-xs whitespace-nowrap text-muted-foreground"
+                                >
+                                    {{
+                                        tx.created_at
+                                            ? new Date(
+                                                  tx.created_at,
+                                              ).toLocaleDateString('en-PH', {
+                                                  month: 'short',
+                                                  day: 'numeric',
+                                              })
+                                            : '—'
+                                    }}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div
+                        v-if="recentTransactions.length === 0"
+                        class="px-4 py-8 text-center text-sm text-muted-foreground"
+                    >
+                        No recent transactions.
+                    </div>
+                </div>
+            </div>
+        </template>
     </div>
 
     <!-- Add Ingredient Modal -->
@@ -570,7 +656,7 @@ const typeColor: Record<string, string> = {
         <Transition name="fade">
             <div
                 v-if="showAddIngredient"
-                class="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
+                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
                 @click.self="showAddIngredient = false"
             >
                 <div
@@ -718,7 +804,7 @@ const typeColor: Record<string, string> = {
         <Transition name="fade">
             <div
                 v-if="selectedItem"
-                class="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
+                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
                 @click.self="selectedItem = null"
             >
                 <div
@@ -851,7 +937,7 @@ const typeColor: Record<string, string> = {
         <Transition name="fade">
             <div
                 v-if="confirmingDelete"
-                class="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
+                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
                 @click.self="confirmingDelete = false"
             >
                 <div
@@ -907,7 +993,7 @@ const typeColor: Record<string, string> = {
         <Transition name="fade">
             <div
                 v-if="showHelp"
-                class="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
+                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
                 @click.self="showHelp = false"
             >
                 <div
@@ -1243,7 +1329,7 @@ const typeColor: Record<string, string> = {
         <Transition name="fade">
             <div
                 v-if="editingIngredient"
-                class="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
+                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
                 @click.self="editingIngredient = null"
             >
                 <div
@@ -1377,3 +1463,4 @@ const typeColor: Record<string, string> = {
     opacity: 0;
 }
 </style>
+<style src="../../css/inventory-theme.css"></style>

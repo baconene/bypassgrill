@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\InventoryTransactionType;
-use App\Models\FinancialTransaction;
 use App\Models\Ingredient;
 use App\Models\InventoryCostEntry;
 use App\Models\InventoryTransaction;
@@ -25,13 +24,12 @@ class InventoryService
         InventoryTransactionType $type,
         ?string $reference = null,
         ?string $notes = null,
-        bool $recordExpense = true,
         bool $recordCost = true,
         ?int $orderId = null,
         ?int $orderItemId = null,
         ?float $unitCost = null,
     ): InventoryTransaction {
-        return DB::transaction(function () use ($ingredient, $quantity, $type, $reference, $notes, $recordExpense, $recordCost, $orderId, $orderItemId, $unitCost) {
+        return DB::transaction(function () use ($ingredient, $quantity, $type, $reference, $notes, $recordCost, $orderId, $orderItemId, $unitCost) {
             abort_if($quantity < 0 || ($unitCost !== null && $unitCost < 0), 422, 'Quantity and cost cannot be negative.');
             $ingredient = Ingredient::withTrashed()->whereKey($ingredient->id)->lockForUpdate()->firstOrFail();
             $oldQuantity = (float) $ingredient->current_quantity;
@@ -66,27 +64,7 @@ class InventoryService
                 'notes' => $notes,
             ]);
 
-            // Record a financial expense for stock purchases and positive adjustments
-            $costPerUnit = $movementCost;
-            $financial = null;
-            if ($recordExpense && $costPerUnit > 0) {
-                $costDelta = match ($type) {
-                    InventoryTransactionType::STOCK_IN => $quantity * $costPerUnit,
-                    InventoryTransactionType::ADJUSTMENT => max(0.0, ($newQuantity - $oldQuantity)) * $costPerUnit,
-                    default => 0.0,
-                };
-
-                if ($costDelta > 0) {
-                    $financial = FinancialTransaction::create([
-                        'type' => 'expense',
-                        'amount' => round($costDelta, 2),
-                        'description' => "Inventory {$type->label()}: {$ingredient->name}",
-                        'user_id' => Auth::id(),
-                        'transacted_at' => now(),
-                    ]);
-                }
-            }
-
+            // Stock records quantity and cost only. Cash payments are recorded separately.
             if ($recordCost) {
                 $delta = $newQuantity - $oldQuantity;
                 $kind = match ($type) {
@@ -100,7 +78,7 @@ class InventoryService
                     'kind' => $kind, 'source' => 'ingredient', 'inventory_transaction_id' => $tx->id,
                     'ingredient_id' => $ingredient->id, 'ingredient_name' => $ingredient->name,
                     'quantity' => $costQuantity, 'unit_cost' => $movementCost, 'total_cost' => round($costQuantity * $movementCost, 2),
-                    'financial_transaction_id' => $financial?->id, 'user_id' => Auth::id(), 'recognized_at' => now(), 'reference' => $reference,
+                    'user_id' => Auth::id(), 'recognized_at' => now(), 'reference' => $reference,
                 ]);
             }
 
@@ -183,7 +161,7 @@ class InventoryService
                     InventoryTransactionType::STOCK_IN,
                     $prefix.'_'.$action,
                     "{$label} Order #{$order->id}",
-                    recordExpense: false, recordCost: false,
+                    recordCost: false,
                 );
             }
         }, 3);

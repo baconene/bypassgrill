@@ -37,7 +37,7 @@ class InventoryCostService
                 $tx = $ingredient->track_inventory ? app(InventoryService::class)->recordTransaction(
                     $ingredient, $quantity, InventoryTransactionType::STOCK_OUT, $reference,
                     'Order #'.$order->id.' / '.$item->product->name,
-                    recordExpense: false, recordCost: false, orderId: $order->id, orderItemId: $item->id,
+                    recordCost: false, orderId: $order->id, orderItemId: $item->id,
                 ) : null;
                 InventoryCostEntry::create([
                     'kind' => 'consumption', 'source' => $ingredient->track_inventory ? 'ingredient' : 'untracked_ingredient',
@@ -76,7 +76,7 @@ class InventoryCostService
                 $tx = app(InventoryService::class)->recordTransaction(
                     $ingredient, (float) $entry->quantity, InventoryTransactionType::STOCK_IN,
                     'order_'.$order->id.'_'.$action, ucfirst($action).' Order #'.$order->id,
-                    recordExpense: false, recordCost: false, orderId: $order->id, orderItemId: $entry->order_item_id,
+                    recordCost: false, orderId: $order->id, orderItemId: $entry->order_item_id,
                 );
             }
             InventoryCostEntry::create([

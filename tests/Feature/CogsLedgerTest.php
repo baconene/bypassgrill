@@ -60,7 +60,7 @@ class CogsLedgerTest extends TestCase
         $this->assertEquals(10, $item->fresh()->cost_subtotal);
         $this->assertDatabaseCount('inventory_cost_entries', 1);
         $this->assertNotNull(InventoryTransaction::first()->order_item_id);
-        $job = new \App\Jobs\ProcessOrderJob($order);
+        $job = new ProcessOrderJob($order);
         $job->handle(app(InventoryService::class));
         $job->handle(app(InventoryService::class));
         $this->assertEquals(9, $this->ingredient->fresh()->current_quantity);
@@ -122,7 +122,7 @@ class CogsLedgerTest extends TestCase
         $this->assertEquals(600, InventoryCostEntry::where('kind', 'count_loss')->sum('total_cost'));
         foreach ([0, -2] as $quantity) {
             $this->ingredient->update(['current_quantity' => $quantity]);
-            $service->recordTransaction($this->ingredient, 2, Movement::STOCK_IN, recordExpense: false, unitCost: 11);
+            $service->recordTransaction($this->ingredient, 2, Movement::STOCK_IN, unitCost: 11);
             $this->assertEquals(11, $this->ingredient->fresh()->cost_per_unit);
         }
     }
@@ -147,12 +147,13 @@ class CogsLedgerTest extends TestCase
         $this->assertEquals(200, app(ReportService::class)->getInventoryValuation()->first()->valuation);
     }
 
-    public function test_initial_stock_is_atomic_and_linked_to_its_cost_and_cash_entry(): void
+    public function test_initial_stock_is_atomic_and_does_not_write_a_cash_entry(): void
     {
         $this->postJson('/api/v1/inventory', ['name' => 'Rice', 'unit' => 'kg', 'current_quantity' => 3, 'min_quantity' => 1, 'cost_per_unit' => 12])->assertCreated();
         $entry = InventoryCostEntry::where('kind', 'purchase')->firstOrFail();
         $this->assertEquals(36, $entry->total_cost);
-        $this->assertNotNull($entry->financial_transaction_id);
+        $this->assertNull($entry->financial_transaction_id);
+        $this->assertDatabaseCount('financial_transactions', 0);
         $this->assertNotNull($entry->inventory_transaction_id);
         $this->assertEquals(3, Ingredient::where('name', 'Rice')->first()->current_quantity);
     }

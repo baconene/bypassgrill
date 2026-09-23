@@ -16,7 +16,7 @@ Status: **Phase 0 implemented; Phase 1 shadow ledger ready for deployment** (202
 
 Production reports and order-item cost fields still use their existing calculations. The ledger records actual recipe costs alongside them; cogs:verify reports discrepancies for review. Writing ledger totals back into order_items is deferred to report cutover so this observation stage does not silently change current reports. cogs_ledger_settings records shadow_started_at; cogs_ledger_start_at remains null.
 
-The existing expense behavior for stock purchases and positive counts is retained until Phase 2 introduces inventory_purchase, tender selection, purchase undo, and updates every cash-report consumer together. Historical cash entries are not retyped by this migration. The new ledger records counts separately, but does not yet drive P&L losses.
+Stock entry is now inventory-only, per the subsequent user request: starting stock, receipts, counts and waste do not create cash expenses. Their values are shown in the Inventory reports tab, filtered by movement dates, item and kind. Actual payments are recorded separately in Financial. Previously created cash entries are preserved for reconciliation. Tender-linked purchases, purchase undo, historical reclassification and switching P&L to the ledger remain later phases. The ledger does not yet drive P&L losses.
 
 After approximately one week of live shadow observations, review missing links and item-cost differences before continuing the purchase/cash and report cutovers below. Production verification has not yet been run from this workspace.
 
