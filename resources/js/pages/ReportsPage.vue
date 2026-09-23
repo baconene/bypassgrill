@@ -238,6 +238,7 @@ interface PL {
     income_adjustments: { total: number; count: number; breakdown: PLBreakdownItem[] }
     expenses: { total: number; count: number; breakdown: PLBreakdownItem[] }
     inventory_purchases: { total: number; count: number; included_in_expenses: boolean; breakdown: PLBreakdownItem[] }
+    inventory_losses?: { total: number; count: number; breakdown: PLBreakdownItem[] }
     payroll: { total: number; count: number; breakdown: PLBreakdownItem[] }
     payout_share?: { total: number; count: number; breakdown: PLBreakdownItem[] }
     net_profit: number; net_margin: number
@@ -271,7 +272,6 @@ interface BillForecast {
 
 const plStartDate = ref(manilaMonthStart())
 const plEndDate = ref(manilaToday())
-const plIncludeCogs = ref(true)
 const plReport     = ref<PL | null>(null)
 
 // ── P&L period, comparison and statement ──────────────────────────────────────
@@ -341,7 +341,7 @@ interface PLRow {
 // Revenue the order totals don't explain: partial payments, tax, refunds.
 const otherCollections = (r: PL) => round2(r.revenue.net_revenue - (r.revenue.gross_sales - r.revenue.discounts))
 const plCosts = (r: PL) =>
-    (plIncludeCogs.value ? r.cogs.total : 0) + r.expenses.total + (r.payroll?.total ?? 0) + (r.payout_share?.total ?? 0)
+    r.cogs.total + r.expenses.total + (r.inventory_losses?.total ?? 0) + (r.payroll?.total ?? 0) + (r.payout_share?.total ?? 0)
 
 const plRows = computed<PLRow[]>(() => {
     const r = plReport.value
@@ -355,13 +355,14 @@ const plRows = computed<PLRow[]>(() => {
         rows.push({ key: 'collections', label: 'Other collections', note: 'Partial payments, tax and refunds', kind: 'line', cur: otherCollections(r), prev: p ? otherCollections(p) : null, higherIsBetter: true })
     }
     rows.push({ key: 'net_revenue', label: 'Net revenue', kind: 'subtotal', cur: r.revenue.net_revenue, prev: p?.revenue.net_revenue ?? null, higherIsBetter: true })
-    if (plIncludeCogs.value) {
-        rows.push({ key: 'cogs', label: 'Cost of goods sold', note: r.cogs.has_data ? undefined : 'No product costs set yet', kind: 'less', cur: r.cogs.total, prev: p?.cogs.total ?? null, higherIsBetter: false })
-        rows.push({ key: 'gross_profit', label: 'Gross profit', note: `${r.gross_margin}% margin`, kind: 'subtotal', cur: r.gross_profit, prev: p?.gross_profit ?? null, higherIsBetter: true })
-    }
+    rows.push({ key: 'cogs', label: 'Cost of goods sold', note: r.cogs.has_data ? undefined : 'No product costs set yet', kind: 'less', cur: r.cogs.total, prev: p?.cogs.total ?? null, higherIsBetter: false })
+    rows.push({ key: 'gross_profit', label: 'Gross profit', note: `${r.gross_margin}% margin`, kind: 'subtotal', cur: r.gross_profit, prev: p?.gross_profit ?? null, higherIsBetter: true })
     rows.push(
         { key: 'other_income', label: 'Other income', kind: 'line', cur: r.income_adjustments?.total ?? 0, prev: p ? (p.income_adjustments?.total ?? 0) : null, higherIsBetter: true, items: r.income_adjustments?.breakdown },
-        { key: 'expenses', label: 'Operating expenses', note: plIncludeCogs.value ? undefined : 'Includes inventory purchases', kind: 'less', cur: r.expenses.total, prev: p?.expenses.total ?? null, higherIsBetter: false, items: r.expenses.breakdown },
+        { key: 'expenses', label: 'Operating expenses', kind: 'less', cur: r.expenses.total, prev: p?.expenses.total ?? null, higherIsBetter: false, items: r.expenses.breakdown },
+        ...((r.inventory_losses?.total ?? 0) !== 0 || (p && (p.inventory_losses?.total ?? 0) !== 0)
+            ? [{ key: 'inventory_losses', label: 'Inventory losses', note: 'Waste and stock missing at a count', kind: 'less' as const, cur: r.inventory_losses?.total ?? 0, prev: p ? (p.inventory_losses?.total ?? 0) : null, higherIsBetter: false, items: r.inventory_losses?.breakdown }]
+            : []),
         { key: 'payroll', label: 'Payroll', kind: 'less', cur: r.payroll?.total ?? 0, prev: p ? (p.payroll?.total ?? 0) : null, higherIsBetter: false, items: r.payroll?.breakdown },
         { key: 'payouts', label: 'Profit payouts', kind: 'less', cur: r.payout_share?.total ?? 0, prev: p ? (p.payout_share?.total ?? 0) : null, higherIsBetter: false, items: r.payout_share?.breakdown },
         { key: 'net_profit', label: r.net_profit >= 0 ? 'Net profit' : 'Net loss', note: `${r.net_margin}% margin`, kind: 'total', cur: r.net_profit, prev: p?.net_profit ?? null, higherIsBetter: true },
@@ -384,11 +385,9 @@ const plKpis = computed(() => {
     const kpis = [
         { label: 'Net revenue', value: r.revenue.net_revenue, prev: p?.revenue.net_revenue ?? 0, higherIsBetter: true, note: `${r.revenue.order_count} paid orders`, tone: '' },
     ]
-    if (plIncludeCogs.value) {
-        kpis.push({ label: 'Gross profit', value: r.gross_profit, prev: p?.gross_profit ?? 0, higherIsBetter: true, note: `${r.gross_margin}% margin`, tone: '' })
-    }
+    kpis.push({ label: 'Gross profit', value: r.gross_profit, prev: p?.gross_profit ?? 0, higherIsBetter: true, note: `${r.gross_margin}% margin`, tone: '' })
     kpis.push(
-        { label: 'Total costs', value: plCosts(r), prev: p ? plCosts(p) : 0, higherIsBetter: false, note: plIncludeCogs.value ? 'COGS, expenses, payroll, payouts' : 'Expenses, payroll, payouts', tone: '' },
+        { label: 'Total costs', value: plCosts(r), prev: p ? plCosts(p) : 0, higherIsBetter: false, note: 'COGS, expenses, losses, payroll, payouts', tone: '' },
         { label: r.net_profit >= 0 ? 'Net profit' : 'Net loss', value: r.net_profit, prev: p?.net_profit ?? 0, higherIsBetter: true, note: `${r.net_margin}% margin`, tone: r.net_profit >= 0 ? 'is-surplus' : 'is-deficit' },
     )
     return kpis
@@ -400,7 +399,7 @@ const plSpend = computed(() => {
     if (!r) return null
     const income = r.revenue.net_revenue + (r.income_adjustments?.total ?? 0)
     const costs = [
-        { key: 'cogs', label: 'Cost of goods', value: plIncludeCogs.value ? r.cogs.total : 0 },
+        { key: 'cogs', label: 'Cost of goods', value: r.cogs.total },
         { key: 'expenses', label: 'Expenses', value: r.expenses.total },
         { key: 'payroll', label: 'Payroll', value: r.payroll?.total ?? 0 },
         { key: 'payouts', label: 'Payouts', value: r.payout_share?.total ?? 0 },
@@ -432,7 +431,7 @@ const fmtRange = (start: string, end: string) => {
     return start === end ? s : `${s} – ${parseYmd(end).toLocaleDateString('en-PH', opts)}`
 }
 
-watch([plIncludeCogs, plCompare], () => {
+watch([plCompare], () => {
     if (tab.value === 'pl') generateReport()
 })
 
@@ -912,7 +911,7 @@ const loadFinancial = async (page = 1) => {
 const loadPL = async () => {
     const fetchPL = (start: string, end: string) =>
         api.get('/api/v1/reports/profit-loss', {
-            params: { start_date: start, end_date: end, include_cogs: plIncludeCogs.value ? 1 : 0 },
+            params: { start_date: start, end_date: end },
         })
     const prev = plCompare.value ? plPrevRange(plStartDate.value, plEndDate.value) : null
     const [cur, before] = await Promise.all([
@@ -1458,11 +1457,6 @@ onMounted(async () => {
                         <input id="pl-from" v-model="plStartDate" type="date" :max="plEndDate" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" @change="plPreset = 'custom'" /></div>
                     <div><label class="text-xs font-medium text-muted-foreground block mb-1" for="pl-to">To</label>
                         <input id="pl-to" v-model="plEndDate" type="date" :min="plStartDate" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" @change="plPreset = 'custom'" /></div>
-                    <label class="rpt-switch">
-                        <input v-model="plIncludeCogs" type="checkbox" />
-                        <span class="rpt-switch-track" aria-hidden="true"><span /></span>
-                        <span>Include COGS<small>{{ plIncludeCogs ? 'Stock bought is an asset; its cost counts when sold' : 'Stock bought counts as an expense when bought' }}</small></span>
-                    </label>
                     <label class="rpt-switch">
                         <input v-model="plCompare" type="checkbox" />
                         <span class="rpt-switch-track" aria-hidden="true"><span /></span>
@@ -2272,8 +2266,7 @@ onMounted(async () => {
                     </div>
                     <p class="rpt-footnote">
                         Cash basis: revenue counts when an order is paid, and only paid bills and expenses are deducted.
-                        <template v-if="plIncludeCogs"> Inventory purchases are stock bought, not spent. Their cost reaches profit through COGS when the food sells.</template>
-                        <template v-else> COGS is off, so inventory purchases are deducted as operating expenses when bought.</template>
+                        Inventory purchases are stock bought, not spent: their cost reaches profit through COGS when the food sells. Stock that is wasted or missing at a count is deducted as an inventory loss instead.
                     </p>
                 </section>
 

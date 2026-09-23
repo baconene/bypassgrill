@@ -1,6 +1,20 @@
 # COGS Ledger Plan
 
-Status: **Phase 0 implemented; Phase 1 shadow ledger ready for deployment** (2026-09-23)
+Status: **Phases 0-3 implemented; the cutover is armed but not switched on** (2026-09-23)
+
+## Switching the ledger on
+
+The code is in place and `cogs_ledger_start_at` is still null, so reports keep
+using the recorded order-item costs. Nothing changes until you run:
+
+```
+php artisan cogs:verify --from=2026-09-23     # review first
+php artisan cogs:cutover --at=YYYY-MM-DD      # hand COGS to the ledger
+php artisan cogs:cutover --undo               # change your mind
+```
+
+The cutover refuses any date before the shadow ledger started, because orders
+from before that have no entries and their COGS would read as zero.
 
 ## Current rollout
 
@@ -12,13 +26,32 @@ Status: **Phase 0 implemented; Phase 1 shadow ledger ready for deployment** (202
 - Duplicate order processing is prevented; historical orders are not automatically deducted again. The backfill command uses atomic per-order transactions.
 - Read-only verification: php artisan cogs:verify --from=2026-09-23 --to=2026-09-30
 
-### Deliberate shadow-mode limits
+### What the report cutover changed
 
-Production reports and order-item cost fields still use their existing calculations. The ledger records actual recipe costs alongside them; cogs:verify reports discrepancies for review. Writing ledger totals back into order_items is deferred to report cutover so this observation stage does not silently change current reports. cogs_ledger_settings records shadow_started_at; cogs_ledger_start_at remains null.
+The `include_cogs` toggle is gone from the Reports page and the API. There is
+one profit-and-loss view now: stock is an asset when bought and a cost when
+used. COGS comes from the ledger for orders created on or after
+`cogs_ledger_start_at`, and from the recorded item costs for orders before it,
+so a period spanning the cutover adds both. A new **Inventory losses** line
+deducts waste and stock missing at a count, on the date it went missing.
 
-Stock entry is now inventory-only, per the subsequent user request: starting stock, receipts, counts and waste do not create cash expenses. Their values are shown in the Inventory reports tab, filtered by movement dates, item and kind. Actual payments are recorded separately in Financial. Previously created cash entries are preserved for reconciliation. Tender-linked purchases, purchase undo, historical reclassification and switching P&L to the ledger remain later phases. The ledger does not yet drive P&L losses.
+Count *gains* are deliberately not deducted. The goal states that profit
+changes only when stock is used, and acceptance criterion 1 requires that
+adding inventory in any way leaves profit at exactly zero; counting stock up is
+a way of adding it. Gains are still recorded and shown in the Inventory reports
+tab, they simply never manufacture profit. This resolves a conflict with the
+P&L formula below, which lists `count_gain` in the losses sum.
 
-After approximately one week of live shadow observations, review missing links and item-cost differences before continuing the purchase/cash and report cutovers below. Production verification has not yet been run from this workspace.
+Profit sharing is untouched, per the updated business decision. It allocates
+cash, so it asks `ReportService` for the cash basis directly: inventory
+purchases stay inside operating expenses there and no losses are deducted.
+The two views are meant to differ, so acceptance criterion 2 no longer holds
+as written.
+
+Legacy `Inventory Stock In:`, `Initial stock:` and `Inventory Adjustment:`
+expense rows are still excluded from operating expenses by description and
+shown as a memo, so no historical rows had to be retyped. Reclassifying them
+to a dedicated type remains available as cleanup.
 
 ### Updated business decision
 

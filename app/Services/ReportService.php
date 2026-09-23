@@ -2,11 +2,14 @@
 
 namespace App\Services;
 
+use App\Enums\InventoryCostKind;
 use App\Models\FinancialTransaction;
 use App\Models\Ingredient;
+use App\Models\InventoryCostEntry;
 use App\Models\Order;
 use App\Models\OrderItem;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class ReportService
 {
@@ -88,7 +91,16 @@ class ReportService
             ->get();
     }
 
-    public function getProfitLossReport(Carbon $start, Carbon $end, bool $includeCogs = true): array
+    /**
+     * Two bases, deliberately kept apart:
+     *   accrual (default) - the profit-and-loss view. Stock is an asset when bought and
+     *     a cost when used, so COGS comes from the ledger and inventory losses stand on
+     *     their own line. This is what the Reports page and the dashboard show.
+     *   cash - what actually left the tills. Inventory purchases stay inside operating
+     *     expenses and neither COGS nor inventory losses are deducted. Profit sharing
+     *     allocates cash, so it asks for this one.
+     */
+    public function getProfitLossReport(Carbon $start, Carbon $end, bool $accrualBasis = true): array
     {
         // Revenue: sum of payment transactions in the period.
         // Using FinancialTransaction as the source (same as the chart) so P&L revenue
@@ -111,8 +123,18 @@ class ReportService
         $discounts = (float) ($orderStats->discounts ?? 0);
         $paidOrderCount = (int) ($orderStats->order_count ?? 0);
 
-        // COGS: sum of cost_subtotal on items from the same paid orders
-        $cogs = (float) OrderItem::whereIn('order_id', $paymentOrderIds)->sum('cost_subtotal');
+        // COGS: the ledger owns orders created on or after the cutover; orders from before it
+        // keep the cost recorded on their items. A period spanning the cutover adds both.
+        $cutover = DB::table('cogs_ledger_settings')->value('cogs_ledger_start_at');
+        $ledgerOrderIds = $cutover
+            ? Order::whereIn('id', $paymentOrderIds)->where('created_at', '>=', $cutover)->pluck('id')
+            : collect();
+        $legacyOrderIds = $paymentOrderIds->diff($ledgerOrderIds);
+        $ledgerCogs = $ledgerOrderIds->isEmpty() ? 0.0 : (float) InventoryCostEntry::whereIn('order_id', $ledgerOrderIds)
+            ->whereIn('kind', [InventoryCostKind::CONSUMPTION->value, InventoryCostKind::CONSUMPTION_REVERSAL->value])
+            ->sum('total_cost');
+        $legacyCogs = $legacyOrderIds->isEmpty() ? 0.0 : (float) OrderItem::whereIn('order_id', $legacyOrderIds)->sum('cost_subtotal');
+        $cogs = round($ledgerCogs + $legacyCogs, 2);
 
         // Completed orders that aren't fully paid yet — their revenue is NOT counted
         // in profit (profit recognises paid orders only). Surfaced so this excluded
@@ -123,8 +145,8 @@ class ReportService
             ->selectRaw('COUNT(*) as cnt, COALESCE(SUM(total_amount), 0) as total')
             ->first();
 
-        // Adjust COGS based on toggle: if includeCogs is false, don't deduct it from gross profit
-        $deductedCogs = $includeCogs ? $cogs : 0;
+        // Cash basis leaves COGS out of gross profit; it reports money moved, not cost used.
+        $deductedCogs = $accrualBasis ? $cogs : 0;
         $grossProfit = $netRevenue - $deductedCogs;
         $grossMargin = $netRevenue > 0 ? round(($grossProfit / $netRevenue) * 100, 2) : 0;
 
@@ -135,7 +157,7 @@ class ReportService
         $expenseBase = FinancialTransaction::where('type', 'expense')
             ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()]);
 
-        if ($includeCogs) {
+        if ($accrualBasis) {
             $expenseBase->whereNot(fn ($q) => self::whereInventoryPurchase($q));
         }
 
@@ -211,6 +233,32 @@ class ReportService
                 'transacted_at' => $e->transacted_at,
             ]);
 
+        // Inventory losses: stock used up without being sold, recognised on the date it
+        // went missing rather than when it was bought. Ledger-only, so periods before the
+        // ledger existed report zero. Never a cash movement.
+        //
+        // Count gains are deliberately left out. Finding stock is not income, and counting
+        // it up is a way of adding inventory, which must leave profit at exactly zero.
+        // Gains are still recorded in the ledger and shown in the Inventory reports tab.
+        $lossKinds = [
+            InventoryCostKind::WASTE->value,
+            InventoryCostKind::COUNT_LOSS->value,
+        ];
+        $lossBase = InventoryCostEntry::whereIn('kind', $lossKinds)
+            ->whereBetween('recognized_at', [$start->copy()->startOfDay(), $end->copy()->endOfDay()]);
+
+        $totalInvLosses = $accrualBasis ? round((float) (clone $lossBase)->sum('total_cost'), 2) : 0.0;
+        $invLossCount = $accrualBasis ? (clone $lossBase)->count() : 0;
+        $invLossBreakdown = $accrualBasis
+            ? (clone $lossBase)->orderByDesc('recognized_at')
+                ->get(['kind', 'ingredient_name', 'quantity', 'total_cost', 'recognized_at'])
+                ->map(fn ($e) => [
+                    'description' => trim(str_replace('_', ' ', $e->kind->value).': '.($e->ingredient_name ?? 'Item')),
+                    'amount' => (float) $e->total_cost,
+                    'transacted_at' => $e->recognized_at,
+                ])
+            : collect();
+
         // Profit distribution payouts (cash disbursed to shareholders)
         $payoutShareRows = FinancialTransaction::where('type', 'payout_share')
             ->whereBetween('transacted_at', [$start->startOfDay(), $end->copy()->endOfDay()])
@@ -229,7 +277,7 @@ class ReportService
                 'transacted_at' => $e->transacted_at,
             ]);
 
-        $netProfit = $grossProfit + $totalIncomeAdj - $totalExpenses - $totalPayroll - $totalPayoutShare;
+        $netProfit = $grossProfit + $totalIncomeAdj - $totalExpenses - $totalInvLosses - $totalPayroll - $totalPayoutShare;
         $totalRevenuePlusAdj = $netRevenue + $totalIncomeAdj;
         $netMargin = $totalRevenuePlusAdj > 0 ? round(($netProfit / $totalRevenuePlusAdj) * 100, 2) : 0;
 
@@ -265,10 +313,15 @@ class ReportService
             // Inventory purchases are shown separately.
             // When COGS is ON : these are asset movements (not opex); cost flows via COGS.
             // When COGS is OFF: these are already included inside 'expenses' above.
+            'inventory_losses' => [
+                'total' => $totalInvLosses,
+                'count' => $invLossCount,
+                'breakdown' => $invLossBreakdown,
+            ],
             'inventory_purchases' => [
                 'total' => $totalInvPurchases,
                 'count' => (int) ($invPurchaseRows->count ?? 0),
-                'included_in_expenses' => ! $includeCogs,  // tells the UI where they appear
+                'included_in_expenses' => ! $accrualBasis,  // tells the UI where they appear
                 'breakdown' => $invPurchaseBreakdown,
             ],
             'payroll' => [
@@ -283,7 +336,8 @@ class ReportService
             ],
             'net_profit' => $netProfit,
             'net_margin' => $netMargin,
-            'include_cogs' => $includeCogs,
+            'include_cogs' => $accrualBasis,
+            'accrual_basis' => $accrualBasis,
             // Completed-but-unpaid revenue excluded from profit (recognised on payment).
             'unpaid_completed' => [
                 'total' => (float) ($unpaidCompleted->total ?? 0),

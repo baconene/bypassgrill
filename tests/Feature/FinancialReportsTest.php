@@ -11,6 +11,8 @@ use App\Models\PaymentTender;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\PaymentService;
+use App\Services\ReportService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -111,15 +113,36 @@ class FinancialReportsTest extends TestCase
         $this->assertEquals(50, $pl['net_profit']);
     }
 
-    public function test_profit_and_loss_without_cogs_expenses_inventory_purchases(): void
+    public function test_profit_and_loss_endpoint_ignores_a_legacy_include_cogs_parameter(): void
     {
         $this->seedSeptember();
 
+        // The toggle is gone: stock is an asset when bought and a cost when used, so the
+        // endpoint answers with the accrual view whatever an old client still sends.
         $pl = $this->profitLoss(['start_date' => '2026-09-01', 'end_date' => '2026-09-30', 'include_cogs' => 0])->json();
+
+        $this->assertEquals(250, $pl['gross_profit']);
+        $this->assertEquals(100, $pl['expenses']['total']);
+        $this->assertFalse($pl['inventory_purchases']['included_in_expenses']);
+        $this->assertEquals(50, $pl['net_profit']);
+    }
+
+    public function test_cash_basis_keeps_inventory_purchases_inside_expenses(): void
+    {
+        $this->seedSeptember();
+
+        // Profit sharing allocates cash, so it asks the service for the cash basis
+        // directly. That view must keep behaving exactly as it did.
+        $pl = app(ReportService::class)->getProfitLossReport(
+            Carbon::parse('2026-09-01'),
+            Carbon::parse('2026-09-30'),
+            accrualBasis: false,
+        );
 
         $this->assertEquals(450, $pl['gross_profit']);
         $this->assertEquals(520, $pl['expenses']['total']);
         $this->assertTrue($pl['inventory_purchases']['included_in_expenses']);
+        $this->assertEquals(0, $pl['inventory_losses']['total'], 'Losses are an accrual idea, not a cash movement.');
         // 450 + 30 - 520 - 120 - 10
         $this->assertEquals(-170, $pl['net_profit']);
     }

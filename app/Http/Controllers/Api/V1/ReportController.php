@@ -122,9 +122,10 @@ class ReportController extends Controller
         $end = request()->input('end_date')
             ? Carbon::parse(request()->input('end_date'), 'Asia/Manila')
             : Carbon::now('Asia/Manila')->endOfMonth();
-        $includeCogs = request()->boolean('include_cogs', true);
 
-        return response()->json($this->reportService->getProfitLossReport($start, $end, $includeCogs));
+        // Single accrual view. Stock is an asset when bought and a cost when used, so
+        // there is nothing left for the caller to toggle.
+        return response()->json($this->reportService->getProfitLossReport($start, $end));
     }
 
     public function inventoryTransactions(): JsonResponse
