@@ -50,7 +50,38 @@ class FinancialTransactionController extends Controller {
         if ($request->end_date)           $q->whereDate('transacted_at', '<=', $request->end_date);
         if ($request->payment_tender_id)  $q->where('payment_tender_id', $request->payment_tender_id);
 
-        $paginated = $q->paginate(20);
+        // Searched here rather than in the browser, or it would only ever look at the
+        // twenty rows of the page you happen to be on. Same fields the ledger shows.
+        //
+        // ESCAPE is spelled out because SQLite has no default escape character, so a
+        // customer called "100%" would otherwise match every row in the ledger. The
+        // escape character is "!" rather than a backslash: MySQL treats a backslash as
+        // an escape inside string literals, so ESCAPE '\' there is a syntax error while
+        // SQLite needs exactly that. "!" needs no quoting on either. The column names
+        // are literals; only the term is bound.
+        if ($request->filled('search')) {
+            $term = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], trim($request->search)).'%';
+            $like = fn ($query, string $column, string $boolean = 'and') => $query
+                ->whereRaw("{$column} LIKE ? ESCAPE '!'", [$term], $boolean);
+
+            $q->where(function ($w) use ($like) {
+                $like($w, 'description');
+                $like($w, 'type', 'or');
+                $w->orWhereHas('tender', fn ($t) => $like($t, 'name'))
+                    ->orWhereHas('user', fn ($u) => $like($u, 'name'))
+                    ->orWhereHas('order', fn ($o) => $like($o, 'customer_name'));
+            });
+        }
+
+        // Sorting belongs with the paging for the same reason: sorting one page of a
+        // 29-page ledger by amount does not give you the largest amounts.
+        $sortable = ['transacted_at', 'amount', 'type', 'description'];
+        if (in_array($request->sort, $sortable, true)) {
+            $direction = $request->direction === 'asc' ? 'asc' : 'desc';
+            $q->reorder($request->sort, $direction)->orderByDesc('id');
+        }
+
+        $paginated = $q->paginate(20)->withQueryString();
         $paginated->getCollection()->transform(function ($tx) use ($balMap) {
             $tx->financial_balance = $balMap[$tx->id] ?? null;
             return $tx;

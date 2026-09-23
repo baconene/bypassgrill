@@ -620,42 +620,9 @@ const lineChart = computed(() => {
     };
 });
 
-const sortedTx = computed(() => {
-    let list = ftTransactions.value;
-    const q = ftSearch.value.trim().toLowerCase();
-
-    if (q) {
-        list = list.filter(
-            (tx) =>
-                tx.description.toLowerCase().includes(q) ||
-                tx.type.toLowerCase().includes(q) ||
-                (tx.tender?.name ?? '').toLowerCase().includes(q) ||
-                (tx.user?.name ?? '').toLowerCase().includes(q) ||
-                (tx.order?.customer_name ?? '').toLowerCase().includes(q),
-        );
-    }
-
-    const dir = ftSortDir.value === 'asc' ? 1 : -1;
-
-    return [...list].sort((a, b) => {
-        switch (ftSortKey.value) {
-            case 'transacted_at':
-                return (
-                    dir *
-                    (new Date(a.transacted_at.replace(' ', 'T')).getTime() -
-                        new Date(b.transacted_at.replace(' ', 'T')).getTime())
-                );
-            case 'amount':
-                return dir * (a.amount - b.amount);
-            case 'type':
-                return dir * a.type.localeCompare(b.type);
-            case 'description':
-                return dir * a.description.localeCompare(b.description);
-        }
-
-        return 0;
-    });
-});
+// Searching and sorting happen on the server, across the whole period rather than
+// the current page, so the rows arrive ready to render.
+const sortedTx = computed(() => ftTransactions.value);
 
 const activeFilters = computed(() => {
     const list: { key: 'type' | 'tender' | 'search'; label: string }[] = [];
@@ -692,6 +659,9 @@ const toggleSort = (key: typeof ftSortKey.value) => {
         ftSortKey.value = key;
         ftSortDir.value = 'desc';
     }
+
+    // Back to the first page: the row that now sorts first is rarely on page 9.
+    loadFinancial();
 };
 const sortMark = (key: typeof ftSortKey.value) =>
     ftSortKey.value !== key ? '↕' : ftSortDir.value === 'asc' ? '↑' : '↓';
@@ -733,6 +703,9 @@ const loadFinancial = async (page = 1) => {
                     end_date: ftEndDate.value || undefined,
                     type: ftTypeFilter.value || undefined,
                     payment_tender_id: ftTenderFilter.value || undefined,
+                    search: ftSearch.value.trim() || undefined,
+                    sort: ftSortKey.value,
+                    direction: ftSortDir.value,
                     include_asset_deductions: includeAssetDeductions.value,
                 },
             }),
@@ -843,18 +816,27 @@ const setTypeFilter = (type: string) => {
 const clearFilter = (key: 'type' | 'tender' | 'search') => {
     if (key === 'search') {
         ftSearch.value = '';
-
-        return;
-    }
-
-    if (key === 'type') {
+    } else if (key === 'type') {
         ftTypeFilter.value = '';
     } else {
         ftTenderFilter.value = '';
     }
 
+    // Clearing the search has to reload too, now that the server does the matching.
     loadFinancial();
 };
+// Typing now costs a request, so wait for a pause before asking. Each keystroke
+// cancels the one before it, and the reload starts at page 1 rather than leaving
+// you on page 2 of a result set that no longer has one.
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(ftSearch, () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadFinancial(), 300);
+});
+
+onBeforeUnmount(() => clearTimeout(searchTimer));
+
 const clearAllFilters = () => {
     ftTypeFilter.value = '';
     ftTenderFilter.value = '';
@@ -1576,11 +1558,11 @@ onBeforeUnmount(() => {
                         <h2>Transactions</h2>
                     </div>
                     <small>{{
-                        ftSearch
-                            ? `${sortedTx.length} match${sortedTx.length !== 1 ? 'es' : ''} on this page`
-                            : ftMeta?.total != null
-                              ? `${ftMeta.total} in this period`
-                              : ''
+                        ftMeta?.total == null
+                            ? ''
+                            : activeFilters.length
+                              ? `${ftMeta.total} match${ftMeta.total !== 1 ? 'es' : ''} in this period`
+                              : `${ftMeta.total} in this period`
                     }}</small>
                 </div>
 
