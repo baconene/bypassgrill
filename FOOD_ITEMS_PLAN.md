@@ -1,6 +1,6 @@
 # Food Items Plan
 
-Status: **Proposed, not started** (2026-09-24)
+Status: **Proposed, not started. Open questions answered 2026-09-24** (2026-09-24)
 
 ## What you asked for
 
@@ -12,8 +12,36 @@ Status: **Proposed, not started** (2026-09-24)
 
 ## The goal in one line
 
-Stop asking "do we have pork?" when the real question is "do we have grilled
-pork left?". Raw stock answers the first; only prepped food answers the second.
+Stop asking "do we have pork?" when the real question is "do we have pork chops
+left?". Raw stock answers the first; only prepped food answers the second.
+
+## The worked example
+
+Everything below should be read against this, because it is the case that has to
+work:
+
+| | |
+| --- | --- |
+| Ingredient | **Pork**, 5.000 kg on hand at ₱280.00/kg |
+| Food | **Pork Chop**, unit `piece`, component: 0.250 kg Pork |
+| Product | **Pork Chop**, ₱180.00, recipe: 1 × Food *Pork Chop* |
+
+A morning's work:
+
+1. Kitchen prepares a batch. Someone opens **Pork Chop** in Inventory, presses
+   **Produce**, enters a batch of 20 and an actual yield of 20.
+2. Stock: Pork falls 5.000 → 0.000 kg. Pork Chop rises 0 → 20 pieces.
+3. Cost: 20 × 0.250 × ₱280.00 = ₱1,400.00 leaves Pork, ₱1,400.00 arrives in Pork
+   Chop, giving ₱70.00 a piece. **Profit does not move.**
+4. POS shows Pork Chop available. It would show sold out at 0 pieces even with a
+   full sack of pork in the chiller, which is the behaviour being bought here.
+5. A chop sells for ₱180.00. Pork Chop falls to 19. COGS takes ₱70.00. Gross
+   profit on that sale is ₱110.00.
+6. Five chops are left at close. They stay. Tomorrow's batch blends with them at
+   whatever pork costs then.
+
+Step 3 is the one to hold on to: the ₱1,400.00 moves between two assets and
+never reaches profit. Profit moves at step 5, once, for the chop that sold.
 
 ## The decision that shapes everything else
 
@@ -130,6 +158,23 @@ where the component may now be a Food. The recipe-cost drift shown on the
 Products page keeps working and becomes more useful, since a Food's cost moves
 every time a batch is produced at a different price.
 
+### Stock carries to the next day
+
+Unsold food stays. There is no nightly write-off, and spoilage is recorded as
+waste when it actually happens, the same as any other stock.
+
+That makes the weighted average do real work: five chops left at ₱70.00 plus a
+fresh twenty at ₱74.00 gives twenty-five at ₱73.20, and COGS uses ₱73.20 from
+then on. This is the correct treatment and needs no new code — it is the same
+blend `recordTransaction` already performs on Stock In.
+
+One limitation to know about rather than discover: **weighted average cannot
+tell you which chop is from yesterday.** It is a costing method, not a shelf-life
+tracker. Age has to be read from the production entries in the Food's stock
+history, which do carry their dates. If food safety needs the system to enforce
+age, that is FIFO costing and a separate piece of work the COGS plan explicitly
+ruled out.
+
 ## POS availability
 
 No code change. A product built from Food is sold out when the Food is at zero,
@@ -144,6 +189,37 @@ One consequence to accept deliberately: **a Food at zero is sold out even if the
 ingredients to make more are sitting right there.** That is the point — it
 reflects the kitchen, where unprepped pork is not a dish. Producing a batch
 clears it.
+
+### "Food is the product"
+
+Read as: a Food and the Product that sells it are one and the same dish, paired
+one to one. The Product record stays — price, category, modifiers, image and the
+order line all live there, and orders key on `product_id`. What changes is that
+its recipe is a single line, **1 × the Food of the same name**, instead of a list
+of raw ingredients.
+
+So the usual shape is:
+
+```
+Product "Pork Chop"  →  1 × Food "Pork Chop"  →  0.250 kg Ingredient "Pork"
+```
+
+Two things follow, and both are wanted:
+
+- Availability and COGS for the product are simply the Food's quantity and the
+  Food's cost. Nothing is averaged or inferred.
+- A product may still list raw ingredients, or mix them with a Food — a chop
+  plated with rice is `1 × Food Pork Chop` plus `0.200 kg Rice`. The 1:1 case is
+  the common one, not the only one.
+
+Because the pairing is a convention rather than a constraint, creating a Food
+should offer to create the matching Product in the same step, prefilled with a
+one-line recipe. Skipping that step is what leaves a Food nobody can sell.
+
+**If this is wrong** — if you meant a Food should appear in the POS with its own
+price and no Product record behind it — say so before Phase 1, because it is a
+much larger change: price, category, modifiers and the order line would all have
+to move onto inventory items.
 
 ## UI
 
@@ -190,10 +266,21 @@ Useful on its own: the POS can already be driven off a counted Food.
 weighted average, the shortage check. Undo a production run, matching Undo Stock
 In.
 
+No end-of-day write-off: food carries over, and spoilage is ordinary waste.
+
 ### Phase 3: Products use Food
 
-Widen the picker, group it, convert a first product by hand and watch a full
-sale through the ledger before converting more.
+Widen the picker, group it, and offer to create the paired Product when a Food
+is created. Convert Pork Chop by hand first and watch a full sale through the
+ledger before converting anything else.
+
+**Converting an ingredient that is really a prepped dish.** If something is
+tracked today as an ingredient but is actually food — counted in pieces, made
+rather than bought — it becomes a Food by changing `item_type`. Stock, cost,
+history, ledger entries and any recipe rows pointing at it all survive, because
+none of them key on the type. Add its components afterwards. The only care
+needed is that products whose recipes name it keep working throughout, which
+they do: the recipe row is unchanged.
 
 ### Phase 4: Reporting
 
@@ -218,41 +305,55 @@ batches, yield variance, cost per unit over time.
    product, whenever you choose.
 7. **A Food is counted like any other stock.** Production is the good path;
    a count adjustment stays available for when someone forgets to record one.
+8. **Food carries to the next day.** No nightly write-off; spoilage is waste,
+   recorded when it happens. *(Answered 2026-09-24.)*
+9. **A Food is paired one to one with the Product that sells it**, and the
+   Product record stays. *(Answered 2026-09-24, as interpreted above.)*
+10. **Stock cannot go negative and a sale beyond stock is refused**, with no
+    manager override. This is today's behaviour in
+    [InventoryCostService::consume](app/Services/InventoryCostService.php) and it
+    stands. If a chop is sold that the system does not have, the fix is a count,
+    which leaves a trail. *(Answered 2026-09-24.)*
 
-## Questions I could not answer from the code
-
-These change the work materially, and guessing would be worse than asking.
+## Questions still open
 
 1. **Does a Food ever get bought ready-made?** Buying pre-marinated pork would
    mean a Food needs a plain Stock In with a purchase price as well as
-   production. Easy to allow, but only if it happens.
-2. **Does prepped food carry over to the next day, or is it written off?** If it
-   is written off nightly, an end-of-day write-off action is worth building in
-   Phase 2, and spoilage becomes a number you will want reported.
-3. **Is a Food ever sold directly, without a product wrapping it?** The plan
-   assumes not: a product always sits in front.
-4. **Do you want a Food to be sellable while stock is negative?** Today stock
-   cannot go negative and an order is refused. Prepped food is where a manager
-   most often wants to override.
+   production. Not answered, and the worked example does not cover it, so the
+   default is **produced only**: a Food's stock comes from production runs or
+   counts, not purchases. Allowing purchases later is small — it is the Stock In
+   that already exists — but until then the Produce screen is the only way in,
+   which is worth knowing before someone goes looking for the button.
 
 ## Verification
 
 **Tests** (`tests/Feature/FoodItemsTest.php`)
 
-- Producing a batch changes net profit by exactly **0**, at every stage of the
-  ledger cutover.
-- Producing 30 servings consumes exactly 30 × each component quantity.
-- Yield below plan raises cost per unit; the weighted average blends correctly
-  against existing stock.
-- A batch that outruns component stock is refused and names the short component.
-- Selling a product built from Food writes one consumption entry against the
-  Food, at the Food's cost, not the components'.
-- Cancelling that order reverses it at the original cost.
-- A product built from Food reads as sold out when the Food hits zero, even with
-  components in stock.
-- Sum of `production_input` + `production_output` for a run is 0.
+The worked example is the first test, end to end, asserting each figure in it:
+5kg of pork becomes 20 chops at ₱70.00, profit does not move, one chop sells for
+₱180.00, COGS takes ₱70.00, and gross profit on the sale is ₱110.00.
+
+Then the edges:
+
+- Producing a batch changes net profit by exactly **0**, both before the ledger
+  cutover and after it.
+- Producing 20 chops consumes exactly 20 × each component quantity.
+- Yield below plan raises cost per unit: 20 planned, 18 actual, ₱1,400.00 of
+  pork, gives ₱77.78 a chop.
+- **Carry-over**: 5 chops left at ₱70.00 plus 20 produced at ₱74.00 gives 25 at
+  ₱73.20, and the next sale takes ₱73.20 to COGS.
+- A batch that outruns component stock is refused and names Pork.
+- Selling the product writes one consumption entry against the Food, at the
+  Food's cost, not the pork's.
+- Cancelling that order reverses it at the original cost even if a batch has
+  been produced at a different cost in between.
+- The product reads sold out when chops hit zero, with pork still in stock.
+- A sale beyond available chops is refused, with no override.
+- `production_input` + `production_output` for a run sum to 0.
 - A Food cannot be added as a component of a Food.
-- Undoing a production run restores components and removes the Food.
+- Undoing a production run restores the pork and removes the chops.
+- An ingredient converted to a Food keeps its stock, cost, history and the
+  recipe rows pointing at it.
 
 **Command**: extend `cogs:verify` so every `production_output` has matching
 inputs netting to zero.
@@ -266,3 +367,5 @@ inputs netting to zero.
    every peso of COGS traces to a sale of it.
 4. The components builder on the Food screen and the recipe builder on the
    product screen are the same component.
+5. The worked example runs end to end and every figure in it is asserted by a
+   test, including the carry-over blend the following day.
