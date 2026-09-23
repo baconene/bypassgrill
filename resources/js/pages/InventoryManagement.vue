@@ -10,6 +10,7 @@ import {
     ShoppingBag,
     HelpCircle,
     Trash2,
+    Undo2,
 } from 'lucide-vue-next';
 import { ref, computed } from 'vue';
 import { toast } from 'vue-sonner';
@@ -72,6 +73,7 @@ interface Transaction {
     new_quantity: number;
     user_name: string;
     reference: string | null;
+    can_undo?: boolean;
     order_id: number | null;
     notes: string | null;
     created_at: string;
@@ -162,6 +164,33 @@ const submitAdjustment = async () => {
         toast.error(err.response?.data?.message ?? 'Adjustment failed');
     } finally {
         submitting.value = false;
+    }
+};
+
+// ─── Undo Stock In ────────────────────────────────────────────────────────────
+const undoingId = ref<number | null>(null);
+const pendingUndo = ref<Transaction | null>(null);
+
+const confirmUndo = async () => {
+    const tx = pendingUndo.value;
+
+    if (!tx) return;
+
+    undoingId.value = tx.id;
+
+    try {
+        await api.post(`/api/v1/inventory/transactions/${tx.id}/undo`);
+        toast.success(
+            `Stock In of ${tx.quantity} ${tx.ingredient_name} undone`,
+        );
+        pendingUndo.value = null;
+        router.reload({ only: ['ingredients', 'recentTransactions'] });
+    } catch (err: any) {
+        toast.error(
+            err.response?.data?.message ?? 'Could not undo this Stock In',
+        );
+    } finally {
+        undoingId.value = null;
     }
 };
 
@@ -603,6 +632,19 @@ const typeColor: Record<string, string> = {
                                         tx.order_id
                                     }}
                                 </a>
+                                <button
+                                    v-if="tx.can_undo"
+                                    :disabled="undoingId === tx.id"
+                                    class="mt-1 inline-flex items-center gap-1 rounded-full border border-red-200 px-2 py-0.5 text-xs font-semibold text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
+                                    @click="pendingUndo = tx"
+                                >
+                                    <Undo2 class="h-3 w-3" />
+                                    {{
+                                        undoingId === tx.id
+                                            ? 'Undoing…'
+                                            : 'Undo Stock In'
+                                    }}
+                                </button>
                             </div>
                             <div class="shrink-0 text-right">
                                 <p
@@ -1446,6 +1488,66 @@ const typeColor: Record<string, string> = {
                         >
                             {{ savingEdit ? 'Saving…' : 'Save Changes' }}
                         </button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
+
+    <!-- Undo Stock In Confirmation -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div
+                v-if="pendingUndo"
+                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
+                @click.self="pendingUndo = null"
+            >
+                <div
+                    class="w-full overflow-hidden rounded-t-2xl bg-background shadow-2xl sm:max-w-sm sm:rounded-2xl"
+                >
+                    <div class="p-5">
+                        <div class="mb-3 flex items-center gap-3">
+                            <div
+                                class="shrink-0 rounded-full bg-red-100 p-2.5 dark:bg-red-950/40"
+                            >
+                                <Undo2
+                                    class="h-5 w-5 text-red-600 dark:text-red-400"
+                                />
+                            </div>
+                            <div>
+                                <h3 class="text-base font-bold">
+                                    Undo Stock In
+                                </h3>
+                                <p class="text-sm text-muted-foreground">
+                                    For stock that was never actually received.
+                                </p>
+                            </div>
+                        </div>
+                        <p class="mb-5 text-sm text-muted-foreground">
+                            This removes
+                            <span class="font-semibold text-foreground"
+                                >{{ pendingUndo.quantity }}
+                                {{ pendingUndo.ingredient_name }}</span
+                            >
+                            from stock again and cancels its cost entry. The
+                            average cost goes back to what it was. Financial is
+                            not affected.
+                        </p>
+                        <div class="flex gap-2">
+                            <button
+                                @click="pendingUndo = null"
+                                class="flex-1 rounded-lg border py-2.5 text-sm font-semibold transition hover:bg-muted"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                @click="confirmUndo"
+                                :disabled="undoingId !== null"
+                                class="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-60"
+                            >
+                                {{ undoingId !== null ? 'Undoing…' : 'Undo' }}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

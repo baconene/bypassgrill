@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreInventoryAdjustmentRequest;
 use App\Http\Resources\InventoryResource;
 use App\Models\Ingredient;
+use App\Models\InventoryTransaction;
 use App\Repositories\InventoryRepository;
 use App\Services\InventoryService;
 use Illuminate\Http\JsonResponse;
@@ -107,6 +108,17 @@ class InventoryController extends Controller
         );
 
         return response()->json(['transaction' => $transaction], 201);
+    }
+
+    public function undo(InventoryTransaction $transaction): JsonResponse
+    {
+        if (! auth()->user()?->hasAnyRole('admin', 'auditor')) {
+            abort(403, 'Unauthorized');
+        }
+
+        return response()->json([
+            'transaction' => $this->inventoryService->undoStockIn($transaction),
+        ], 201);
     }
 
     public function transactions(Ingredient $ingredient): JsonResponse

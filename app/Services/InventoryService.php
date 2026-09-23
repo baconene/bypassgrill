@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\InventoryCostKind;
+use App\Enums\InventoryCostSource;
 use App\Enums\InventoryTransactionType;
 use App\Models\Ingredient;
 use App\Models\InventoryCostEntry;
@@ -164,6 +166,77 @@ class InventoryService
                     recordCost: false,
                 );
             }
+        }, 3);
+    }
+
+    /**
+     * Reverse a Stock In that should never have been recorded: the stock leaves again,
+     * the receipt's share of the weighted average is unwound, and a signed
+     * purchase_reversal cancels the original purchase entry. The unique reversal_of_id
+     * makes a second undo impossible. Stock already consumed cannot be undone.
+     */
+    public function undoStockIn(InventoryTransaction $transaction): InventoryTransaction
+    {
+        return DB::transaction(function () use ($transaction) {
+            $transaction = InventoryTransaction::whereKey($transaction->id)->lockForUpdate()->firstOrFail();
+            abort_unless($transaction->type === InventoryTransactionType::STOCK_IN->value, 422, 'Only a Stock In can be undone.');
+
+            $purchase = InventoryCostEntry::where('inventory_transaction_id', $transaction->id)
+                ->where('kind', InventoryCostKind::PURCHASE->value)
+                ->lockForUpdate()
+                ->first();
+            abort_unless($purchase, 422, 'This movement has no purchase entry to undo.');
+            abort_if(
+                InventoryCostEntry::where('reversal_of_id', $purchase->id)->exists(),
+                422,
+                'This Stock In has already been undone.'
+            );
+
+            $ingredient = Ingredient::withTrashed()->whereKey($transaction->ingredient_id)->lockForUpdate()->firstOrFail();
+            $quantity = (float) $transaction->quantity;
+            $available = (float) $ingredient->current_quantity;
+            abort_if(
+                $available < $quantity,
+                422,
+                'Only '.rtrim(rtrim(number_format($available, 3, '.', ''), '0'), '.').' '.$ingredient->unit.' of '
+                    .$ingredient->name.' is left, so this Stock In has already been used. Record waste or a count instead.'
+            );
+
+            // Unwind this receipt's contribution to the weighted average, using the
+            // quantity and cost still on hand before the stock leaves again.
+            $unitCost = (float) $purchase->unit_cost;
+            $remaining = round($available - $quantity, 3);
+            $restoredCost = $remaining > 0
+                ? max(0, round((($available * (float) $ingredient->cost_per_unit) - ($quantity * $unitCost)) / $remaining, 4))
+                : (float) $ingredient->cost_per_unit;
+
+            $reference = 'undo_stock_in_'.$transaction->id;
+            $reversal = $this->recordTransaction(
+                $ingredient,
+                $quantity,
+                InventoryTransactionType::STOCK_OUT,
+                $reference,
+                'Undo Stock In #'.$transaction->id,
+                recordCost: false,
+            );
+            $ingredient->update(['cost_per_unit' => $restoredCost]);
+
+            InventoryCostEntry::create([
+                'kind' => InventoryCostKind::PURCHASE_REVERSAL->value,
+                'source' => InventoryCostSource::INGREDIENT->value,
+                'inventory_transaction_id' => $reversal->id,
+                'ingredient_id' => $ingredient->id,
+                'ingredient_name' => $ingredient->name,
+                'reference' => $reference,
+                'quantity' => -$quantity,
+                'unit_cost' => $unitCost,
+                'total_cost' => -(float) $purchase->total_cost,
+                'reversal_of_id' => $purchase->id,
+                'user_id' => Auth::id(),
+                'recognized_at' => now(),
+            ]);
+
+            return $reversal;
         }, 3);
     }
 
