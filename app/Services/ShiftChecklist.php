@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\DepositControl;
 use App\Models\FinancialTransaction;
 use App\Models\InventoryTransaction;
+use App\Models\PayrollRecord;
 use App\Models\ShiftChecklistMark;
 use App\Models\User;
 use Carbon\CarbonInterface;
@@ -18,7 +19,7 @@ use Illuminate\Support\Carbon;
  */
 class ShiftChecklist
 {
-    public const MANUAL_STEPS = ['stock', 'expenses'];
+    public const MANUAL_STEPS = ['stock', 'expenses', 'payroll'];
 
     public function for(User $user, ?CarbonInterface $date = null): array
     {
@@ -35,6 +36,8 @@ class ShiftChecklist
         // there is none, so nobody is invited to "undo" a movement that exists.
         $stockMovements = InventoryTransaction::whereDate('created_at', $day)->count();
         $expenses = $this->expenseCount($day);
+        $payrollReleased = PayrollRecord::where('status', 'paid')->whereDate('paid_at', $day)->count();
+        $payrollWaiting = PayrollRecord::whereIn('status', ['pending', 'approved'])->count();
 
         $steps = [
             [
@@ -71,6 +74,17 @@ class ShiftChecklist
                 'detail' => $this->expenseDetail($expenses, $marks),
                 'manual' => $expenses === 0,
                 'marked' => in_array('expenses', $marks, true),
+            ],
+            [
+                'key' => 'payroll',
+                'title' => 'Create the payroll and release the salary',
+                'hint' => 'Prepare the payroll, then mark it paid so the cash leaves the ledger.',
+                'href' => '/hris',
+                'phase' => 'after',
+                'done' => $payrollReleased > 0 || in_array('payroll', $marks, true),
+                'detail' => $this->payrollDetail($payrollReleased, $payrollWaiting, $marks),
+                'manual' => $payrollReleased === 0,
+                'marked' => in_array('payroll', $marks, true),
             ],
             [
                 'key' => 'close_deposit',
@@ -129,6 +143,21 @@ class ShiftChecklist
         return in_array('expenses', $marks, true)
             ? 'Marked as done; nothing was spent before opening.'
             : 'No expense recorded today.';
+    }
+
+    private function payrollDetail(int $released, int $waiting, array $marks): string
+    {
+        if ($released > 0) {
+            return $released.' payroll record'.($released === 1 ? '' : 's').' released today.';
+        }
+
+        if ($waiting > 0) {
+            return $waiting.' payroll record'.($waiting === 1 ? '' : 's').' waiting to be released.';
+        }
+
+        return in_array('payroll', $marks, true)
+            ? 'Marked as done; no salary was due today.'
+            : 'No payroll released today.';
     }
 
     private function expenseCount(string $day): int

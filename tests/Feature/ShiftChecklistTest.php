@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\DepositControl;
+use App\Models\Employee;
 use App\Models\FinancialTransaction;
 use App\Models\Ingredient;
 use App\Models\InventoryTransaction;
+use App\Models\PayrollRecord;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -34,13 +36,18 @@ class ShiftChecklistTest extends TestCase
         $payload = $this->actingAs($this->cashier())->getJson('/api/v1/shift-checklist')->assertOk()->json();
 
         $this->assertSame(0, $payload['done']);
-        $this->assertSame(4, $payload['total']);
+        $this->assertSame(5, $payload['total']);
         $this->assertSame('Open the deposit control', $payload['next']);
         foreach ($payload['steps'] as $step) {
             $this->assertFalse($step['done']);
         }
-        $this->assertSame([false, true, true, false], array_column($payload['steps'], 'manual'));
-        $this->assertSame(['before', 'before', 'before', 'after'], array_column($payload['steps'], 'phase'));
+        $this->assertSame([false, true, true, true, false], array_column($payload['steps'], 'manual'));
+        $this->assertSame(['before', 'before', 'before', 'after', 'after'], array_column($payload['steps'], 'phase'));
+        // Salary is released before the drawer is closed.
+        $this->assertSame(
+            ['open_deposit', 'stock', 'expenses', 'payroll', 'close_deposit'],
+            array_column($payload['steps'], 'key'),
+        );
     }
 
     public function test_steps_tick_themselves_from_what_the_shift_recorded(): void
@@ -72,10 +79,24 @@ class ShiftChecklistTest extends TestCase
         $this->assertFalse($steps['stock']['manual']);
         $this->assertFalse($steps['expenses']['manual']);
 
+        $this->assertFalse($steps['payroll']['done']);
+
+        $employee = Employee::create([
+            'name' => 'Ana Cruz', 'position' => 'Cashier', 'base_rate' => 600,
+            'is_active' => true, 'hired_at' => now()->subYear(),
+        ]);
+        PayrollRecord::create([
+            'employee_id' => $employee->id, 'period_start' => now()->subWeek(), 'period_end' => now(),
+            'days_worked' => 6, 'gross_pay' => 3600, 'deductions' => 0, 'net_pay' => 3600,
+            'status' => 'paid', 'paid_at' => now(),
+        ]);
+
         $shift->update(['closed_at' => now(), 'submitted_at' => now(), 'active_slot' => null]);
         $done = $this->getJson('/api/v1/shift-checklist')->json();
-        $this->assertSame(4, $done['done']);
+        $this->assertSame(5, $done['done']);
         $this->assertNull($done['next']);
+        $this->assertStringContainsString('1 payroll record released', $this->steps($done)['payroll']['detail']);
+        $this->assertFalse($this->steps($done)['payroll']['manual']);
     }
 
     public function test_a_step_with_nothing_to_record_can_be_ticked_and_untickeded_by_hand(): void
@@ -121,9 +142,27 @@ class ShiftChecklistTest extends TestCase
         $this->actingAs($cook)->getJson('/api/v1/shift-checklist')->assertForbidden();
     }
 
+    public function test_payroll_waiting_to_be_released_is_called_out(): void
+    {
+        $employee = Employee::create([
+            'name' => 'Ben Reyes', 'position' => 'Cook', 'base_rate' => 550,
+            'is_active' => true, 'hired_at' => now()->subYear(),
+        ]);
+        PayrollRecord::create([
+            'employee_id' => $employee->id, 'period_start' => now()->subWeek(), 'period_end' => now(),
+            'days_worked' => 6, 'gross_pay' => 3300, 'deductions' => 0, 'net_pay' => 3300,
+            'status' => 'approved',
+        ]);
+
+        $steps = $this->steps($this->actingAs($this->cashier())->getJson('/api/v1/shift-checklist')->json());
+
+        $this->assertFalse($steps['payroll']['done']);
+        $this->assertStringContainsString('1 payroll record waiting to be released', $steps['payroll']['detail']);
+    }
+
     public function test_the_dashboard_carries_the_checklist(): void
     {
         $this->actingAs($this->cashier())->get('/dashboard')->assertOk()
-            ->assertInertia(fn ($page) => $page->where('shiftChecklist.total', 4)->where('shiftChecklist.done', 0));
+            ->assertInertia(fn ($page) => $page->where('shiftChecklist.total', 5)->where('shiftChecklist.done', 0));
     }
 }
