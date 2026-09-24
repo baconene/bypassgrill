@@ -11,10 +11,13 @@ import {
     HelpCircle,
     Trash2,
     Undo2,
+    ChefHat,
 } from 'lucide-vue-next';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import InventoryCostReport from '@/components/InventoryCostReport.vue';
+import RecipeBuilder from '@/components/RecipeBuilder.vue';
+import type { RecipeRow } from '@/components/RecipeBuilder.vue';
 import api from '@/utils/api';
 
 defineOptions({
@@ -35,6 +38,16 @@ interface Ingredient {
     min_quantity: number;
     cost_per_unit: number;
     is_low_stock: boolean;
+    /** Set for Food: what it is made of, with each line's cost. */
+    components?: {
+        ingredient_id: number;
+        ingredient_name: string;
+        quantity: number;
+        unit: string;
+        cost_per_unit: number;
+    }[];
+    /** Food only: cost of one unit at today's component prices. */
+    component_cost?: number;
 }
 
 const ITEM_TYPES = [
@@ -58,7 +71,19 @@ const ITEM_TYPES = [
         label: 'Supply',
         color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
     },
+    {
+        // Made here rather than bought: a dish prepped from ingredients, counted in
+        // servings, and what the POS checks before letting a product be sold.
+        value: 'food',
+        label: 'Food',
+        color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+    },
 ];
+const money = (v: number) =>
+    new Intl.NumberFormat('en-PH', {
+        style: 'currency',
+        currency: 'PHP',
+    }).format(v || 0);
 const itemTypeColor = (t: string) =>
     ITEM_TYPES.find((x) => x.value === t)?.color ??
     'bg-muted text-muted-foreground';
@@ -74,6 +99,7 @@ interface Transaction {
     user_name: string;
     reference: string | null;
     can_undo?: boolean;
+    undo_production?: boolean;
     order_id: number | null;
     notes: string | null;
     created_at: string;
@@ -174,14 +200,18 @@ const pendingUndo = ref<Transaction | null>(null);
 const confirmUndo = async () => {
     const tx = pendingUndo.value;
 
-    if (!tx) return;
+    if (!tx) {
+        return;
+    }
 
     undoingId.value = tx.id;
 
     try {
-        await api.post(`/api/v1/inventory/transactions/${tx.id}/undo`);
+        await api.post(
+            `/api/v1/inventory/transactions/${tx.id}/${tx.undo_production ? 'undo-production' : 'undo'}`,
+        );
         toast.success(
-            `Stock In of ${tx.quantity} ${tx.ingredient_name} undone`,
+            `${tx.undo_production ? 'Production' : 'Stock In'} of ${tx.quantity} ${tx.ingredient_name} undone`,
         );
         pendingUndo.value = null;
         router.reload({ only: ['ingredients', 'recentTransactions'] });
@@ -194,7 +224,7 @@ const confirmUndo = async () => {
     }
 };
 
-// ─── Add Ingredient ───────────────────────────────────────────────────────────
+// ─── Add item ─────────────────────────────────────────────────────────────────
 const showAddIngredient = ref(false);
 const addingIngredient = ref(false);
 const newIngredient = ref({
@@ -205,6 +235,11 @@ const newIngredient = ref({
     min_quantity: 0,
     cost_per_unit: 0,
 });
+const newComponents = ref<RecipeRow[]>([]);
+
+// The form is for whichever type is selected, so it should say so. It read
+// "Add Ingredient" with Tool chosen.
+const addingFood = computed(() => newIngredient.value.item_type === 'food');
 
 const openAddIngredient = () => {
     newIngredient.value = {
@@ -215,6 +250,7 @@ const openAddIngredient = () => {
         min_quantity: 0,
         cost_per_unit: 0,
     };
+    newComponents.value = [];
     showAddIngredient.value = true;
 };
 
@@ -225,17 +261,125 @@ const submitAddIngredient = async () => {
         return;
     }
 
+    const components = newComponents.value.filter(
+        (c) => c.ingredient_id > 0 && c.quantity > 0,
+    );
+
+    if (
+        addingFood.value &&
+        (components.length === 0 ||
+            components.length !== newComponents.value.length)
+    ) {
+        toast.warning('A Food needs at least one ingredient');
+
+        return;
+    }
+
     addingIngredient.value = true;
 
     try {
-        await api.post('/api/v1/inventory', newIngredient.value);
+        await api.post('/api/v1/inventory', {
+            ...newIngredient.value,
+            ...(addingFood.value
+                ? { current_quantity: 0, cost_per_unit: 0 }
+                : {}),
+            components: addingFood.value ? components : undefined,
+        });
         toast.success(`${newIngredient.value.name} added to inventory`);
         showAddIngredient.value = false;
         router.reload({ only: ['ingredients'] });
     } catch (err: any) {
-        toast.error(err.response?.data?.message ?? 'Failed to add ingredient');
+        toast.error(
+            err.response?.data?.message ??
+                `Failed to add ${itemTypeLabel(newIngredient.value.item_type).toLowerCase()}`,
+        );
     } finally {
         addingIngredient.value = false;
+    }
+};
+
+// ─── Produce a batch ──────────────────────────────────────────────────────────
+// Consumes the components and brings the food in at total cost over actual yield,
+// which is a transfer between two assets. It never touches profit; that happens
+// when the food is sold.
+const producing = ref<Ingredient | null>(null);
+const produceBatch = ref<number>(1);
+const produceYield = ref<number>(1);
+const produceNotes = ref('');
+const producingNow = ref(false);
+
+const openProduce = (item: Ingredient) => {
+    producing.value = item;
+    produceBatch.value = 1;
+    produceYield.value = 1;
+    produceNotes.value = '';
+};
+
+// Yield follows the batch until someone says otherwise.
+watch(produceBatch, (batch, previous) => {
+    if (produceYield.value === previous) {
+        produceYield.value = batch;
+    }
+});
+
+const produceComponents = computed(() => producing.value?.components ?? []);
+
+const produceCost = computed(() =>
+    produceComponents.value.reduce(
+        (sum, c) =>
+            sum + c.cost_per_unit * c.quantity * (produceBatch.value || 0),
+        0,
+    ),
+);
+
+const produceUnitCost = computed(() =>
+    produceYield.value > 0 ? produceCost.value / produceYield.value : 0,
+);
+const produceAverage = computed(() => {
+    const item = producing.value;
+
+    if (!item || !(produceYield.value > 0)) {
+        return 0;
+    }
+
+    const quantity = Math.max(0, item.current_quantity);
+
+    return (
+        (quantity * item.cost_per_unit + produceCost.value) /
+        (quantity + produceYield.value)
+    );
+});
+
+const submitProduce = async () => {
+    if (!producing.value) {
+        return;
+    }
+
+    if (!(produceBatch.value > 0) || !(produceYield.value > 0)) {
+        toast.warning('Enter a batch size and a yield above zero');
+
+        return;
+    }
+
+    producingNow.value = true;
+
+    try {
+        await api.post(`/api/v1/inventory/${producing.value.id}/produce`, {
+            batch: produceBatch.value,
+            yield: produceYield.value,
+            notes: produceNotes.value || undefined,
+        });
+        toast.success(
+            `${produceYield.value} ${producing.value.unit} of ${producing.value.name} produced`,
+        );
+        producing.value = null;
+        router.reload({ only: ['ingredients', 'recentTransactions'] });
+    } catch (err: any) {
+        toast.error(
+            err.response?.data?.message ?? 'Could not produce this batch',
+        );
+    } finally {
+        producingNow.value = false;
     }
 };
 
@@ -249,9 +393,17 @@ const editForm = ref({
     cost_per_unit: 0,
 });
 const savingEdit = ref(false);
+const editComponents = ref<RecipeRow[]>([]);
 
 const openEdit = (item: Ingredient) => {
     editingIngredient.value = item;
+    editComponents.value = (item.components ?? []).map(
+        ({ ingredient_id, quantity, unit }) => ({
+            ingredient_id,
+            quantity,
+            unit,
+        }),
+    );
     editForm.value = {
         name: item.name,
         item_type: item.item_type ?? 'ingredient',
@@ -269,10 +421,15 @@ const submitEdit = async () => {
     savingEdit.value = true;
 
     try {
-        await api.patch(
-            `/api/v1/inventory/${editingIngredient.value.id}`,
-            editForm.value,
-        );
+        await api.patch(`/api/v1/inventory/${editingIngredient.value.id}`, {
+            ...editForm.value,
+            cost_per_unit:
+                editForm.value.item_type === 'food'
+                    ? undefined
+                    : editForm.value.cost_per_unit,
+            components:
+                editForm.value.item_type === 'food' ? editComponents.value : [],
+        });
         toast.success(`${editForm.value.name} updated`);
         editingIngredient.value = null;
         router.reload({ only: ['ingredients'] });
@@ -347,7 +504,7 @@ const typeColor: Record<string, string> = {
                     Keep the kitchen stocked and every movement accounted for.
                 </p>
             </div>
-            <button class="inventory-primary" @click="showAddIngredient = true">
+            <button class="inventory-primary" @click="openAddIngredient">
                 <Plus class="h-4 w-4" /> Add item
             </button>
         </header>
@@ -549,6 +706,14 @@ const typeColor: Record<string, string> = {
                                     {{ item.unit }}
                                 </p>
                             </div>
+                            <button
+                                v-if="item.item_type === 'food'"
+                                @click.stop="openProduce(item)"
+                                class="shrink-0 rounded-full p-1.5 text-muted-foreground transition hover:bg-muted"
+                                :title="'Produce a batch of ' + item.name"
+                            >
+                                <ChefHat class="h-3.5 w-3.5" />
+                            </button>
                             <button
                                 @click.stop="openEdit(item)"
                                 class="shrink-0 rounded-full p-1.5 text-muted-foreground transition hover:bg-muted"
@@ -780,11 +945,19 @@ const typeColor: Record<string, string> = {
                                     v-model.number="
                                         newIngredient.current_quantity
                                     "
+                                    :disabled="addingFood"
                                     type="number"
                                     min="0"
                                     step="0.01"
                                     class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                                 />
+                                <p
+                                    v-if="addingFood"
+                                    class="mt-1 text-xs text-muted-foreground"
+                                >
+                                    Starts empty. Use Produce after saving to
+                                    add a batch.
+                                </p>
                             </div>
                             <div>
                                 <label
@@ -811,12 +984,33 @@ const typeColor: Record<string, string> = {
                                 min="0"
                                 step="0.01"
                                 placeholder="0.00"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                                :disabled="addingFood"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50"
                             />
                             <p class="mt-1 text-xs text-muted-foreground">
-                                Used to calculate product cost and COGS for
-                                P&amp;L reports.
+                                <template v-if="addingFood">
+                                    A Food is costed from its ingredients each
+                                    time a batch is produced, so this is not set
+                                    by hand.
+                                </template>
+                                <template v-else>
+                                    Used to calculate product cost and COGS for
+                                    P&amp;L reports.
+                                </template>
                             </p>
+                        </div>
+
+                        <!-- Food is made here, so it is built from ingredients the
+                             same way a product is. -->
+                        <div v-if="addingFood" class="rounded-xl border p-4">
+                            <RecipeBuilder
+                                v-model="newComponents"
+                                :ingredients="props.ingredients"
+                                :allow-food="false"
+                                label="What this Food is made of"
+                                hint="Quantities per finished unit, multiplied by the batch size. Food cannot contain Food."
+                                empty-text="Add at least one ingredient so the batch can be costed."
+                            />
                         </div>
                     </div>
                     <div class="flex gap-3 border-t p-5">
@@ -832,7 +1026,9 @@ const typeColor: Record<string, string> = {
                             class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                         >
                             {{
-                                addingIngredient ? 'Adding…' : 'Add Ingredient'
+                                addingIngredient
+                                    ? 'Adding…'
+                                    : `Add ${itemTypeLabel(newIngredient.item_type)}`
                             }}
                         </button>
                     </div>
@@ -1462,6 +1658,7 @@ const typeColor: Record<string, string> = {
                             >
                             <input
                                 v-model.number="editForm.cost_per_unit"
+                                :disabled="editForm.item_type === 'food'"
                                 type="number"
                                 min="0"
                                 step="0.0001"
@@ -1473,6 +1670,14 @@ const typeColor: Record<string, string> = {
                                 calculate product COGS for P&amp;L reports.
                             </p>
                         </div>
+                        <RecipeBuilder
+                            v-if="editForm.item_type === 'food'"
+                            v-model="editComponents"
+                            :ingredients="props.ingredients"
+                            :allow-food="false"
+                            label="Ingredients per finished unit"
+                            hint="Used for future batches. Existing batch costs stay unchanged."
+                        />
                     </div>
                     <div class="flex gap-3 border-t p-5">
                         <button
@@ -1516,10 +1721,18 @@ const typeColor: Record<string, string> = {
                             </div>
                             <div>
                                 <h3 class="text-base font-bold">
-                                    Undo Stock In
+                                    {{
+                                        pendingUndo.undo_production
+                                            ? 'Undo production'
+                                            : 'Undo Stock In'
+                                    }}
                                 </h3>
                                 <p class="text-sm text-muted-foreground">
-                                    For stock that was never actually received.
+                                    {{
+                                        pendingUndo.undo_production
+                                            ? 'Return the ingredients and remove the finished food.'
+                                            : 'For stock that was never actually received.'
+                                    }}
                                 </p>
                             </div>
                         </div>
@@ -1529,9 +1742,13 @@ const typeColor: Record<string, string> = {
                                 >{{ pendingUndo.quantity }}
                                 {{ pendingUndo.ingredient_name }}</span
                             >
-                            from stock again and cancels its cost entry. The
-                            average cost goes back to what it was. Financial is
-                            not affected.
+                            from stock again and reverses its recorded cost.
+                            <template v-if="pendingUndo.undo_production"
+                                >The original ingredients return to
+                                stock.</template
+                            >
+                            The remaining average cost is recalculated.
+                            Financial is not affected.
                         </p>
                         <div class="flex gap-2">
                             <button
@@ -1548,6 +1765,189 @@ const typeColor: Record<string, string> = {
                                 {{ undoingId !== null ? 'Undoing…' : 'Undo' }}
                             </button>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
+
+    <!-- Produce a batch -->
+    <Teleport to="body">
+        <Transition name="fade">
+            <div
+                v-if="producing"
+                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center overflow-y-auto sm:items-center sm:p-4"
+                @click.self="producing = null"
+            >
+                <div
+                    class="w-full overflow-y-auto rounded-t-2xl bg-background shadow-2xl sm:max-w-lg sm:rounded-2xl"
+                >
+                    <div class="flex items-center justify-between border-b p-5">
+                        <div>
+                            <h3 class="text-lg font-bold">
+                                Produce {{ producing.name }}
+                            </h3>
+                            <p class="text-xs text-muted-foreground">
+                                Uses up ingredients and adds finished
+                                {{ producing.unit }}.
+                            </p>
+                        </div>
+                        <button
+                            @click="producing = null"
+                            class="rounded-full p-1.5 transition hover:bg-muted"
+                            aria-label="Close"
+                        >
+                            <X class="h-4 w-4" />
+                        </button>
+                    </div>
+
+                    <div class="space-y-4 p-5">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label
+                                    for="produce-batch"
+                                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                                    >Batch size</label
+                                >
+                                <input
+                                    id="produce-batch"
+                                    v-model.number="produceBatch"
+                                    type="number"
+                                    min="0.001"
+                                    step="1"
+                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label
+                                    for="produce-yield"
+                                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                                    >Actual yield</label
+                                >
+                                <input
+                                    id="produce-yield"
+                                    v-model.number="produceYield"
+                                    type="number"
+                                    min="0.001"
+                                    step="1"
+                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="produceComponents.length === 0"
+                            class="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground"
+                        >
+                            {{ producing.name }} has no ingredients yet. Add
+                            them before producing a batch.
+                        </div>
+                        <div v-else class="overflow-hidden rounded-xl border">
+                            <table class="w-full text-xs">
+                                <thead>
+                                    <tr>
+                                        <th class="text-left">Uses</th>
+                                        <th class="text-right">Quantity</th>
+                                        <th class="text-right">Cost</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="c in produceComponents"
+                                        :key="c.ingredient_id"
+                                    >
+                                        <td>{{ c.ingredient_name }}</td>
+                                        <td class="text-right tabular-nums">
+                                            {{
+                                                (
+                                                    c.quantity *
+                                                    (produceBatch || 0)
+                                                ).toFixed(3)
+                                            }}
+                                            {{ c.unit }}
+                                        </td>
+                                        <td class="text-right tabular-nums">
+                                            {{
+                                                money(
+                                                    c.cost_per_unit *
+                                                        c.quantity *
+                                                        (produceBatch || 0),
+                                                )
+                                            }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <dl
+                            v-if="produceComponents.length"
+                            class="grid grid-cols-2 gap-3 rounded-xl border bg-muted/20 p-4 text-sm"
+                        >
+                            <div>
+                                <dt class="text-xs text-muted-foreground">
+                                    Batch cost
+                                </dt>
+                                <dd class="font-bold tabular-nums">
+                                    {{ money(produceCost) }}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs text-muted-foreground">
+                                    Cost per {{ producing.unit }}
+                                </dt>
+                                <dd class="font-bold tabular-nums">
+                                    {{ money(produceUnitCost) }}
+                                </dd>
+                            </div>
+                            <div class="col-span-2">
+                                <dt class="text-xs text-muted-foreground">
+                                    Average cost after this batch
+                                </dt>
+                                <dd class="font-bold tabular-nums">
+                                    {{ money(produceAverage) }}
+                                </dd>
+                            </div>
+                        </dl>
+
+                        <div>
+                            <label
+                                for="produce-notes"
+                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                                >Notes (optional)</label
+                            >
+                            <input
+                                id="produce-notes"
+                                v-model="produceNotes"
+                                type="text"
+                                placeholder="e.g. morning prep"
+                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                            />
+                        </div>
+
+                        <p class="text-xs text-muted-foreground">
+                            Producing moves value from ingredients into
+                            {{ producing.name }}. It does not change profit;
+                            that happens when the food is sold.
+                        </p>
+                    </div>
+
+                    <div class="flex gap-3 border-t p-5">
+                        <button
+                            @click="producing = null"
+                            class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            @click="submitProduce"
+                            :disabled="
+                                producingNow || produceComponents.length === 0
+                            "
+                            class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                        >
+                            {{ producingNow ? 'Producing…' : 'Produce batch' }}
+                        </button>
                     </div>
                 </div>
             </div>

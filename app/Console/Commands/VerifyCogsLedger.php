@@ -50,11 +50,22 @@ class VerifyCogsLedger extends Command
             }
         });
         $totals = (clone $entries)->selectRaw('kind, source, COUNT(*) as entries, SUM(total_cost) as cost')->groupBy('kind', 'source')->get();
-        $this->info('SHADOW MODE: production reports still use recorded order-item costs.');
+        // Inspect complete runs even when their movements straddle a date boundary.
+        $productionReferences = (clone $entries)->whereIn('kind', ['production_input', 'production_output'])->select('reference');
+        $unbalancedRuns = InventoryCostEntry::whereIn('reference', $productionReferences)
+            ->whereIn('kind', ['production_input', 'production_output'])
+            ->selectRaw("reference, SUM(total_cost) as net_cost, SUM(CASE WHEN kind = 'production_output' THEN 1 ELSE 0 END) as outputs, SUM(CASE WHEN kind = 'production_input' THEN 1 ELSE 0 END) as inputs")
+            ->groupBy('reference')->get()
+            ->filter(fn ($run) => abs((float) $run->net_cost) >= 0.005 || (int) $run->outputs !== 1 || (int) $run->inputs < 1)->count();
+        $cutover = DB::table('cogs_ledger_settings')->value('cogs_ledger_start_at');
+        $this->info($cutover
+            ? 'LEDGER CUTOVER: '.$cutover.'; earlier orders retain recorded item costs.'
+            : 'SHADOW MODE: production reports still use recorded order-item costs.');
         $this->table(['Kind', 'Source', 'Entries', 'Signed cost'], $totals->map(fn ($r) => [$r->kind->value, $r->source->value, $r->entries, number_format((float) $r->cost, 2)])->all());
         $this->line("Missing movement links: {$missing}; uncosted new items: {$uncosted}");
+        $this->line("Unbalanced production runs: {$unbalancedRuns}");
         $this->line("Item cost differences versus current report: {$differences} (expected with stale product costs; review before cutover)");
 
-        return $missing || $uncosted ? self::FAILURE : self::SUCCESS;
+        return $missing || $uncosted || $unbalancedRuns ? self::FAILURE : self::SUCCESS;
     }
 }

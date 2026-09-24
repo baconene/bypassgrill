@@ -54,6 +54,9 @@ const names: Record<string, string> = {
     waste: 'Waste',
     count_loss: 'Count loss / stock removed',
     count_gain: 'Count gain',
+    production_input: 'Production ingredients',
+    production_output: 'Finished food produced',
+    food: 'Prepared food',
     ingredient: 'Tracked ingredients',
     untracked_ingredient: 'Untracked recipe ingredients',
     product_fallback: 'Product cost fallback',
@@ -159,6 +162,8 @@ onMounted(() => load());
                             'waste',
                             'count_loss',
                             'count_gain',
+                            'production_input',
+                            'production_output',
                         ]"
                         :key="k"
                         :value="k"

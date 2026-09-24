@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
-import { toast } from 'vue-sonner'
-import api from '@/utils/api'
 import { Plus, Pencil, Trash2, X, PlusCircle, MinusCircle, FolderPlus, Check, ImageIcon, Upload, Calculator, Eye, TrendingUp, PackagePlus, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { ref, computed, watch } from 'vue'
+import { toast } from 'vue-sonner'
+import RecipeBuilder from '@/components/RecipeBuilder.vue'
+import api from '@/utils/api'
 
 defineOptions({
     layout: {
@@ -64,7 +65,11 @@ const removeImage  = ref(false)
 
 const onImageChange = (e: Event) => {
     const file = (e.target as HTMLInputElement).files?.[0]
-    if (!file) return
+
+    if (!file) {
+return
+}
+
     imageFile.value    = file
     imagePreview.value = URL.createObjectURL(file)
     removeImage.value  = false
@@ -86,7 +91,9 @@ const DRIFT_TOLERANCE = 0.005
 
 type CostState = 'priced' | 'drifted' | 'norecipe'
 const costState = (p: Product): CostState => {
-    if (!p.has_recipe) return 'norecipe'
+    if (!p.has_recipe) {
+return 'norecipe'
+}
 
     return Math.abs(p.cost_drift) > DRIFT_TOLERANCE ? 'drifted' : 'priced'
 }
@@ -107,7 +114,11 @@ const activeCount = computed(() => props.products.filter((p) => p.is_active).len
 const blendedMargin = computed(() => {
     const priced = props.products.filter((p) => p.price > 0)
     const revenue = priced.reduce((s, p) => s + p.price, 0)
-    if (revenue <= 0) return null
+
+    if (revenue <= 0) {
+return null
+}
+
     const cost = priced.reduce((s, p) => s + p.cost, 0)
 
     return ((revenue - cost) / revenue) * 100
@@ -169,9 +180,17 @@ const marginOf = (p: Product) =>
 const filtered = computed(() => {
     const q = search.value.toLowerCase().trim()
     const rows = props.products.filter((p) => {
-        if (categoryFilter.value !== null && p.category_id !== categoryFilter.value) return false
-        if (attentionOnly.value !== null && costState(p) !== attentionOnly.value) return false
-        if (!q) return true
+        if (categoryFilter.value !== null && p.category_id !== categoryFilter.value) {
+return false
+}
+
+        if (attentionOnly.value !== null && costState(p) !== attentionOnly.value) {
+return false
+}
+
+        if (!q) {
+return true
+}
 
         return (
             p.name.toLowerCase().includes(q) ||
@@ -193,7 +212,10 @@ const filtered = computed(() => {
     return [...rows].sort((a, b) => {
         const x = pick(a)
         const y = pick(b)
-        if (x === y) return a.name.localeCompare(b.name)
+
+        if (x === y) {
+return a.name.localeCompare(b.name)
+}
 
         return (x > y ? 1 : -1) * dir
     })
@@ -248,6 +270,7 @@ const recosting = ref(false)
 
 const recalculateAll = async () => {
     recosting.value = true
+
     try {
         const { data } = await api.post('/api/v1/products/recalculate-costs')
         toast.success(
@@ -298,24 +321,17 @@ const openEdit = (p: Product) => {
 }
 
 // ─── Recipe row helpers ───────────────────────────────────────────────────────
-const addRecipeRow = () => recipes.value.push({ ingredient_id: 0, quantity: 1, unit: '' })
-const removeRecipeRow = (i: number) => recipes.value.splice(i, 1)
-const ingredientOptions = computed(() =>
-    props.ingredients.filter((x) => !x.item_type || x.item_type === 'ingredient')
-)
-
-const onIngredientChange = (i: number) => {
-    const ing = props.ingredients.find((x) => x.id === recipes.value[i].ingredient_id)
-    if (ing) recipes.value[i].unit = ing.unit
-}
-
 // ─── Recipe cost calculation ──────────────────────────────────────────────────
 const calculatingCost = ref(false)
 
 const recipeCostPreview = computed(() => {
     return recipes.value.reduce((sum, row) => {
-        if (!row.ingredient_id || row.quantity <= 0) return sum
+        if (!row.ingredient_id || row.quantity <= 0) {
+return sum
+}
+
         const ing = props.ingredients.find((x) => x.id === row.ingredient_id)
+
         return sum + (ing ? (ing.cost_per_unit ?? 0) * row.quantity : 0)
     }, 0)
 })
@@ -324,6 +340,7 @@ const calculateCostFromRecipes = async () => {
     // Client-side preview is instant; if editing an existing product, also persist via API
     if (editingId.value) {
         calculatingCost.value = true
+
         try {
             const res = await api.post(`/api/v1/products/${editingId.value}/calculate-cost`)
             form.value.cost = res.data.cost
@@ -357,31 +374,41 @@ const removeComboItem = (i: number) => comboItems.value.splice(i, 1)
 const comboPricePreview = computed(() =>
     comboItems.value.reduce((sum, c) => {
         const p = props.products.find((x) => x.id === c.product_id)
+
         return sum + (p ? Number(p.price) * c.quantity : 0)
     }, 0),
 )
 const comboCostPreview = computed(() =>
     comboItems.value.reduce((sum, c) => {
         const p = props.products.find((x) => x.id === c.product_id)
+
         return sum + (p ? Number(p.cost) * c.quantity : 0)
     }, 0),
 )
 
 const mergeCombo = () => {
     const valid = comboItems.value.filter((c) => c.product_id > 0 && c.quantity > 0)
+
     if (valid.length === 0) {
         toast.warning('Add at least one component product')
+
         return
     }
 
     // Merge recipes by ingredient_id, summing quantity × component quantity.
     const merged = new Map<number, RecipeRow>()
+
     for (const c of valid) {
         const p = props.products.find((x) => x.id === c.product_id)
-        if (!p) continue
+
+        if (!p) {
+continue
+}
+
         for (const r of p.recipes) {
             const addQty = Number(r.quantity) * c.quantity
             const existing = merged.get(r.ingredient_id)
+
             if (existing) {
                 existing.quantity = Number((existing.quantity + addQty).toFixed(3))
             } else {
@@ -408,28 +435,49 @@ const mergeCombo = () => {
 
 // ─── Margin helpers ───────────────────────────────────────────────────────────
 const marginPct = (price: number, cost: number): string => {
-    if (price <= 0) return '—'
+    if (price <= 0) {
+return '—'
+}
+
     return ((price - cost) / price * 100).toFixed(1) + '%'
 }
 
 const marginClass = (price: number, cost: number): string => {
-    if (price <= 0) return 'text-muted-foreground'
+    if (price <= 0) {
+return 'text-muted-foreground'
+}
+
     const m = (price - cost) / price * 100
-    if (m >= 50) return 'text-green-600 dark:text-green-400 font-semibold'
-    if (m >= 25) return 'text-yellow-600 dark:text-yellow-400 font-semibold'
+
+    if (m >= 50) {
+return 'text-green-600 dark:text-green-400 font-semibold'
+}
+
+    if (m >= 25) {
+return 'text-yellow-600 dark:text-yellow-400 font-semibold'
+}
+
     return 'text-red-600 dark:text-red-400 font-semibold'
 }
 
 const marginLabel = (p: Product): string => {
-    if (p.price <= 0) return '—'
+    if (p.price <= 0) {
+return '—'
+}
 
     return (((p.price - effectiveCost(p)) / p.price) * 100).toFixed(1) + '%'
 }
 
 const marginTone = (p: Product): string => {
-    if (p.price <= 0) return 'product-sub'
+    if (p.price <= 0) {
+return 'product-sub'
+}
+
     const m = ((p.price - effectiveCost(p)) / p.price) * 100
-    if (m < 0) return 'margin-loss'
+
+    if (m < 0) {
+return 'margin-loss'
+}
 
     return m >= 40 ? 'margin-good' : 'margin-thin'
 }
@@ -437,14 +485,18 @@ const marginTone = (p: Product): string => {
 // ─── View modal ───────────────────────────────────────────────────────────────
 const viewProduct = ref<Product | null>(null)
 
-const openView = (p: Product) => { viewProduct.value = p }
+const openView = (p: Product) => {
+ viewProduct.value = p
+}
 
 // ─── Submit ───────────────────────────────────────────────────────────────────
 const submitForm = async () => {
     if (!form.value.name || !form.value.category_id || form.value.price <= 0) {
         toast.warning('Name, category, and a price greater than 0 are required')
+
         return
     }
+
     submitting.value = true
     const validRecipes = recipes.value.filter((r) => r.ingredient_id > 0 && r.quantity > 0)
 
@@ -462,8 +514,14 @@ const submitForm = async () => {
         fd.append(`recipes[${i}][quantity]`,      String(r.quantity))
         fd.append(`recipes[${i}][unit]`,           r.unit || '')
     })
-    if (imageFile.value)  fd.append('image', imageFile.value)
-    if (removeImage.value) fd.append('remove_image', '1')
+
+    if (imageFile.value)  {
+fd.append('image', imageFile.value)
+}
+
+    if (removeImage.value) {
+fd.append('remove_image', '1')
+}
 
     try {
         if (editingId.value) {
@@ -473,6 +531,7 @@ const submitForm = async () => {
             await api.post('/api/v1/products', fd)
             toast.success('Product created')
         }
+
         showModal.value = false
         router.reload({ only: ['products'] })
     } catch (err: any) {
@@ -489,8 +548,12 @@ const newCatName = ref('')
 const addingCat  = ref(false)
 
 const submitNewCategory = async () => {
-    if (!newCatName.value.trim()) return
+    if (!newCatName.value.trim()) {
+return
+}
+
     addingCat.value = true
+
     try {
         const res = await api.post('/api/v1/categories', { name: newCatName.value.trim() })
         const created: Category = { id: res.data.id, name: res.data.name }
@@ -510,8 +573,12 @@ const submitNewCategory = async () => {
 const confirmDelete = (p: Product) => (deleteTarget.value = p)
 
 const doDelete = async () => {
-    if (!deleteTarget.value) return
+    if (!deleteTarget.value) {
+return
+}
+
     deleting.value = true
+
     try {
         await api.delete(`/api/v1/products/${deleteTarget.value.id}`)
         toast.success(`${deleteTarget.value.name} deleted`)
@@ -995,37 +1062,12 @@ const doDelete = async () => {
                         </div>
 
                         <!-- Recipe / Inventory Linking -->
-                        <div>
-                            <div class="flex items-center justify-between mb-3">
-                                <div>
-                                    <p class="text-sm font-semibold">Inventory Ingredients</p>
-                                    <p class="text-xs text-muted-foreground">Deducted from stock when ordered.</p>
-                                </div>
-                                <button @click="addRecipeRow"
-                                    class="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium hover:bg-muted">
-                                    <PlusCircle class="h-3.5 w-3.5" /> Add Ingredient
-                                </button>
-                            </div>
-                            <div v-if="recipes.length === 0" class="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
-                                No ingredients linked — inventory won't be deducted for this product.
-                            </div>
-                            <div v-else class="space-y-2">
-                                <div v-for="(row, i) in recipes" :key="i" class="flex items-center gap-2 rounded-lg border bg-muted/20 p-2">
-                                    <select v-model="row.ingredient_id" @change="onIngredientChange(i)"
-                                        class="flex-1 rounded-md border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary">
-                                        <option :value="0" disabled>Select ingredient…</option>
-                                        <option v-for="ing in ingredientOptions" :key="ing.id" :value="ing.id">{{ ing.name }} ({{ ing.unit }})</option>
-                                    </select>
-                                    <input v-model.number="row.quantity" type="number" min="0.001" step="0.001" placeholder="Qty"
-                                        class="w-24 rounded-md border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary" />
-                                    <input v-model="row.unit" type="text" placeholder="unit"
-                                        class="w-16 rounded-md border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary" />
-                                    <button @click="removeRecipeRow(i)" class="text-muted-foreground hover:text-red-500">
-                                        <MinusCircle class="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                        <RecipeBuilder
+                            v-model="recipes"
+                            :ingredients="props.ingredients"
+                            hint="Deducted from stock when ordered. Food is prepped stock; ingredients are raw."
+                            empty-text="No ingredients linked — inventory won't be deducted for this product."
+                        />
 
                         <!-- Combo Meal Builder -->
                         <div class="rounded-xl border border-dashed p-4">

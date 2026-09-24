@@ -39,6 +39,7 @@ class FoodProductionService
 
             $food = Ingredient::withTrashed()->whereKey($food->id)->lockForUpdate()->firstOrFail();
             abort_unless($food->isFood(), 422, 'Only a Food item can be produced.');
+            abort_if($food->trashed() || ! $food->is_active, 422, 'Archived Food cannot be produced.');
 
             $components = $food->components()->with('ingredient')->orderBy('ingredient_id')->get();
             abort_if($components->isEmpty(), 422, 'Give '.$food->name.' its ingredients before producing it.');
@@ -178,13 +179,25 @@ class FoodProductionService
                     );
                 }
 
-                $tx = $item->track_inventory
+                $remaining = round((float) $item->current_quantity - $quantity, 3);
+                $remainingValue = (float) $item->current_quantity * (float) $item->cost_per_unit - (float) $entry->total_cost;
+                abort_if($isOutput && $remaining > 0 && $remainingValue < -0.01, 422, 'This batch value has already been used. Record a count instead.');
+
+                // Reverse original movements, not today's tracking preference. Returned
+                // ingredients enter at their original cost; remove the output's value
+                // from the blended Food cost rather than leaving its average behind.
+                $tx = $entry->inventory_transaction_id !== null
                     ? $inventory->recordTransaction(
                         $item, $quantity,
                         $isOutput ? InventoryTransactionType::STOCK_OUT : InventoryTransactionType::STOCK_IN,
                         $reference.'_undo', 'Undo production run', recordCost: false,
+                        unitCost: $isOutput ? null : (float) $entry->unit_cost,
                     )
                     : null;
+
+                if ($isOutput && $tx && $remaining > 0) {
+                    $item->update(['cost_per_unit' => max(0, round($remainingValue / $remaining, 4))]);
+                }
 
                 InventoryCostEntry::create([
                     'kind' => $entry->kind->value, 'source' => $entry->source->value,

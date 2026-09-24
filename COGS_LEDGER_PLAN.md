@@ -22,9 +22,11 @@ from before that have no entries and their COGS would read as zero.
 - Order edits restore the old items and rebuild through OrderService in one transaction. Failed edits roll back both stock and cost entries.
 - New stock movements and order consumption write signed inventory_cost_entries with ingredient cost snapshots and explicit order/item links. Reversals link uniquely to their original entries.
 - Tracked and untracked recipes are costed; products without recipes use Product.cost. Stock In accepts a purchase unit cost and updates the weighted average.
-- Initial stock now has a stock transaction and linked cost/cash history. Valuation uses quantity multiplied by cost.
+- Initial stock has a stock transaction and linked cost history; cash payments are recorded separately in Financial. Valuation uses quantity multiplied by cost.
 - Duplicate order processing is prevented; historical orders are not automatically deducted again. The backfill command uses atomic per-order transactions.
 - Read-only verification: php artisan cogs:verify --from=2026-09-23 --to=2026-09-30
+- Food production transfers value from raw ingredients into finished stock without affecting profit or cash. The shared recipe builder supports Food in product recipes, and Inventory supports recipe editing, production and undo.
+- Order reversals restore Food quantity and original cost; production undo reverses its weighted-average contribution. Verification checks balanced production transfers and shows the configured ledger cutover when present. See FOOD_ITEMS_PLAN.md for remaining production reporting work.
 
 ### What the report cutover changed
 

@@ -78,12 +78,14 @@ class InventoryCostService
             ->orderBy('ingredient_id')->lockForUpdate()->get();
         foreach ($entries as $entry) {
             $tx = null;
-            if ($entry->source->value === 'ingredient') {
+            // Restore what actually moved, including Food, even if tracking changed later.
+            if ($entry->inventory_transaction_id !== null) {
                 $ingredient = Ingredient::withTrashed()->whereKey($entry->ingredient_id)->lockForUpdate()->firstOrFail();
                 $tx = app(InventoryService::class)->recordTransaction(
                     $ingredient, (float) $entry->quantity, InventoryTransactionType::STOCK_IN,
                     'order_'.$order->id.'_'.$action, ucfirst($action).' Order #'.$order->id,
                     recordCost: false, orderId: $order->id, orderItemId: $entry->order_item_id,
+                    unitCost: (float) $entry->unit_cost,
                 );
             }
             InventoryCostEntry::create([

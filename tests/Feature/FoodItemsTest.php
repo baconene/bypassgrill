@@ -203,6 +203,70 @@ class FoodItemsTest extends TestCase
         app(InventoryService::class)->restoreOrderStock($order->fresh(), 'cancel');
 
         $this->assertEquals(0, InventoryCostEntry::whereIn('kind', ['consumption', 'consumption_reversal'])->sum('total_cost'));
+        $this->assertEquals(40, $this->chop->fresh()->current_quantity);
+        $this->assertEqualsWithDelta(85, $this->chop->fresh()->cost_per_unit, 0.0001);
+        app(InventoryService::class)->restoreOrderStock($order->fresh(), 'delete');
+        $this->assertEquals(40, $this->chop->fresh()->current_quantity, 'A repeated restore must not return stock twice.');
+    }
+
+    public function test_edit_restores_food_even_after_tracking_is_disabled(): void
+    {
+        $this->produce(20);
+        $order = $this->sell(2);
+        $this->chop->update(['track_inventory' => false]);
+        app(InventoryService::class)->restoreOrderStock($order, 'edit');
+        $this->assertEquals(20, $this->chop->fresh()->current_quantity);
+    }
+
+    public function test_untracked_food_is_not_added_to_stock_on_cancel(): void
+    {
+        $this->chop->update(['track_inventory' => false, 'cost_per_unit' => 70]);
+        $order = $this->sell();
+        $this->chop->update(['track_inventory' => true]);
+        app(InventoryService::class)->restoreOrderStock($order, 'cancel');
+        $this->assertEquals(0, $this->chop->fresh()->current_quantity);
+    }
+
+    public function test_undo_unwinds_food_average_and_returns_raw_stock_at_original_cost(): void
+    {
+        $this->produce(20);
+        $this->restock(400);
+        $output = $this->produce(20);
+        $this->restock(500);
+
+        app(FoodProductionService::class)->undo($output);
+
+        $this->assertEquals(20, $this->chop->fresh()->current_quantity);
+        $this->assertEquals(70, $this->chop->fresh()->cost_per_unit);
+        $this->assertEquals(10, $this->pork->fresh()->current_quantity);
+        $this->assertEquals(450, $this->pork->fresh()->cost_per_unit);
+        $this->assertDatabaseCount('financial_transactions', 0);
+    }
+
+    public function test_verifier_checks_production_transfers_and_their_reversals(): void
+    {
+        $output = $this->produce(20);
+        app(FoodProductionService::class)->undo($output);
+        $this->artisan('cogs:verify')->expectsOutputToContain('Unbalanced production runs: 0')->assertSuccessful();
+
+        InventoryCostEntry::where('reference', $output->reference)->where('kind', 'production_input')->update(['total_cost' => -1300]);
+        $this->artisan('cogs:verify')->expectsOutputToContain('Unbalanced production runs: 1')->assertFailed();
+    }
+
+    public function test_inventory_page_exposes_recipes_and_undo_for_production_outputs_only(): void
+    {
+        Permission::findOrCreate('view inventory', 'web');
+        auth()->user()->givePermissionTo('view inventory');
+        $output = $this->produce(20);
+        $this->get('/inventory')->assertOk()->assertInertia(fn ($page) => $page
+            ->component('InventoryManagement')
+            ->where('ingredients', fn ($items) => collect($items)->firstWhere('id', $this->chop->id)['components'][0]['ingredient_id'] === $this->pork->id)
+            ->where('recentTransactions', function ($transactions) use ($output) {
+                $rows = collect($transactions);
+
+                return $rows->firstWhere('id', $output->id)['undo_production'] === true
+                    && $rows->where('can_undo', true)->count() === 1;
+            }));
     }
 
     public function test_the_product_is_sold_out_when_the_food_runs_out(): void

@@ -1,6 +1,15 @@
 # Food Items Plan
 
-Status: **Proposed, not started. Open questions answered 2026-09-24** (2026-09-24)
+Status: **Food model, production, shared recipe editor and reversal safeguards implemented** (2026-09-24)
+
+## Implementation update
+
+- Inventory can create and edit Food recipes using the same mobile-friendly builder as Products.
+- Food cards provide Produce; the dialog previews ingredients, actual yield, batch cost and the resulting average cost. Recent history offers Undo for production output.
+- Cancelling, editing or deleting an order restores tracked Food at its original consumption cost. Repeating a restoration does not add stock twice; changing tracking settings does not rewrite past movements.
+- Undo production removes the batch value from remaining Food and returns raw stock at its original cost. Production and undo never create cash expenses.
+- `cogs:verify` checks that complete production transfers and their reversals balance to zero and contain both input and output entries.
+- Still pending: optional paired Product creation and a dedicated production report with planned-versus-actual yield. Current production movements remain available in the inventory cost ledger. Ledger cutover is a separate operational step, not automatically enabled by these changes.
 
 ## What you asked for
 

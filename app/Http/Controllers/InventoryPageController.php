@@ -13,7 +13,8 @@ class InventoryPageController extends Controller
 {
     public function index(): Response
     {
-        $ingredients = Ingredient::where('is_active', true)
+        $ingredients = Ingredient::with('components.ingredient')
+            ->where('is_active', true)
             ->orderBy('name')
             ->get()
             ->map(fn ($i) => [
@@ -25,6 +26,17 @@ class InventoryPageController extends Controller
                 'min_quantity' => (float) $i->min_quantity,
                 'cost_per_unit' => (float) ($i->cost_per_unit ?? 0),
                 'is_low_stock' => $i->current_quantity <= $i->min_quantity,
+                // Only a Food has components. The cost is what one unit would cost to
+                // make now, against cost_per_unit, which is the average of batches
+                // already made.
+                'component_cost' => $i->isFood() ? $i->componentCost() : null,
+                'components' => $i->components->map(fn ($c) => [
+                    'ingredient_id' => $c->ingredient_id,
+                    'ingredient_name' => $c->ingredient?->name,
+                    'quantity' => (float) $c->quantity,
+                    'unit' => $c->unit,
+                    'cost_per_unit' => (float) ($c->ingredient?->cost_per_unit ?? 0),
+                ])->values(),
             ]);
 
         $transactions = InventoryTransaction::with(['ingredient', 'user'])
@@ -34,11 +46,11 @@ class InventoryPageController extends Controller
 
         // A Stock In can be undone while its purchase entry has no reversal yet.
         // Resolved in one query so the history list stays free of per-row lookups.
-        $undoable = InventoryCostEntry::where('kind', InventoryCostKind::PURCHASE->value)
+        $undoable = InventoryCostEntry::whereIn('kind', [InventoryCostKind::PURCHASE->value, InventoryCostKind::PRODUCTION_OUTPUT->value])
+            ->whereNull('reversal_of_id')
             ->whereIn('inventory_transaction_id', $transactions->pluck('id'))
             ->whereNotIn('id', InventoryCostEntry::whereNotNull('reversal_of_id')->select('reversal_of_id'))
-            ->pluck('inventory_transaction_id')
-            ->flip();
+            ->pluck('kind', 'inventory_transaction_id');
 
         $recentTransactions = $transactions
             ->map(fn ($t) => [
@@ -55,6 +67,7 @@ class InventoryPageController extends Controller
                     : null),
                 'notes' => $t->notes,
                 'can_undo' => isset($undoable[$t->id]),
+                'undo_production' => ($undoable[$t->id] ?? null) === InventoryCostKind::PRODUCTION_OUTPUT,
                 'created_at' => $t->created_at?->toDateTimeString(),
             ]);
 
