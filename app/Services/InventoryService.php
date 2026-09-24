@@ -101,6 +101,9 @@ class InventoryService
         $recipes = $product->recipes()->with('ingredient')->get();
 
         foreach ($recipes as $recipe) {
+            if ((float) $recipe->quantity <= 0) {
+                return 'Complete the recipe quantities for '.$product->name.' before ordering.';
+            }
             $ingredient = $recipe->ingredient;
 
             if (! $ingredient || ! $ingredient->track_inventory) {

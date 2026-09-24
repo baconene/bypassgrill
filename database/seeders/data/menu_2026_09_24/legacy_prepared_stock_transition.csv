@@ -1,0 +1,11 @@
+﻿Food ID,Food,Legacy inventory ID,Legacy prepared item,Current quantity,Unit,Transition note
+F001,Chicken Jerk,23,Chicken Jerk,16.000,pcs,Legacy prepared stock: reconcile existing balance; do not treat as raw recipe ingredient.
+F002,Grilled Hungarian Sausage,17,Hungarian,0.000,pcs,Legacy prepared stock: reconcile existing balance; do not treat as raw recipe ingredient.
+F003,Grilled Liempo,16,Liempo,0.000,pcs,Legacy prepared stock: reconcile existing balance; do not treat as raw recipe ingredient.
+F004,Pork Monster Ribs,32,Pork Monster Ribs,0.000,pcs,Legacy prepared stock: reconcile existing balance; do not treat as raw recipe ingredient.
+F005,Rustic Chicken Skewer,24,Rustic Chicken,0.000,pcs,Legacy prepared stock: reconcile existing balance; do not treat as raw recipe ingredient.
+F006,Braised Pork Ribs Topper,33,Pork Toppers,0.000,pcs,Legacy prepared stock: reconcile existing balance; do not treat as raw recipe ingredient.
+F007,Mashed Potato,25,Mashed Potato,0.000,pcs,Legacy prepared stock: reconcile existing balance; do not treat as raw recipe ingredient.
+F008,Mixed Fresh Fruits,27,Fresh Fruits,4.000,pcs,Legacy prepared stock: reconcile existing balance; do not treat as raw recipe ingredient.
+F009,Spanish Sardines Pasta,26,Pasta,0.000,pcs,Legacy prepared stock: reconcile existing balance; do not treat as raw recipe ingredient.
+F010,Steamed Rice,20,Rice,0.040,pcs,Legacy prepared stock: reconcile existing balance; do not treat as raw recipe ingredient.

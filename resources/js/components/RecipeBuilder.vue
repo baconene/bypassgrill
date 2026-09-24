@@ -115,6 +115,14 @@ const peso = (v: number) =>
         </div>
 
         <div v-else class="space-y-2">
+            <p
+                v-if="rows.some((row) => row.quantity <= 0)"
+                role="status"
+                class="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-900"
+            >
+                Recipe incomplete: zero means the quantity still needs
+                measuring. Enter every quantity before preparation or sale.
+            </p>
             <div
                 v-for="(row, i) in rows"
                 :key="i"
@@ -150,7 +158,7 @@ const peso = (v: number) =>
                     v-model.number="row.quantity"
                     :aria-label="`Quantity for ingredient ${i + 1}`"
                     type="number"
-                    min="0.001"
+                    min="0"
                     step="0.001"
                     placeholder="Qty"
                     class="min-h-11 w-full min-w-0 rounded-md border bg-background px-2 py-1.5 text-xs focus:ring-1 focus:ring-primary focus:outline-none sm:w-24"

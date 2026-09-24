@@ -24,6 +24,7 @@ class InventoryCostService
             // Lock all ingredients before checking: concurrent orders cannot consume the same stock.
             $ingredients = Ingredient::whereIn('id', $recipes->pluck('ingredient_id'))->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             foreach ($recipes->groupBy('ingredient_id') as $id => $lines) {
+                abort_if($lines->contains(fn ($line) => (float) $line->quantity <= 0), 422, 'Complete the product recipe quantities before ordering.');
                 $ingredient = $ingredients->get($id);
                 abort_unless($ingredient, 422, 'A recipe ingredient was removed. Update the recipe before ordering.');
                 $required = round((float) $lines->sum('quantity') * $item->quantity, 3);

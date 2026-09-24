@@ -337,6 +337,12 @@ return sum
 })
 
 const calculateCostFromRecipes = async () => {
+    if (recipes.value.some((row) => row.quantity <= 0)) {
+        toast.warning('Complete all recipe quantities before calculating cost')
+
+        return
+    }
+
     // Client-side preview is instant; if editing an existing product, also persist via API
     if (editingId.value) {
         calculatingCost.value = true
@@ -498,7 +504,7 @@ const submitForm = async () => {
     }
 
     submitting.value = true
-    const validRecipes = recipes.value.filter((r) => r.ingredient_id > 0 && r.quantity > 0)
+    const validRecipes = recipes.value.filter((r) => r.ingredient_id > 0 && r.quantity >= 0)
 
     const fd = new FormData()
     fd.append('category_id',   String(form.value.category_id))

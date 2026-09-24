@@ -1,0 +1,51 @@
+﻿Food ID,Food,Raw ingredient,Inventory ID,Inventory item,Quantity per food,Unit,Status,Recipe note
+F001,Chicken Jerk,Chicken thighs,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F001,Chicken Jerk,Garlic,53,Garlic,,kg,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F001,Chicken Jerk,Jerk powder,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F001,Chicken Jerk,Cooking oil,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F001,Chicken Jerk,Soy Sauce (Toyo),47,Soy Sauce (Toyo),,liters,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F001,Chicken Jerk,Black Pepper (Paminta),45,Black Pepper (Paminta),,g,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F002,Grilled Hungarian Sausage,Hungarian Sausage,43,Hungarian Sausage,,pcs,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F002,Grilled Hungarian Sausage,Cooking oil,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F003,Grilled Liempo,Pork belly / raw liempo,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F003,Grilled Liempo,Garlic,53,Garlic,,kg,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F003,Grilled Liempo,Soy Sauce (Toyo),47,Soy Sauce (Toyo),,liters,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F003,Grilled Liempo,Black Pepper (Paminta),45,Black Pepper (Paminta),,g,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F003,Grilled Liempo,Cooking oil,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F004,Pork Monster Ribs,Pork Ribs,40,Pork Ribs,,kg,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F004,Pork Monster Ribs,Garlic,53,Garlic,,kg,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F004,Pork Monster Ribs,Soy Sauce (Toyo),47,Soy Sauce (Toyo),,liters,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F004,Pork Monster Ribs,Black Pepper (Paminta),45,Black Pepper (Paminta),,g,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F004,Pork Monster Ribs,BBQ sauce,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F004,Pork Monster Ribs,Cooking oil,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F005,Rustic Chicken Skewer,Chicken Fillet,42,Chicken Fillet,,kg,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F005,Rustic Chicken Skewer,Bell Pepper,51,Bell Pepper,,pcs,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F005,Rustic Chicken Skewer,Garlic,53,Garlic,,kg,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F005,Rustic Chicken Skewer,Soy Sauce (Toyo),47,Soy Sauce (Toyo),,liters,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F005,Rustic Chicken Skewer,Black Pepper (Paminta),45,Black Pepper (Paminta),,g,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F005,Rustic Chicken Skewer,Cooking oil,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F006,Braised Pork Ribs Topper,Pork Ribs,40,Pork Ribs,,kg,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F006,Braised Pork Ribs Topper,Garlic,53,Garlic,,kg,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F006,Braised Pork Ribs Topper,Soy Sauce (Toyo),47,Soy Sauce (Toyo),,liters,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F006,Braised Pork Ribs Topper,Black Pepper (Paminta),45,Black Pepper (Paminta),,g,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F006,Braised Pork Ribs Topper,Cooking oil,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F007,Mashed Potato,Raw potato,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F007,Mashed Potato,Butter,48,Butter,,g,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F007,Mashed Potato,Milk,49,Milk,,liters,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F007,Mashed Potato,Black Pepper (Paminta),45,Black Pepper (Paminta),,g,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F008,Mixed Fresh Fruits,Fresh Fruits,27,Fresh Fruits,,pcs,Existing composite stock; break down by fruit if individually tracked,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F009,Spanish Sardines Pasta,Dry pasta,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F009,Spanish Sardines Pasta,Spanish sardines,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F009,Spanish Sardines Pasta,Garlic,53,Garlic,,kg,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F009,Spanish Sardines Pasta,Cooking oil,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F009,Spanish Sardines Pasta,Chili Flakes,46,Chili Flakes,,g,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F010,Steamed Rice,Uncooked rice,20,Rice,,pcs,Existing inventory candidate — confirm raw form,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F010,Steamed Rice,Water,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F011,Buttered Corn,Corn,21,Corn,,pcs,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F011,Buttered Corn,Butter,48,Butter,,g,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F012,Lucban Longganisa,Lucban longganisa,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F012,Lucban Longganisa,Cooking oil,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F013,Vegetable Salad,Greens,54,Greens,,bunch,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F013,Vegetable Salad,Bell Pepper,51,Bell Pepper,,pcs,Existing inventory item — recipe proposed,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F014,Bottled Soda,Coke,55,Coke,,bottle,Existing SKU; confirm drink variant,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.
+F015,Bottled Water,Bottled water,,,,,Create/identify raw inventory item,Illustrative recipe; confirm actual preparation and amounts. Do not deduct legacy prepared-food SKU.

@@ -55,7 +55,7 @@ class ProductController extends Controller
             'image'                   => 'nullable|image|mimes:jpeg,png,webp|max:2048',
             'recipes'                 => 'nullable|array',
             'recipes.*.ingredient_id' => 'required|exists:ingredients,id',
-            'recipes.*.quantity'      => 'required|numeric|min:0.001',
+            'recipes.*.quantity'      => 'required|numeric|min:0',
             'recipes.*.unit'          => 'nullable|string|max:50',
         ]);
 
@@ -99,7 +99,7 @@ class ProductController extends Controller
             'image'                   => 'nullable|image|mimes:jpeg,png,webp|max:2048',
             'recipes'                 => 'nullable|array',
             'recipes.*.ingredient_id' => 'required|exists:ingredients,id',
-            'recipes.*.quantity'      => 'required|numeric|min:0.001',
+            'recipes.*.quantity'      => 'required|numeric|min:0',
             'recipes.*.unit'          => 'nullable|string|max:50',
         ]);
 
@@ -140,6 +140,8 @@ class ProductController extends Controller
 
         $product->load('recipes.ingredient');
 
+        abort_if($product->recipes->contains(fn ($recipe) => (float) $recipe->quantity <= 0), 422, 'Complete all recipe quantities before calculating cost.');
+
         $calculatedCost = $product->recipes->sum(
             fn ($r) => (float) $r->quantity * (float) ($r->ingredient?->cost_per_unit ?? 0)
         );
@@ -164,6 +166,11 @@ class ProductController extends Controller
 
         Product::with('recipes.ingredient')->has('recipes')->chunkById(100, function ($products) use (&$updated, &$unchanged) {
             foreach ($products as $product) {
+                if ($product->recipes->contains(fn ($recipe) => (float) $recipe->quantity <= 0)) {
+                    $unchanged++;
+
+                    continue;
+                }
                 $recipeCost = round($product->recipes->sum(
                     fn ($r) => (float) $r->quantity * (float) ($r->ingredient?->cost_per_unit ?? 0)
                 ), 2);

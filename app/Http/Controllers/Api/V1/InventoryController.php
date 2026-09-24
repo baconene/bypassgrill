@@ -101,7 +101,7 @@ class InventoryController extends Controller
         return [
             'components' => 'sometimes|array',
             'components.*.ingredient_id' => 'required|integer|distinct|exists:ingredients,id',
-            'components.*.quantity' => 'required|numeric|gt:0',
+            'components.*.quantity' => 'required|numeric|min:0',
             'components.*.unit' => 'nullable|string|max:50',
         ];
     }

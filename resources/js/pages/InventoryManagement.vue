@@ -270,7 +270,7 @@ const submitAddIngredient = async () => {
     }
 
     const components = newComponents.value.filter(
-        (c) => c.ingredient_id > 0 && c.quantity > 0,
+        (c) => c.ingredient_id > 0 && c.quantity >= 0,
     );
 
     if (
@@ -331,6 +331,11 @@ watch(produceBatch, (batch, previous) => {
 });
 
 const produceComponents = computed(() => producing.value?.components ?? []);
+const incompleteProduction = computed(() =>
+    produceComponents.value.some(
+        (row) => row.quantity <= 0 || row.unit === 'unconfirmed',
+    ),
+);
 
 const produceCost = computed(() =>
     produceComponents.value.reduce(
@@ -1677,6 +1682,14 @@ const typeColor: Record<string, string> = {
                 {{ producing.name }} has no ingredients yet. Add them before
                 producing a batch.
             </div>
+            <p
+                v-else-if="incompleteProduction"
+                class="inventory-notice"
+                role="status"
+            >
+                Complete the Food recipe quantities and ingredient units in Edit
+                before producing.
+            </p>
             <div v-else class="overflow-hidden rounded-xl border">
                 <table class="w-full text-xs">
                     <thead>
@@ -1771,7 +1784,11 @@ const typeColor: Record<string, string> = {
                 Cancel</button
             ><button
                 @click="submitProduce"
-                :disabled="producingNow || produceComponents.length === 0"
+                :disabled="
+                    producingNow ||
+                    produceComponents.length === 0 ||
+                    incompleteProduction
+                "
                 class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
                 {{ producingNow ? 'Producing…' : 'Produce batch' }}

@@ -52,8 +52,10 @@ class FoodProductionService
             $required = [];
 
             foreach ($components->groupBy('ingredient_id') as $id => $lines) {
+                abort_if($lines->contains(fn ($line) => (float) $line->quantity <= 0), 422, 'Complete all Food recipe quantities before producing a batch.');
                 $ingredient = $ingredients->get($id);
                 abort_unless($ingredient, 422, 'An ingredient of this Food was removed. Fix its recipe first.');
+                abort_if($ingredient->unit === 'unconfirmed', 422, 'Confirm the stock unit for '.$ingredient->name.' before producing a batch.');
                 abort_if($ingredient->isFood(), 422, 'A Food cannot be made from another Food.');
 
                 $need = round((float) $lines->sum('quantity') * $batch, 3);

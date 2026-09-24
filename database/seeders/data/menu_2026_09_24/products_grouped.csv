@@ -1,0 +1,24 @@
+﻿Product ID,Product,Category,Active,Selling Price,Food composition,Review notes
+32,Plate and Spork,Accessories,1,5.00,Paper Plate + Spork,Packaging sale; not Food; map to supply inventory
+31,Takeout Box,Accessories,1,5.00,Takeout Box,Packaging sale; not Food; choose box size
+36,AC - Chicken Jerk,Ala Carte,1,145.00,Chicken Jerk x1,Legacy component mapped to Food
+26,AC - Grilled Hungarian Sausage Ala Carte,Ala Carte,1,85.00,Grilled Hungarian Sausage x1,Legacy component mapped to Food
+33,AC - Liempo Ala Cart,Ala Carte,1,145.00,Grilled Liempo x1,Legacy component mapped to Food
+24,AC - Lucban Longganissa Ala Carte / Stick,Ala Carte,0,30.00,Lucban Longganisa,Proposed; no legacy BOM
+23,AC - Monster Ribs,Ala Carte,1,170.00,Pork Monster Ribs x1,Legacy component mapped to Food
+25,AC - Rustic Chicken Skewers / Stick,Ala Carte,1,65.00,Rustic Chicken Skewer x1,Legacy component mapped to Food
+29,Bottled Soda,Drinks,1,25.00,Bottled Soda,Proposed; confirm Coke vs other soda
+28,Bottled Water,Drinks,1,15.00,Bottled Water,Missing inventory SKU
+27,Buttered Corn,Extra,1,10.00,Buttered Corn,Proposed; no legacy BOM
+37,Mashed Potato,Extra,1,45.00,Mashed Potato x1,Legacy component mapped to Food
+40,Mix Fresh Fruits,Extra,0,130.00,Mixed Fresh Fruits x1,Legacy component mapped to Food
+39,Pasta,Extra,1,115.00,Spanish Sardines Pasta x1,Legacy component mapped to Food
+38,Vege Salad,Extra,0,135.00,Vegetable Salad,Proposed; no legacy BOM
+22,M - Braised Pork Ribs Rice Topper,Food,0,135.00,Braised Pork Ribs Topper x1 + Steamed Rice,Legacy component mapped to Food; Proposed meal component; verify portion
+35,M - Chicken Jerk,Food,1,165.00,Chicken Jerk x1 + Steamed Rice,Legacy component mapped to Food; Proposed meal component; verify portion
+18,M - Grilled Hungarian,Food,1,120.00,Grilled Hungarian Sausage x1 + Steamed Rice,Legacy component mapped to Food; Proposed meal component; verify portion
+21,M - Grilled Liempo,Food,1,165.00,Grilled Liempo x1 + Steamed Rice,Legacy component mapped to Food; Proposed meal component; verify portion
+20,M - Lucban Longganisa,Food,0,115.00,Lucban Longganisa + Steamed Rice,Proposed; no legacy BOM; Proposed meal component; verify portion
+34,M - Pork Monster Ribs,Food,1,185.00,Pork Monster Ribs x1 + Steamed Rice,Legacy component mapped to Food; Proposed meal component; verify portion
+19,M - Rustic Chicken Skewers,Food,1,145.00,Rustic Chicken Skewer x2 + Steamed Rice,Legacy component mapped to Food; Proposed meal component; verify portion
+30,Rice,Rice,1,25.00,Steamed Rice x1,Legacy component mapped to Food

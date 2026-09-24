@@ -55,7 +55,8 @@ class Product extends Model
     {
         $tracked = $this->recipes->filter(fn ($r) => $r->ingredient?->track_inventory);
 
-        $soldOut = $tracked->contains(fn ($r) => (float) $r->ingredient->current_quantity <= 0
+        $soldOut = $this->recipes->contains(fn ($r) => (float) $r->quantity <= 0)
+            || $tracked->contains(fn ($r) => (float) $r->ingredient->current_quantity <= 0
             || (float) $r->ingredient->current_quantity < (float) $r->quantity);
 
         return [

@@ -1,0 +1,31 @@
+﻿Product ID,Product,Category,Active,Selling Price,Food ID,Food,Food Qty,Food Unit,Mapping status
+32,Plate and Spork,Accessories,1,5.00,,Paper Plate + Spork,,,Packaging sale; not Food; map to supply inventory
+31,Takeout Box,Accessories,1,5.00,,Takeout Box,,,Packaging sale; not Food; choose box size
+36,AC - Chicken Jerk,Ala Carte,1,145.00,F001,Chicken Jerk,1.000,pcs,Legacy component mapped to Food
+26,AC - Grilled Hungarian Sausage Ala Carte,Ala Carte,1,85.00,F002,Grilled Hungarian Sausage,1.000,pcs,Legacy component mapped to Food
+33,AC - Liempo Ala Cart,Ala Carte,1,145.00,F003,Grilled Liempo,1.000,pcs,Legacy component mapped to Food
+24,AC - Lucban Longganissa Ala Carte / Stick,Ala Carte,0,30.00,F012,Lucban Longganisa,,,Proposed; no legacy BOM
+23,AC - Monster Ribs,Ala Carte,1,170.00,F004,Pork Monster Ribs,1.000,pcs,Legacy component mapped to Food
+25,AC - Rustic Chicken Skewers / Stick,Ala Carte,1,65.00,F005,Rustic Chicken Skewer,1.000,pcs,Legacy component mapped to Food
+29,Bottled Soda,Drinks,1,25.00,F014,Bottled Soda,,,Proposed; confirm Coke vs other soda
+28,Bottled Water,Drinks,1,15.00,F015,Bottled Water,,,Missing inventory SKU
+27,Buttered Corn,Extra,1,10.00,F011,Buttered Corn,,,Proposed; no legacy BOM
+37,Mashed Potato,Extra,1,45.00,F007,Mashed Potato,1.000,pcs,Legacy component mapped to Food
+40,Mix Fresh Fruits,Extra,0,130.00,F008,Mixed Fresh Fruits,1.000,pcs,Legacy component mapped to Food
+39,Pasta,Extra,1,115.00,F009,Spanish Sardines Pasta,1.000,pcs,Legacy component mapped to Food
+38,Vege Salad,Extra,0,135.00,F013,Vegetable Salad,,,Proposed; no legacy BOM
+22,M - Braised Pork Ribs Rice Topper,Food,0,135.00,F006,Braised Pork Ribs Topper,1.000,pcs,Legacy component mapped to Food
+22,M - Braised Pork Ribs Rice Topper,Food,0,135.00,F010,Steamed Rice,,,Proposed meal component; verify portion
+35,M - Chicken Jerk,Food,1,165.00,F001,Chicken Jerk,1.000,pcs,Legacy component mapped to Food
+35,M - Chicken Jerk,Food,1,165.00,F010,Steamed Rice,,,Proposed meal component; verify portion
+18,M - Grilled Hungarian,Food,1,120.00,F002,Grilled Hungarian Sausage,1.000,pcs,Legacy component mapped to Food
+18,M - Grilled Hungarian,Food,1,120.00,F010,Steamed Rice,,,Proposed meal component; verify portion
+21,M - Grilled Liempo,Food,1,165.00,F003,Grilled Liempo,1.000,pcs,Legacy component mapped to Food
+21,M - Grilled Liempo,Food,1,165.00,F010,Steamed Rice,,,Proposed meal component; verify portion
+20,M - Lucban Longganisa,Food,0,115.00,F012,Lucban Longganisa,,,Proposed; no legacy BOM
+20,M - Lucban Longganisa,Food,0,115.00,F010,Steamed Rice,,,Proposed meal component; verify portion
+34,M - Pork Monster Ribs,Food,1,185.00,F004,Pork Monster Ribs,1.000,pcs,Legacy component mapped to Food
+34,M - Pork Monster Ribs,Food,1,185.00,F010,Steamed Rice,,,Proposed meal component; verify portion
+19,M - Rustic Chicken Skewers,Food,1,145.00,F005,Rustic Chicken Skewer,2.000,pcs,Legacy component mapped to Food
+19,M - Rustic Chicken Skewers,Food,1,145.00,F010,Steamed Rice,,,Proposed meal component; verify portion
+30,Rice,Rice,1,25.00,F010,Steamed Rice,1.000,pcs,Legacy component mapped to Food
