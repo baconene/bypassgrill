@@ -4,7 +4,6 @@ import {
     AlertTriangle,
     Package,
     RefreshCw,
-    X,
     Plus,
     Pencil,
     ShoppingBag,
@@ -16,6 +15,7 @@ import {
 import { ref, computed, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import InventoryCostReport from '@/components/InventoryCostReport.vue';
+import InventoryDialog from '@/components/InventoryDialog.vue';
 import RecipeBuilder from '@/components/RecipeBuilder.vue';
 import type { RecipeRow } from '@/components/RecipeBuilder.vue';
 import api from '@/utils/api';
@@ -52,6 +52,13 @@ interface Ingredient {
 
 const ITEM_TYPES = [
     {
+        // Made here rather than bought: a dish prepped from ingredients, counted in
+        // servings, and what the POS checks before letting a product be sold.
+        value: 'food',
+        label: 'Food',
+        color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+    },
+    {
         value: 'ingredient',
         label: 'Ingredient',
         color: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -70,13 +77,6 @@ const ITEM_TYPES = [
         value: 'supply',
         label: 'Supply',
         color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
-    },
-    {
-        // Made here rather than bought: a dish prepped from ingredients, counted in
-        // servings, and what the POS checks before letting a product be sold.
-        value: 'food',
-        label: 'Food',
-        color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
     },
 ];
 const money = (v: number) =>
@@ -143,7 +143,15 @@ const filtered = computed(() => {
         list = list.filter((i) => i.name.toLowerCase().includes(q));
     }
 
-    return list;
+    return [...list].sort((a, b) => {
+        const rank = (type: string) =>
+            ITEM_TYPES.findIndex((item) => item.value === type);
+
+        return (
+            rank(a.item_type) - rank(b.item_type) ||
+            a.name.localeCompare(b.name)
+        );
+    });
 });
 
 const lowCount = computed(
@@ -807,7 +815,9 @@ const typeColor: Record<string, string> = {
                                     {{
                                         undoingId === tx.id
                                             ? 'Undoing…'
-                                            : 'Undo Stock In'
+                                            : tx.undo_production
+                                              ? 'Undo production'
+                                              : 'Undo Stock In'
                                     }}
                                 </button>
                             </div>
@@ -859,1100 +869,915 @@ const typeColor: Record<string, string> = {
     </div>
 
     <!-- Add Ingredient Modal -->
-    <Teleport to="body">
-        <Transition name="fade">
-            <div
-                v-if="showAddIngredient"
-                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
-                @click.self="showAddIngredient = false"
-            >
-                <div
-                    class="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-background shadow-2xl sm:max-w-md sm:rounded-2xl"
+    <InventoryDialog
+        v-if="showAddIngredient"
+        title="Add inventory item"
+        description="Choose a category, add the details, and set up your stock."
+        :busy="addingIngredient"
+        @close="showAddIngredient = false"
+    >
+        <div class="inventory-item-form">
+            <div>
+                <label
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Item Type *</label
                 >
-                    <div class="flex items-center justify-between border-b p-5">
-                        <h3 class="text-lg font-bold">Add Inventory Item</h3>
-                        <button
-                            @click="showAddIngredient = false"
-                            class="rounded-full p-1 hover:bg-muted"
+                <div class="grid grid-cols-2 gap-2">
+                    <label
+                        v-for="t in ITEM_TYPES"
+                        :key="t.value"
+                        :class="[
+                            'flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 transition',
+                            newIngredient.item_type === t.value
+                                ? 'border-primary bg-primary/5'
+                                : 'hover:bg-muted/40',
+                        ]"
+                    >
+                        <input
+                            type="radio"
+                            v-model="newIngredient.item_type"
+                            :value="t.value"
+                            class="accent-primary"
+                        />
+                        <span
+                            :class="[
+                                'rounded-full px-2 py-0.5 text-xs font-semibold',
+                                t.color,
+                            ]"
+                            >{{ t.label }}</span
                         >
-                            <X class="h-4 w-4" />
-                        </button>
-                    </div>
-                    <div class="space-y-4 p-5">
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Item Type *</label
-                            >
-                            <div class="grid grid-cols-2 gap-2">
-                                <label
-                                    v-for="t in ITEM_TYPES"
-                                    :key="t.value"
-                                    :class="[
-                                        'flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 transition',
-                                        newIngredient.item_type === t.value
-                                            ? 'border-primary bg-primary/5'
-                                            : 'hover:bg-muted/40',
-                                    ]"
-                                >
-                                    <input
-                                        type="radio"
-                                        v-model="newIngredient.item_type"
-                                        :value="t.value"
-                                        class="accent-primary"
-                                    />
-                                    <span
-                                        :class="[
-                                            'rounded-full px-2 py-0.5 text-xs font-semibold',
-                                            t.color,
-                                        ]"
-                                        >{{ t.label }}</span
-                                    >
-                                </label>
-                            </div>
-                        </div>
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Name *</label
-                            >
-                            <input
-                                v-model="newIngredient.name"
-                                type="text"
-                                placeholder="e.g. Pork Ribs"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Unit *</label
-                            >
-                            <input
-                                v-model="newIngredient.unit"
-                                type="text"
-                                placeholder="e.g. kg, pcs, liters"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                            />
-                        </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label
-                                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                    >Starting Stock</label
-                                >
-                                <input
-                                    v-model.number="
-                                        newIngredient.current_quantity
-                                    "
-                                    :disabled="addingFood"
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                                />
-                                <p
-                                    v-if="addingFood"
-                                    class="mt-1 text-xs text-muted-foreground"
-                                >
-                                    Starts empty. Use Produce after saving to
-                                    add a batch.
-                                </p>
-                            </div>
-                            <div>
-                                <label
-                                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                    >Minimum Stock</label
-                                >
-                                <input
-                                    v-model.number="newIngredient.min_quantity"
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Cost per Unit (₱)</label
-                            >
-                            <input
-                                v-model.number="newIngredient.cost_per_unit"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                placeholder="0.00"
-                                :disabled="addingFood"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50"
-                            />
-                            <p class="mt-1 text-xs text-muted-foreground">
-                                <template v-if="addingFood">
-                                    A Food is costed from its ingredients each
-                                    time a batch is produced, so this is not set
-                                    by hand.
-                                </template>
-                                <template v-else>
-                                    Used to calculate product cost and COGS for
-                                    P&amp;L reports.
-                                </template>
-                            </p>
-                        </div>
-
-                        <!-- Food is made here, so it is built from ingredients the
-                             same way a product is. -->
-                        <div v-if="addingFood" class="rounded-xl border p-4">
-                            <RecipeBuilder
-                                v-model="newComponents"
-                                :ingredients="props.ingredients"
-                                :allow-food="false"
-                                label="What this Food is made of"
-                                hint="Quantities per finished unit, multiplied by the batch size. Food cannot contain Food."
-                                empty-text="Add at least one ingredient so the batch can be costed."
-                            />
-                        </div>
-                    </div>
-                    <div class="flex gap-3 border-t p-5">
-                        <button
-                            @click="showAddIngredient = false"
-                            class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            @click="submitAddIngredient"
-                            :disabled="addingIngredient"
-                            class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                        >
-                            {{
-                                addingIngredient
-                                    ? 'Adding…'
-                                    : `Add ${itemTypeLabel(newIngredient.item_type)}`
-                            }}
-                        </button>
-                    </div>
+                    </label>
                 </div>
             </div>
-        </Transition>
-    </Teleport>
+            <div>
+                <label
+                    for="inventory-field-1"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Name *</label
+                >
+                <input
+                    id="inventory-field-1"
+                    v-model="newIngredient.name"
+                    type="text"
+                    placeholder="e.g. Pork Ribs"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+            </div>
+            <div>
+                <label
+                    for="inventory-field-2"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Unit *</label
+                >
+                <input
+                    id="inventory-field-2"
+                    v-model="newIngredient.unit"
+                    type="text"
+                    placeholder="e.g. kg, pcs, liters"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label
+                        for="inventory-field-3"
+                        class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                        >Starting Stock</label
+                    >
+                    <input
+                        id="inventory-field-3"
+                        v-model.number="newIngredient.current_quantity"
+                        :disabled="addingFood"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                    <p
+                        v-if="addingFood"
+                        class="mt-1 text-xs text-muted-foreground"
+                    >
+                        Starts empty. Use Produce after saving to add a batch.
+                    </p>
+                </div>
+                <div>
+                    <label
+                        for="inventory-field-4"
+                        class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                        >Minimum Stock</label
+                    >
+                    <input
+                        id="inventory-field-4"
+                        v-model.number="newIngredient.min_quantity"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                </div>
+            </div>
+            <div>
+                <label
+                    for="inventory-field-5"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Cost per Unit (₱)</label
+                >
+                <input
+                    id="inventory-field-5"
+                    v-model.number="newIngredient.cost_per_unit"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    :disabled="addingFood"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50"
+                />
+                <p class="mt-1 text-xs text-muted-foreground">
+                    <template v-if="addingFood">
+                        A Food is costed from its ingredients each time a batch
+                        is produced, so this is not set by hand.
+                    </template>
+                    <template v-else>
+                        Used to calculate product cost and COGS for P&amp;L
+                        reports.
+                    </template>
+                </p>
+            </div>
+
+            <!-- Food is made here, so it is built from ingredients the
+                             same way a product is. -->
+            <div v-if="addingFood" class="rounded-xl border p-4">
+                <RecipeBuilder
+                    v-model="newComponents"
+                    :ingredients="props.ingredients"
+                    :allow-food="false"
+                    label="What this Food is made of"
+                    hint="Quantities per finished unit, multiplied by the batch size. Food cannot contain Food."
+                    empty-text="Add at least one ingredient so the batch can be costed."
+                />
+            </div>
+        </div>
+        <template #footer
+            ><button
+                @click="showAddIngredient = false"
+                class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted"
+            >
+                Cancel</button
+            ><button
+                @click="submitAddIngredient"
+                :disabled="addingIngredient"
+                class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+                {{
+                    addingIngredient
+                        ? 'Adding…'
+                        : `Add ${itemTypeLabel(newIngredient.item_type)}`
+                }}
+            </button></template
+        >
+    </InventoryDialog>
 
     <!-- Adjustment Modal -->
-    <Teleport to="body">
-        <Transition name="fade">
+    <InventoryDialog
+        v-if="selectedItem"
+        title="Adjust stock"
+        :description="`${selectedItem.name} / ${selectedItem.unit}`"
+        :busy="submitting"
+        @close="selectedItem = null"
+    >
+        <div class="space-y-4 p-5">
             <div
-                v-if="selectedItem"
-                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
-                @click.self="selectedItem = null"
+                class="flex justify-between rounded-lg bg-muted/40 p-3 text-sm"
             >
-                <div
-                    class="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-background shadow-2xl sm:max-w-md sm:rounded-2xl"
+                <span class="text-muted-foreground">Current Stock</span>
+                <span class="font-bold"
+                    >{{ selectedItem.current_quantity.toFixed(2) }}
+                    {{ selectedItem.unit }}</span
                 >
-                    <div class="flex items-start justify-between border-b p-5">
-                        <div>
-                            <h3 class="text-lg font-bold">Adjust Stock</h3>
-                            <p class="text-sm text-muted-foreground">
-                                {{ selectedItem.name }}
-                            </p>
-                        </div>
-                        <button
-                            @click="selectedItem = null"
-                            class="rounded-full p-1 hover:bg-muted"
-                        >
-                            <X class="h-4 w-4" />
-                        </button>
-                    </div>
-                    <div class="space-y-4 p-5">
-                        <div
-                            class="flex justify-between rounded-lg bg-muted/40 p-3 text-sm"
-                        >
-                            <span class="text-muted-foreground"
-                                >Current Stock</span
-                            >
-                            <span class="font-bold"
-                                >{{ selectedItem.current_quantity.toFixed(2) }}
-                                {{ selectedItem.unit }}</span
-                            >
-                        </div>
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Adjustment Type</label
-                            >
-                            <select
-                                v-model="adjustType"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                            >
-                                <option value="stock_in">Stock In (Add)</option>
-                                <option value="stock_out">
-                                    Stock Out (Remove)
-                                </option>
-                                <option value="adjustment">
-                                    Stock Count (Set quantity)
-                                </option>
-                                <option value="waste">Waste (Deduct)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                            >
-                                {{
-                                    adjustType === 'adjustment'
-                                        ? 'New Quantity'
-                                        : 'Quantity'
-                                }}
-                                ({{ selectedItem.unit }})
-                            </label>
-                            <input
-                                v-model.number="adjustQty"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                            />
-                        </div>
-                        <div v-if="adjustType === 'stock_in'">
-                            <label
-                                for="stock-unit-cost"
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Purchase cost per
-                                {{ selectedItem.unit }}</label
-                            >
-                            <input
-                                id="stock-unit-cost"
-                                v-model.number="adjustUnitCost"
-                                type="number"
-                                min="0"
-                                step="0.0001"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                            />
-                            <p class="mt-1 text-xs text-muted-foreground">
-                                New purchases update the weighted-average
-                                ingredient cost. Earlier cost entries keep their
-                                original value.
-                            </p>
-                        </div>
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Notes (optional)</label
-                            >
-                            <textarea
-                                v-model="adjustNotes"
-                                rows="2"
-                                class="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                                placeholder="Reason for adjustment…"
-                            />
-                        </div>
-                    </div>
-                    <div class="flex gap-3 border-t p-5">
-                        <button
-                            @click="selectedItem = null"
-                            class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            @click="submitAdjustment"
-                            :disabled="submitting"
-                            class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                        >
-                            <RefreshCw
-                                v-if="submitting"
-                                class="mr-1 inline h-3 w-3 animate-spin"
-                            />
-                            {{ submitting ? 'Saving…' : 'Save Adjustment' }}
-                        </button>
-                    </div>
-                </div>
             </div>
-        </Transition>
-    </Teleport>
+            <div>
+                <label
+                    for="inventory-field-6"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Adjustment Type</label
+                >
+                <select
+                    id="inventory-field-6"
+                    v-model="adjustType"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                >
+                    <option value="stock_in">Stock In (Add)</option>
+                    <option value="stock_out">Stock Out (Remove)</option>
+                    <option value="adjustment">
+                        Stock Count (Set quantity)
+                    </option>
+                    <option value="waste">Waste (Deduct)</option>
+                </select>
+            </div>
+            <div>
+                <label
+                    for="inventory-field-7"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                >
+                    {{
+                        adjustType === 'adjustment'
+                            ? 'New Quantity'
+                            : 'Quantity'
+                    }}
+                    ({{ selectedItem.unit }})
+                </label>
+                <input
+                    id="inventory-field-7"
+                    v-model.number="adjustQty"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+            </div>
+            <div v-if="adjustType === 'stock_in'">
+                <label
+                    for="stock-unit-cost"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Purchase cost per {{ selectedItem.unit }}</label
+                >
+                <input
+                    id="stock-unit-cost"
+                    v-model.number="adjustUnitCost"
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+                />
+                <p class="mt-1 text-xs text-muted-foreground">
+                    New purchases update the weighted-average ingredient cost.
+                    Earlier cost entries keep their original value.
+                </p>
+            </div>
+            <div>
+                <label
+                    for="inventory-field-8"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Notes (optional)</label
+                >
+                <textarea
+                    id="inventory-field-8"
+                    v-model="adjustNotes"
+                    rows="2"
+                    class="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    placeholder="Reason for adjustment…"
+                />
+            </div>
+        </div>
+        <template #footer
+            ><button
+                @click="selectedItem = null"
+                class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted"
+            >
+                Cancel</button
+            ><button
+                @click="submitAdjustment"
+                :disabled="submitting"
+                class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+                <RefreshCw
+                    v-if="submitting"
+                    class="mr-1 inline h-3 w-3 animate-spin"
+                />
+                {{ submitting ? 'Saving…' : 'Save Adjustment' }}
+            </button></template
+        >
+    </InventoryDialog>
 
     <!-- Confirm Delete Modal -->
-    <Teleport to="body">
-        <Transition name="fade">
-            <div
-                v-if="confirmingDelete"
-                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
-                @click.self="confirmingDelete = false"
+    <InventoryDialog
+        v-if="confirmingDelete"
+        title="Delete inventory item"
+        description="Review this item before removing it from active inventory."
+        :busy="deleteSaving"
+        compact
+        @close="confirmingDelete = false"
+    >
+        <p class="mb-5 text-sm text-muted-foreground">
+            Are you sure you want to delete
+            <span class="font-semibold text-foreground">{{
+                deletingIngredient?.name
+            }}</span
+            >? This removes it from active inventory. Stock and cost history are
+            retained.
+        </p>
+        <template #footer
+            ><button
+                @click="confirmingDelete = false"
+                class="flex-1 rounded-lg border py-2.5 text-sm font-semibold transition hover:bg-muted"
             >
-                <div
-                    class="w-full overflow-hidden rounded-t-2xl bg-background shadow-2xl sm:max-w-sm sm:rounded-2xl"
-                >
-                    <div class="p-5">
-                        <div class="mb-3 flex items-center gap-3">
-                            <div
-                                class="shrink-0 rounded-full bg-red-100 p-2.5 dark:bg-red-950/40"
-                            >
-                                <Trash2
-                                    class="h-5 w-5 text-red-600 dark:text-red-400"
-                                />
-                            </div>
-                            <div>
-                                <h3 class="text-base font-bold">Delete Item</h3>
-                                <p class="text-sm text-muted-foreground">
-                                    This cannot be undone.
-                                </p>
-                            </div>
-                        </div>
-                        <p class="mb-5 text-sm text-muted-foreground">
-                            Are you sure you want to delete
-                            <span class="font-semibold text-foreground">{{
-                                deletingIngredient?.name
-                            }}</span
-                            >? All transaction history for this item will also
-                            be removed.
-                        </p>
-                        <div class="flex gap-2">
-                            <button
-                                @click="confirmingDelete = false"
-                                class="flex-1 rounded-lg border py-2.5 text-sm font-semibold transition hover:bg-muted"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                @click="confirmDelete"
-                                :disabled="deleteSaving"
-                                class="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-60"
-                            >
-                                {{ deleteSaving ? 'Deleting…' : 'Delete' }}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </Transition>
-    </Teleport>
+                Cancel</button
+            ><button
+                @click="confirmDelete"
+                :disabled="deleteSaving"
+                class="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-60"
+            >
+                {{ deleteSaving ? 'Deleting…' : 'Delete' }}
+            </button></template
+        >
+    </InventoryDialog>
 
     <!-- Help Modal -->
-    <Teleport to="body">
-        <Transition name="fade">
-            <div
-                v-if="showHelp"
-                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
-                @click.self="showHelp = false"
-            >
-                <div
-                    class="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-background shadow-2xl sm:max-w-lg sm:rounded-2xl"
-                >
-                    <div
-                        class="sticky top-0 z-10 flex items-center justify-between border-b bg-background p-5"
-                    >
-                        <div class="flex items-center gap-2">
-                            <HelpCircle class="h-5 w-5 text-primary" />
-                            <h3 class="text-lg font-bold">Inventory Help</h3>
-                        </div>
-                        <button
-                            @click="showHelp = false"
-                            class="rounded-full p-1 hover:bg-muted"
+    <InventoryDialog
+        v-if="showHelp"
+        title="Inventory guide"
+        description="A quick guide to stock, food preparation, and costs."
+        :busy="false"
+        @close="showHelp = false"
+    >
+        <div class="space-y-5 p-5 text-sm">
+            <div>
+                <p class="mb-2 text-base font-bold">📦 Managing Items</p>
+                <ul class="space-y-1.5 text-muted-foreground">
+                    <li>
+                        <span class="font-semibold text-foreground"
+                            >Tap any card</span
                         >
-                            <X class="h-4 w-4" />
-                        </button>
-                    </div>
-                    <div class="space-y-5 p-5 text-sm">
-                        <div>
-                            <p class="mb-2 text-base font-bold">
-                                📦 Managing Items
-                            </p>
-                            <ul class="space-y-1.5 text-muted-foreground">
-                                <li>
-                                    <span class="font-semibold text-foreground"
-                                        >Tap any card</span
-                                    >
-                                    — opens the stock adjustment form for that
-                                    item.
-                                </li>
-                                <li>
-                                    <span class="font-semibold text-foreground"
-                                        >Pencil icon</span
-                                    >
-                                    — edit the item's name, type, unit, minimum
-                                    stock, and cost.
-                                </li>
-                                <li>
-                                    <span class="font-semibold text-red-600"
-                                        >Trash icon</span
-                                    >
-                                    — permanently delete the item and all its
-                                    transaction history.
-                                </li>
-                                <li>
-                                    <span class="font-semibold text-foreground"
-                                        >Add Item</span
-                                    >
-                                    — create a new inventory item.
-                                </li>
-                                <li>
-                                    <span class="font-semibold text-foreground"
-                                        >Refresh</span
-                                    >
-                                    — reload the latest stock levels from the
-                                    server.
-                                </li>
-                            </ul>
-                        </div>
+                        — opens the stock adjustment form for that item.
+                    </li>
+                    <li>
+                        <span class="font-semibold text-foreground"
+                            >Pencil icon</span
+                        >
+                        — edit the item's name, type, unit, minimum stock, and
+                        cost.
+                    </li>
+                    <li>
+                        <span class="font-semibold text-red-600"
+                            >Trash icon</span
+                        >
+                        — permanently delete the item and all its transaction
+                        history.
+                    </li>
+                    <li>
+                        <span class="font-semibold text-foreground"
+                            >Add Item</span
+                        >
+                        — create a new inventory item.
+                    </li>
+                    <li>
+                        <span class="font-semibold text-foreground"
+                            >Refresh</span
+                        >
+                        — reload the latest stock levels from the server.
+                    </li>
+                </ul>
+            </div>
 
-                        <div>
-                            <p class="mb-3 text-base font-bold">
-                                📝 How to Adjust Stock
-                            </p>
-                            <ol
-                                class="list-none space-y-2.5 text-muted-foreground"
+            <div>
+                <p class="mb-3 text-base font-bold">📝 How to Adjust Stock</p>
+                <ol class="list-none space-y-2.5 text-muted-foreground">
+                    <li class="flex gap-2.5">
+                        <span
+                            class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
+                            >1</span
+                        >
+                        <span
+                            ><span class="font-semibold text-foreground"
+                                >Tap the item card</span
                             >
-                                <li class="flex gap-2.5">
-                                    <span
-                                        class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
-                                        >1</span
-                                    >
-                                    <span
-                                        ><span
-                                            class="font-semibold text-foreground"
-                                            >Tap the item card</span
-                                        >
-                                        you want to update. The adjustment form
-                                        will slide up from the bottom.</span
-                                    >
-                                </li>
-                                <li class="flex gap-2.5">
-                                    <span
-                                        class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
-                                        >2</span
-                                    >
-                                    <span
-                                        ><span
-                                            class="font-semibold text-foreground"
-                                            >Choose the adjustment type</span
-                                        >
-                                        that best describes why the stock is
-                                        changing (see types below).</span
-                                    >
-                                </li>
-                                <li class="flex gap-2.5">
-                                    <span
-                                        class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
-                                        >3</span
-                                    >
-                                    <span
-                                        ><span
-                                            class="font-semibold text-foreground"
-                                            >Enter the quantity</span
-                                        >
-                                        — for Stock In/Out, Waste, and Purchase
-                                        this is the amount to add or remove. For
-                                        Manual Adjustment, enter the new total
-                                        stock count.</span
-                                    >
-                                </li>
-                                <li class="flex gap-2.5">
-                                    <span
-                                        class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
-                                        >4</span
-                                    >
-                                    <span
-                                        ><span
-                                            class="font-semibold text-foreground"
-                                            >Add a note</span
-                                        >
-                                        (optional) — write a short reason such
-                                        as "Supplier delivery" or "Monthly
-                                        count". Notes help you trace changes
-                                        later in the transaction log.</span
-                                    >
-                                </li>
-                                <li class="flex gap-2.5">
-                                    <span
-                                        class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
-                                        >5</span
-                                    >
-                                    <span
-                                        ><span
-                                            class="font-semibold text-foreground"
-                                            >Tap Save</span
-                                        >
-                                        — the stock level updates immediately
-                                        and the change is recorded in Recent
-                                        Transactions.</span
-                                    >
-                                </li>
-                            </ol>
-                        </div>
-
-                        <div>
-                            <p class="mb-3 text-base font-bold">
-                                🔄 Adjustment Types
-                            </p>
-                            <div class="space-y-3">
-                                <div
-                                    class="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-900 dark:bg-green-950/30"
-                                >
-                                    <p
-                                        class="mb-1 font-semibold text-green-700 dark:text-green-400"
-                                    >
-                                        Stock In
-                                    </p>
-                                    <p class="text-muted-foreground">
-                                        Use when you receive new stock from any
-                                        source. The quantity you enter is
-                                        <span class="font-semibold">added</span>
-                                        to the current stock. Example: a bag of
-                                        flour arrives from the supplier — enter
-                                        the number of bags received.
-                                    </p>
-                                </div>
-                                <div
-                                    class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950/30"
-                                >
-                                    <p
-                                        class="mb-1 font-semibold text-red-700 dark:text-red-400"
-                                    >
-                                        Stock Out
-                                    </p>
-                                    <p class="text-muted-foreground">
-                                        Use when stock leaves for any unplanned
-                                        reason not covered by other types (e.g.
-                                        transferred to another branch, given
-                                        away). The quantity is
-                                        <span class="font-semibold"
-                                            >deducted</span
-                                        >
-                                        from current stock.
-                                    </p>
-                                </div>
-                                <div
-                                    class="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-900 dark:bg-blue-950/30"
-                                >
-                                    <p
-                                        class="mb-1 font-semibold text-blue-700 dark:text-blue-400"
-                                    >
-                                        Manual Adjustment
-                                    </p>
-                                    <p class="text-muted-foreground">
-                                        Use after a physical stock count when
-                                        the actual quantity on hand differs from
-                                        what the system shows. Enter the
-                                        <span class="font-semibold"
-                                            >exact new total</span
-                                        >
-                                        — the system will set the stock to that
-                                        number regardless of the previous value.
-                                    </p>
-                                </div>
-                                <div
-                                    class="rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-900 dark:bg-orange-950/30"
-                                >
-                                    <p
-                                        class="mb-1 font-semibold text-orange-700 dark:text-orange-400"
-                                    >
-                                        Waste
-                                    </p>
-                                    <p class="text-muted-foreground">
-                                        Use when items are spoiled, expired,
-                                        dropped, or otherwise unusable. The
-                                        quantity is
-                                        <span class="font-semibold"
-                                            >deducted</span
-                                        >
-                                        and logged separately so waste can be
-                                        tracked and reported over time.
-                                    </p>
-                                </div>
-                                <div
-                                    class="rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-900 dark:bg-purple-950/30"
-                                >
-                                    <p
-                                        class="mb-1 font-semibold text-purple-700 dark:text-purple-400"
-                                    >
-                                        Purchase
-                                    </p>
-                                    <p class="text-muted-foreground">
-                                        Use when you buy stock specifically as a
-                                        procurement event. Like Stock In, the
-                                        quantity is
-                                        <span class="font-semibold">added</span
-                                        >, but it is tagged as a purchase so
-                                        spending can be tracked separately from
-                                        other stock additions.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div>
-                            <p class="mb-2 text-base font-bold">
-                                🔴 Low Stock Alert
-                            </p>
-                            <p class="text-muted-foreground">
-                                An item is flagged
-                                <span class="font-semibold text-red-600"
-                                    >Low</span
-                                >
-                                when its current stock falls below its set
-                                minimum. Use
-                                <span class="font-semibold"
-                                    >Show only low stock</span
-                                >
-                                on the alert banner to filter those items
-                                quickly.
-                            </p>
-                        </div>
-
-                        <div>
-                            <p class="mb-2 text-base font-bold">
-                                🏷️ Item Types
-                            </p>
-                            <ul class="space-y-1.5 text-muted-foreground">
-                                <li>
-                                    <span
-                                        class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-900/40 dark:text-green-300"
-                                        >Ingredient</span
-                                    >
-                                    — used in recipes and deducted automatically
-                                    when orders are completed.
-                                </li>
-                                <li>
-                                    <span
-                                        class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                                        >Tool</span
-                                    >
-                                    — equipment tracked for maintenance or
-                                    reorder purposes.
-                                </li>
-                                <li>
-                                    <span
-                                        class="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"
-                                        >Equipment</span
-                                    >
-                                    — larger assets tracked in inventory.
-                                </li>
-                                <li>
-                                    <span
-                                        class="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
-                                        >Supply</span
-                                    >
-                                    — consumable supplies not used directly in
-                                    recipes.
-                                </li>
-                            </ul>
-                        </div>
-
-                        <div>
-                            <p class="mb-2 text-base font-bold">
-                                📋 Recent Transactions
-                            </p>
-                            <p class="text-muted-foreground">
-                                The transaction log at the bottom shows the
-                                latest stock changes including automatic
-                                deductions from completed orders, manual
-                                adjustments, and purchases.
-                            </p>
-                        </div>
-                    </div>
-                    <div class="border-t p-5">
-                        <button
-                            @click="showHelp = false"
-                            class="w-full rounded-lg bg-primary py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90"
+                            you want to update. The adjustment form will slide
+                            up from the bottom.</span
                         >
-                            Got it
-                        </button>
+                    </li>
+                    <li class="flex gap-2.5">
+                        <span
+                            class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
+                            >2</span
+                        >
+                        <span
+                            ><span class="font-semibold text-foreground"
+                                >Choose the adjustment type</span
+                            >
+                            that best describes why the stock is changing (see
+                            types below).</span
+                        >
+                    </li>
+                    <li class="flex gap-2.5">
+                        <span
+                            class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
+                            >3</span
+                        >
+                        <span
+                            ><span class="font-semibold text-foreground"
+                                >Enter the quantity</span
+                            >
+                            — for Stock In/Out, Waste, and Purchase this is the
+                            amount to add or remove. For Manual Adjustment,
+                            enter the new total stock count.</span
+                        >
+                    </li>
+                    <li class="flex gap-2.5">
+                        <span
+                            class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
+                            >4</span
+                        >
+                        <span
+                            ><span class="font-semibold text-foreground"
+                                >Add a note</span
+                            >
+                            (optional) — write a short reason such as "Supplier
+                            delivery" or "Monthly count". Notes help you trace
+                            changes later in the transaction log.</span
+                        >
+                    </li>
+                    <li class="flex gap-2.5">
+                        <span
+                            class="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
+                            >5</span
+                        >
+                        <span
+                            ><span class="font-semibold text-foreground"
+                                >Tap Save</span
+                            >
+                            — the stock level updates immediately and the change
+                            is recorded in Recent Transactions.</span
+                        >
+                    </li>
+                </ol>
+            </div>
+
+            <div>
+                <p class="mb-3 text-base font-bold">🔄 Adjustment Types</p>
+                <div class="space-y-3">
+                    <div
+                        class="rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-900 dark:bg-green-950/30"
+                    >
+                        <p
+                            class="mb-1 font-semibold text-green-700 dark:text-green-400"
+                        >
+                            Stock In
+                        </p>
+                        <p class="text-muted-foreground">
+                            Use when you receive new stock from any source. The
+                            quantity you enter is
+                            <span class="font-semibold">added</span>
+                            to the current stock. Example: a bag of flour
+                            arrives from the supplier — enter the number of bags
+                            received.
+                        </p>
+                    </div>
+                    <div
+                        class="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950/30"
+                    >
+                        <p
+                            class="mb-1 font-semibold text-red-700 dark:text-red-400"
+                        >
+                            Stock Out
+                        </p>
+                        <p class="text-muted-foreground">
+                            Use when stock leaves for any unplanned reason not
+                            covered by other types (e.g. transferred to another
+                            branch, given away). The quantity is
+                            <span class="font-semibold">deducted</span>
+                            from current stock.
+                        </p>
+                    </div>
+                    <div
+                        class="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-900 dark:bg-blue-950/30"
+                    >
+                        <p
+                            class="mb-1 font-semibold text-blue-700 dark:text-blue-400"
+                        >
+                            Manual Adjustment
+                        </p>
+                        <p class="text-muted-foreground">
+                            Use after a physical stock count when the actual
+                            quantity on hand differs from what the system shows.
+                            Enter the
+                            <span class="font-semibold">exact new total</span>
+                            — the system will set the stock to that number
+                            regardless of the previous value.
+                        </p>
+                    </div>
+                    <div
+                        class="rounded-lg border border-orange-200 bg-orange-50 p-3 dark:border-orange-900 dark:bg-orange-950/30"
+                    >
+                        <p
+                            class="mb-1 font-semibold text-orange-700 dark:text-orange-400"
+                        >
+                            Waste
+                        </p>
+                        <p class="text-muted-foreground">
+                            Use when items are spoiled, expired, dropped, or
+                            otherwise unusable. The quantity is
+                            <span class="font-semibold">deducted</span>
+                            and logged separately so waste can be tracked and
+                            reported over time.
+                        </p>
+                    </div>
+                    <div
+                        class="rounded-lg border border-purple-200 bg-purple-50 p-3 dark:border-purple-900 dark:bg-purple-950/30"
+                    >
+                        <p
+                            class="mb-1 font-semibold text-purple-700 dark:text-purple-400"
+                        >
+                            Purchase
+                        </p>
+                        <p class="text-muted-foreground">
+                            Use when you buy stock specifically as a procurement
+                            event. Like Stock In, the quantity is
+                            <span class="font-semibold">added</span>, but it is
+                            tagged as a purchase so spending can be tracked
+                            separately from other stock additions.
+                        </p>
                     </div>
                 </div>
             </div>
-        </Transition>
-    </Teleport>
+
+            <div>
+                <p class="mb-2 text-base font-bold">🔴 Low Stock Alert</p>
+                <p class="text-muted-foreground">
+                    An item is flagged
+                    <span class="font-semibold text-red-600">Low</span>
+                    when its current stock falls below its set minimum. Use
+                    <span class="font-semibold">Show only low stock</span>
+                    on the alert banner to filter those items quickly.
+                </p>
+            </div>
+
+            <div>
+                <p class="mb-2 text-base font-bold">🏷️ Item Types</p>
+                <ul class="space-y-1.5 text-muted-foreground">
+                    <li>
+                        <span
+                            class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                            >Ingredient</span
+                        >
+                        — used in recipes and deducted automatically when orders
+                        are completed.
+                    </li>
+                    <li>
+                        <span
+                            class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                            >Tool</span
+                        >
+                        — equipment tracked for maintenance or reorder purposes.
+                    </li>
+                    <li>
+                        <span
+                            class="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"
+                            >Equipment</span
+                        >
+                        — larger assets tracked in inventory.
+                    </li>
+                    <li>
+                        <span
+                            class="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
+                            >Supply</span
+                        >
+                        — consumable supplies not used directly in recipes.
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <p class="mb-2 text-base font-bold">📋 Recent Transactions</p>
+                <p class="text-muted-foreground">
+                    The transaction log at the bottom shows the latest stock
+                    changes including automatic deductions from completed
+                    orders, manual adjustments, and purchases.
+                </p>
+            </div>
+        </div>
+        <template #footer
+            ><button
+                @click="showHelp = false"
+                class="w-full rounded-lg bg-primary py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90"
+            >
+                Got it
+            </button></template
+        >
+    </InventoryDialog>
 
     <!-- Edit Ingredient Modal -->
-    <Teleport to="body">
-        <Transition name="fade">
-            <div
-                v-if="editingIngredient"
-                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
-                @click.self="editingIngredient = null"
-            >
-                <div
-                    class="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-background shadow-2xl sm:max-w-md sm:rounded-2xl"
+    <InventoryDialog
+        v-if="editingIngredient"
+        :title="`Edit ${itemTypeLabel(editForm.item_type).toLowerCase()}`"
+        description="Update the details or recipe for future batches."
+        :busy="savingEdit"
+        @close="editingIngredient = null"
+    >
+        <div class="inventory-item-form">
+            <div>
+                <label
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Item Type *</label
                 >
-                    <div class="flex items-center justify-between border-b p-5">
-                        <h3 class="text-lg font-bold">Edit Ingredient</h3>
-                        <button
-                            @click="editingIngredient = null"
-                            class="rounded-full p-1 hover:bg-muted"
-                        >
-                            <X class="h-4 w-4" />
-                        </button>
-                    </div>
-                    <div class="space-y-4 p-5">
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Item Type *</label
-                            >
-                            <div class="grid grid-cols-2 gap-2">
-                                <label
-                                    v-for="t in ITEM_TYPES"
-                                    :key="t.value"
-                                    :class="[
-                                        'flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 transition',
-                                        editForm.item_type === t.value
-                                            ? 'border-primary bg-primary/5'
-                                            : 'hover:bg-muted/40',
-                                    ]"
-                                >
-                                    <input
-                                        type="radio"
-                                        v-model="editForm.item_type"
-                                        :value="t.value"
-                                        class="accent-primary"
-                                    />
-                                    <span
-                                        :class="[
-                                            'rounded-full px-2 py-0.5 text-xs font-semibold',
-                                            t.color,
-                                        ]"
-                                        >{{ t.label }}</span
-                                    >
-                                </label>
-                            </div>
-                        </div>
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Name *</label
-                            >
-                            <input
-                                v-model="editForm.name"
-                                type="text"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Unit *</label
-                            >
-                            <input
-                                v-model="editForm.unit"
-                                type="text"
-                                placeholder="e.g. kg, pcs, liters"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Minimum Stock</label
-                            >
-                            <input
-                                v-model.number="editForm.min_quantity"
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                            />
-                        </div>
-                        <div>
-                            <label
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Cost per Unit (₱)</label
-                            >
-                            <input
-                                v-model.number="editForm.cost_per_unit"
-                                :disabled="editForm.item_type === 'food'"
-                                type="number"
-                                min="0"
-                                step="0.0001"
-                                placeholder="0.00"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                            />
-                            <p class="mt-1 text-xs text-muted-foreground">
-                                Cost per {{ editForm.unit || 'unit' }}. Used to
-                                calculate product COGS for P&amp;L reports.
-                            </p>
-                        </div>
-                        <RecipeBuilder
-                            v-if="editForm.item_type === 'food'"
-                            v-model="editComponents"
-                            :ingredients="props.ingredients"
-                            :allow-food="false"
-                            label="Ingredients per finished unit"
-                            hint="Used for future batches. Existing batch costs stay unchanged."
+                <div class="grid grid-cols-2 gap-2">
+                    <label
+                        v-for="t in ITEM_TYPES"
+                        :key="t.value"
+                        :class="[
+                            'flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 transition',
+                            editForm.item_type === t.value
+                                ? 'border-primary bg-primary/5'
+                                : 'hover:bg-muted/40',
+                        ]"
+                    >
+                        <input
+                            type="radio"
+                            v-model="editForm.item_type"
+                            :value="t.value"
+                            class="accent-primary"
                         />
-                    </div>
-                    <div class="flex gap-3 border-t p-5">
-                        <button
-                            @click="editingIngredient = null"
-                            class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted"
+                        <span
+                            :class="[
+                                'rounded-full px-2 py-0.5 text-xs font-semibold',
+                                t.color,
+                            ]"
+                            >{{ t.label }}</span
                         >
-                            Cancel
-                        </button>
-                        <button
-                            @click="submitEdit"
-                            :disabled="savingEdit"
-                            class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                        >
-                            {{ savingEdit ? 'Saving…' : 'Save Changes' }}
-                        </button>
-                    </div>
+                    </label>
                 </div>
             </div>
-        </Transition>
-    </Teleport>
+            <div>
+                <label
+                    for="inventory-field-9"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Name *</label
+                >
+                <input
+                    id="inventory-field-9"
+                    v-model="editForm.name"
+                    type="text"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+            </div>
+            <div>
+                <label
+                    for="inventory-field-10"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Unit *</label
+                >
+                <input
+                    id="inventory-field-10"
+                    v-model="editForm.unit"
+                    type="text"
+                    placeholder="e.g. kg, pcs, liters"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+            </div>
+            <div>
+                <label
+                    for="inventory-field-11"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Minimum Stock</label
+                >
+                <input
+                    id="inventory-field-11"
+                    v-model.number="editForm.min_quantity"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+            </div>
+            <div>
+                <label
+                    for="inventory-field-12"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Cost per Unit (₱)</label
+                >
+                <input
+                    id="inventory-field-12"
+                    v-model.number="editForm.cost_per_unit"
+                    :disabled="editForm.item_type === 'food'"
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    placeholder="0.00"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+                <p class="mt-1 text-xs text-muted-foreground">
+                    Cost per {{ editForm.unit || 'unit' }}. Used to calculate
+                    product COGS for P&amp;L reports.
+                </p>
+            </div>
+            <RecipeBuilder
+                v-if="editForm.item_type === 'food'"
+                v-model="editComponents"
+                :ingredients="props.ingredients"
+                :allow-food="false"
+                label="Ingredients per finished unit"
+                hint="Used for future batches. Existing batch costs stay unchanged."
+            />
+        </div>
+        <template #footer
+            ><button
+                @click="editingIngredient = null"
+                class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted"
+            >
+                Cancel</button
+            ><button
+                @click="submitEdit"
+                :disabled="savingEdit"
+                class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+                {{ savingEdit ? 'Saving…' : 'Save Changes' }}
+            </button></template
+        >
+    </InventoryDialog>
 
     <!-- Undo Stock In Confirmation -->
-    <Teleport to="body">
-        <Transition name="fade">
-            <div
-                v-if="pendingUndo"
-                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:bg-black/50 sm:p-4"
-                @click.self="pendingUndo = null"
+    <InventoryDialog
+        v-if="pendingUndo"
+        :title="
+            pendingUndo.undo_production ? 'Undo production' : 'Undo stock in'
+        "
+        :description="
+            pendingUndo.undo_production
+                ? 'Return ingredients and remove the finished food.'
+                : 'Reverse stock that was not actually received.'
+        "
+        :busy="undoingId !== null"
+        compact
+        @close="pendingUndo = null"
+    >
+        <p class="mb-5 text-sm text-muted-foreground">
+            This removes
+            <span class="font-semibold text-foreground"
+                >{{ pendingUndo.quantity }}
+                {{ pendingUndo.ingredient_name }}</span
             >
-                <div
-                    class="w-full overflow-hidden rounded-t-2xl bg-background shadow-2xl sm:max-w-sm sm:rounded-2xl"
-                >
-                    <div class="p-5">
-                        <div class="mb-3 flex items-center gap-3">
-                            <div
-                                class="shrink-0 rounded-full bg-red-100 p-2.5 dark:bg-red-950/40"
-                            >
-                                <Undo2
-                                    class="h-5 w-5 text-red-600 dark:text-red-400"
-                                />
-                            </div>
-                            <div>
-                                <h3 class="text-base font-bold">
-                                    {{
-                                        pendingUndo.undo_production
-                                            ? 'Undo production'
-                                            : 'Undo Stock In'
-                                    }}
-                                </h3>
-                                <p class="text-sm text-muted-foreground">
-                                    {{
-                                        pendingUndo.undo_production
-                                            ? 'Return the ingredients and remove the finished food.'
-                                            : 'For stock that was never actually received.'
-                                    }}
-                                </p>
-                            </div>
-                        </div>
-                        <p class="mb-5 text-sm text-muted-foreground">
-                            This removes
-                            <span class="font-semibold text-foreground"
-                                >{{ pendingUndo.quantity }}
-                                {{ pendingUndo.ingredient_name }}</span
-                            >
-                            from stock again and reverses its recorded cost.
-                            <template v-if="pendingUndo.undo_production"
-                                >The original ingredients return to
-                                stock.</template
-                            >
-                            The remaining average cost is recalculated.
-                            Financial is not affected.
-                        </p>
-                        <div class="flex gap-2">
-                            <button
-                                @click="pendingUndo = null"
-                                class="flex-1 rounded-lg border py-2.5 text-sm font-semibold transition hover:bg-muted"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                @click="confirmUndo"
-                                :disabled="undoingId !== null"
-                                class="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-60"
-                            >
-                                {{ undoingId !== null ? 'Undoing…' : 'Undo' }}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </Transition>
-    </Teleport>
+            from stock again and reverses its recorded cost.
+            <template v-if="pendingUndo.undo_production"
+                >The original ingredients return to stock.</template
+            >
+            The remaining average cost is recalculated. Financial is not
+            affected.
+        </p>
+        <template #footer
+            ><button
+                @click="pendingUndo = null"
+                class="flex-1 rounded-lg border py-2.5 text-sm font-semibold transition hover:bg-muted"
+            >
+                Cancel</button
+            ><button
+                @click="confirmUndo"
+                :disabled="undoingId !== null"
+                class="flex-1 rounded-lg bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-60"
+            >
+                {{ undoingId !== null ? 'Undoing…' : 'Undo' }}
+            </button></template
+        >
+    </InventoryDialog>
 
     <!-- Produce a batch -->
-    <Teleport to="body">
-        <Transition name="fade">
-            <div
-                v-if="producing"
-                class="inventory-theme inventory-modal fixed inset-0 z-50 flex items-end justify-center overflow-y-auto sm:items-center sm:p-4"
-                @click.self="producing = null"
-            >
-                <div
-                    class="w-full overflow-y-auto rounded-t-2xl bg-background shadow-2xl sm:max-w-lg sm:rounded-2xl"
-                >
-                    <div class="flex items-center justify-between border-b p-5">
-                        <div>
-                            <h3 class="text-lg font-bold">
-                                Produce {{ producing.name }}
-                            </h3>
-                            <p class="text-xs text-muted-foreground">
-                                Uses up ingredients and adds finished
-                                {{ producing.unit }}.
-                            </p>
-                        </div>
-                        <button
-                            @click="producing = null"
-                            class="rounded-full p-1.5 transition hover:bg-muted"
-                            aria-label="Close"
-                        >
-                            <X class="h-4 w-4" />
-                        </button>
-                    </div>
-
-                    <div class="space-y-4 p-5">
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label
-                                    for="produce-batch"
-                                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                    >Batch size</label
-                                >
-                                <input
-                                    id="produce-batch"
-                                    v-model.number="produceBatch"
-                                    type="number"
-                                    min="0.001"
-                                    step="1"
-                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                                />
-                            </div>
-                            <div>
-                                <label
-                                    for="produce-yield"
-                                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                    >Actual yield</label
-                                >
-                                <input
-                                    id="produce-yield"
-                                    v-model.number="produceYield"
-                                    type="number"
-                                    min="0.001"
-                                    step="1"
-                                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                                />
-                            </div>
-                        </div>
-
-                        <div
-                            v-if="produceComponents.length === 0"
-                            class="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground"
-                        >
-                            {{ producing.name }} has no ingredients yet. Add
-                            them before producing a batch.
-                        </div>
-                        <div v-else class="overflow-hidden rounded-xl border">
-                            <table class="w-full text-xs">
-                                <thead>
-                                    <tr>
-                                        <th class="text-left">Uses</th>
-                                        <th class="text-right">Quantity</th>
-                                        <th class="text-right">Cost</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr
-                                        v-for="c in produceComponents"
-                                        :key="c.ingredient_id"
-                                    >
-                                        <td>{{ c.ingredient_name }}</td>
-                                        <td class="text-right tabular-nums">
-                                            {{
-                                                (
-                                                    c.quantity *
-                                                    (produceBatch || 0)
-                                                ).toFixed(3)
-                                            }}
-                                            {{ c.unit }}
-                                        </td>
-                                        <td class="text-right tabular-nums">
-                                            {{
-                                                money(
-                                                    c.cost_per_unit *
-                                                        c.quantity *
-                                                        (produceBatch || 0),
-                                                )
-                                            }}
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <dl
-                            v-if="produceComponents.length"
-                            class="grid grid-cols-2 gap-3 rounded-xl border bg-muted/20 p-4 text-sm"
-                        >
-                            <div>
-                                <dt class="text-xs text-muted-foreground">
-                                    Batch cost
-                                </dt>
-                                <dd class="font-bold tabular-nums">
-                                    {{ money(produceCost) }}
-                                </dd>
-                            </div>
-                            <div>
-                                <dt class="text-xs text-muted-foreground">
-                                    Cost per {{ producing.unit }}
-                                </dt>
-                                <dd class="font-bold tabular-nums">
-                                    {{ money(produceUnitCost) }}
-                                </dd>
-                            </div>
-                            <div class="col-span-2">
-                                <dt class="text-xs text-muted-foreground">
-                                    Average cost after this batch
-                                </dt>
-                                <dd class="font-bold tabular-nums">
-                                    {{ money(produceAverage) }}
-                                </dd>
-                            </div>
-                        </dl>
-
-                        <div>
-                            <label
-                                for="produce-notes"
-                                class="mb-1.5 block text-xs font-medium text-muted-foreground"
-                                >Notes (optional)</label
-                            >
-                            <input
-                                id="produce-notes"
-                                v-model="produceNotes"
-                                type="text"
-                                placeholder="e.g. morning prep"
-                                class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
-                            />
-                        </div>
-
-                        <p class="text-xs text-muted-foreground">
-                            Producing moves value from ingredients into
-                            {{ producing.name }}. It does not change profit;
-                            that happens when the food is sold.
-                        </p>
-                    </div>
-
-                    <div class="flex gap-3 border-t p-5">
-                        <button
-                            @click="producing = null"
-                            class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            @click="submitProduce"
-                            :disabled="
-                                producingNow || produceComponents.length === 0
-                            "
-                            class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                        >
-                            {{ producingNow ? 'Producing…' : 'Produce batch' }}
-                        </button>
-                    </div>
+    <InventoryDialog
+        v-if="producing"
+        :title="`Produce ${producing.name}`"
+        description="Set your planned batch and actual yield. Review the cost before saving."
+        :busy="producingNow"
+        @close="producing = null"
+    >
+        <div class="space-y-4 p-5">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label
+                        for="produce-batch"
+                        class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                        >Batch size</label
+                    >
+                    <input
+                        id="produce-batch"
+                        v-model.number="produceBatch"
+                        type="number"
+                        min="0.001"
+                        step="1"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
+                </div>
+                <div>
+                    <label
+                        for="produce-yield"
+                        class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                        >Actual yield</label
+                    >
+                    <input
+                        id="produce-yield"
+                        v-model.number="produceYield"
+                        type="number"
+                        min="0.001"
+                        step="1"
+                        class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                    />
                 </div>
             </div>
-        </Transition>
-    </Teleport>
+
+            <div
+                v-if="produceComponents.length === 0"
+                class="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground"
+            >
+                {{ producing.name }} has no ingredients yet. Add them before
+                producing a batch.
+            </div>
+            <div v-else class="overflow-hidden rounded-xl border">
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr>
+                            <th class="text-left">Uses</th>
+                            <th class="text-right">Quantity</th>
+                            <th class="text-right">Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr
+                            v-for="c in produceComponents"
+                            :key="c.ingredient_id"
+                        >
+                            <td>{{ c.ingredient_name }}</td>
+                            <td class="text-right tabular-nums">
+                                {{
+                                    (c.quantity * (produceBatch || 0)).toFixed(
+                                        3,
+                                    )
+                                }}
+                                {{ c.unit }}
+                            </td>
+                            <td class="text-right tabular-nums">
+                                {{
+                                    money(
+                                        c.cost_per_unit *
+                                            c.quantity *
+                                            (produceBatch || 0),
+                                    )
+                                }}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <dl
+                v-if="produceComponents.length"
+                class="grid grid-cols-2 gap-3 rounded-xl border bg-muted/20 p-4 text-sm"
+            >
+                <div>
+                    <dt class="text-xs text-muted-foreground">Batch cost</dt>
+                    <dd class="font-bold tabular-nums">
+                        {{ money(produceCost) }}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-xs text-muted-foreground">
+                        Cost per {{ producing.unit }}
+                    </dt>
+                    <dd class="font-bold tabular-nums">
+                        {{ money(produceUnitCost) }}
+                    </dd>
+                </div>
+                <div class="col-span-2">
+                    <dt class="text-xs text-muted-foreground">
+                        Average cost after this batch
+                    </dt>
+                    <dd class="font-bold tabular-nums">
+                        {{ money(produceAverage) }}
+                    </dd>
+                </div>
+            </dl>
+
+            <div>
+                <label
+                    for="produce-notes"
+                    class="mb-1.5 block text-xs font-medium text-muted-foreground"
+                    >Notes (optional)</label
+                >
+                <input
+                    id="produce-notes"
+                    v-model="produceNotes"
+                    type="text"
+                    placeholder="e.g. morning prep"
+                    class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+            </div>
+
+            <p class="text-xs text-muted-foreground">
+                Producing moves value from ingredients into
+                {{ producing.name }}. It does not change profit; that happens
+                when the food is sold.
+            </p>
+        </div>
+        <template #footer
+            ><button
+                @click="producing = null"
+                class="flex-1 rounded-lg border py-2 text-sm font-medium hover:bg-muted"
+            >
+                Cancel</button
+            ><button
+                @click="submitProduce"
+                :disabled="producingNow || produceComponents.length === 0"
+                class="flex-1 rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+                {{ producingNow ? 'Producing…' : 'Produce batch' }}
+            </button></template
+        >
+    </InventoryDialog>
 </template>
 
 <style scoped>
