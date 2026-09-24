@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Services\InventoryService;
 use App\Services\ReportService;
+use App\Services\ShiftChecklist;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -19,6 +20,7 @@ class DashboardController extends Controller
     public function __construct(
         private InventoryService $inventoryService,
         private ReportService $reportService,
+        private ShiftChecklist $shiftChecklist,
     ) {}
 
     public function index(): Response
@@ -38,6 +40,9 @@ class DashboardController extends Controller
             'servingTime'            => $this->buildServingTime($user),
             'pendingProductBreakdown' => $this->buildPendingProductBreakdown($user),
             'depositShift'           => $this->buildDepositShift($user),
+            'shiftChecklist'         => $user->hasAnyRole(['admin', 'cashier', 'auditor'])
+                ? $this->shiftChecklist->for($user)
+                : null,
         ]);
     }
 

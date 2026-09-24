@@ -29,6 +29,11 @@ Route::prefix('v1')->group(function () {
         }
 
         Route::middleware('auth')->group(function () {
+        Route::middleware('role:cashier|admin|auditor')->group(function () {
+            Route::get('/shift-checklist', [\App\Http\Controllers\Api\V1\ShiftChecklistController::class, 'index']);
+            Route::post('/shift-checklist', [\App\Http\Controllers\Api\V1\ShiftChecklistController::class, 'store']);
+        });
+
         Route::prefix('deposit-controls')->middleware('role:cashier|admin|auditor')->group(function () {
             Route::get('/', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'index']);
             Route::middleware('role:cashier|admin')->group(function () {

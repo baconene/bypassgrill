@@ -5,15 +5,19 @@ import {
     BarChart3,
     Check,
     ChefHat,
+    ClipboardCheck,
     ClipboardList,
     Flame,
     Package,
     RefreshCw,
     ShoppingCart,
     Wallet,
+    X,
 } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
+import { toast } from 'vue-sonner';
 import type { Auth } from '@/types/auth';
+import api from '@/utils/api';
 
 defineOptions({
     layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard' }] },
@@ -52,6 +56,25 @@ interface DepositShift {
     opening_cash: number;
     stage: 'counting' | 'awaiting_submission';
 }
+interface ChecklistStep {
+    key: string;
+    title: string;
+    hint: string;
+    href: string;
+    phase: 'before' | 'after';
+    done: boolean;
+    detail: string;
+    /** Offered only when nothing recorded proves the step. */
+    manual: boolean;
+    marked: boolean;
+}
+interface ShiftChecklist {
+    business_date: string;
+    steps: ChecklistStep[];
+    done: number;
+    total: number;
+    next: string | null;
+}
 const props = defineProps<{
     stats: Record<string, number>;
     recentOrders: Order[];
@@ -59,6 +82,7 @@ const props = defineProps<{
     servingTime: ServingTime | null;
     pendingProductBreakdown: { name: string; qty: number }[];
     depositShift: DepositShift | null;
+    shiftChecklist: ShiftChecklist | null;
 }>();
 const page = usePage<{
     auth: Auth & { roles: string[]; permissions?: string[] };
@@ -69,6 +93,47 @@ const canSell = computed(() => hasRole('admin', 'cashier'));
 const canCook = computed(() => hasRole('admin', 'kitchen'));
 const canReport = computed(() => hasRole('admin', 'auditor'));
 const canDeposit = computed(() => hasRole('admin', 'cashier', 'auditor'));
+
+// Shift checklist: what the routine says to do, ticked from what the shift
+// actually recorded. Only the two steps that can have nothing to record are
+// ticked by hand.
+const checklist = ref<ShiftChecklist | null>(props.shiftChecklist);
+const checklistOpen = ref(false);
+const checklistBusy = ref<string | null>(null);
+const beforeSteps = computed(
+    () => checklist.value?.steps.filter((s) => s.phase === 'before') ?? [],
+);
+const afterSteps = computed(
+    () => checklist.value?.steps.filter((s) => s.phase === 'after') ?? [],
+);
+const openChecklist = async () => {
+    checklistOpen.value = true;
+
+    try {
+        const { data } = await api.get('/api/v1/shift-checklist');
+        checklist.value = data;
+    } catch {
+        // Keep the figures the page was rendered with.
+    }
+};
+const toggleStep = async (step: ChecklistStep) => {
+    if (!step.manual) {
+        return;
+    }
+
+    checklistBusy.value = step.key;
+
+    try {
+        const { data } = await api.post('/api/v1/shift-checklist', {
+            step: step.key,
+        });
+        checklist.value = data;
+    } catch {
+        toast.error('Could not update the checklist.');
+    } finally {
+        checklistBusy.value = null;
+    }
+};
 
 // ── Open deposit shift ────────────────────────────────────────────────────────
 // Only the cashier who opened a shift may close and submit it, so the card names
@@ -397,6 +462,16 @@ function refresh() {
                         :size="17"
                         aria-hidden="true" />{{ primary.label
                     }}<ArrowUpRight :size="17" aria-hidden="true" /></Link
+                ><button
+                    v-if="checklist"
+                    type="button"
+                    class="secondary-action"
+                    @click="openChecklist"
+                >
+                    <ClipboardCheck :size="17" aria-hidden="true" />Shift
+                    checklist<span class="action-count"
+                        >{{ checklist.done }}/{{ checklist.total }}</span
+                    ></button
                 ><Link
                     v-if="canDeposit"
                     href="/deposit-control"
@@ -732,6 +807,137 @@ function refresh() {
             <span>BYPASS GRILL · GOOD FOOD. GOOD MOOD.</span
             ><span>Figures update when you open or refresh this page.</span>
         </footer>
+
+        <!-- Shift checklist -->
+        <Teleport to="body">
+            <div
+                v-if="checklistOpen && checklist"
+                class="grill-dashboard checklist-backdrop"
+                @click.self="checklistOpen = false"
+            >
+                <div
+                    class="checklist-panel"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="checklist-title"
+                    @keydown.esc="checklistOpen = false"
+                >
+                    <header>
+                        <div>
+                            <p class="eyebrow">
+                                <ClipboardCheck :size="14" aria-hidden="true" />
+                                SHIFT ROUTINE
+                            </p>
+                            <h2 id="checklist-title">
+                                Manager &amp; cashier checklist
+                            </h2>
+                            <p class="checklist-sub">
+                                {{ checklist.done }} of
+                                {{ checklist.total }} done<template
+                                    v-if="checklist.next"
+                                >
+                                    · next: {{ checklist.next }}</template
+                                >
+                            </p>
+                        </div>
+                        <button
+                            class="checklist-close"
+                            aria-label="Close checklist"
+                            @click="checklistOpen = false"
+                        >
+                            <X :size="18" />
+                        </button>
+                    </header>
+
+                    <div
+                        class="checklist-progress"
+                        role="progressbar"
+                        :aria-valuenow="checklist.done"
+                        :aria-valuemin="0"
+                        :aria-valuemax="checklist.total"
+                    >
+                        <span
+                            :style="{
+                                width: `${(checklist.done / checklist.total) * 100}%`,
+                            }"
+                        />
+                    </div>
+
+                    <div class="checklist-body">
+                        <template
+                            v-for="group in [
+                                {
+                                    label: 'Before the shift',
+                                    steps: beforeSteps,
+                                },
+                                { label: 'After the shift', steps: afterSteps },
+                            ]"
+                            :key="group.label"
+                        >
+                            <p class="checklist-group">{{ group.label }}</p>
+                            <ol>
+                                <li
+                                    v-for="(step, i) in group.steps"
+                                    :key="step.key"
+                                    :class="{ 'is-done': step.done }"
+                                >
+                                    <span class="checklist-mark">
+                                        <Check
+                                            v-if="step.done"
+                                            :size="14"
+                                            aria-hidden="true"
+                                        />
+                                        <template v-else>{{
+                                            group.label === 'After the shift'
+                                                ? beforeSteps.length + i + 1
+                                                : i + 1
+                                        }}</template>
+                                    </span>
+                                    <div class="checklist-text">
+                                        <strong>{{ step.title }}</strong>
+                                        <small>{{ step.hint }}</small>
+                                        <small class="checklist-detail">{{
+                                            step.detail
+                                        }}</small>
+                                    </div>
+                                    <div class="checklist-actions">
+                                        <Link
+                                            :href="step.href"
+                                            class="text-link"
+                                            @click="checklistOpen = false"
+                                            >Open
+                                            <ArrowUpRight
+                                                :size="14"
+                                                aria-hidden="true"
+                                        /></Link>
+                                        <button
+                                            v-if="step.manual"
+                                            :disabled="
+                                                checklistBusy === step.key
+                                            "
+                                            class="checklist-tick"
+                                            @click="toggleStep(step)"
+                                        >
+                                            {{
+                                                step.marked
+                                                    ? 'Undo'
+                                                    : 'Mark done'
+                                            }}
+                                        </button>
+                                    </div>
+                                </li>
+                            </ol>
+                        </template>
+                    </div>
+
+                    <p class="checklist-note">
+                        Steps tick themselves from what the shift records. Use
+                        Mark done only when there was genuinely nothing to
+                        record.
+                    </p>
+                </div>
+            </div>
+        </Teleport>
     </div>
 </template>
 
@@ -1241,6 +1447,170 @@ td small {
     color: #68665f;
     margin: 10px 0 18px;
 }
+/* Shift checklist */
+.action-count {
+    margin-left: 2px;
+    border-radius: 20px;
+    padding: 2px 7px;
+    background: #ffffff26;
+    font-size: 10px;
+}
+.checklist-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: #24231e8c;
+}
+.checklist-panel {
+    display: flex;
+    flex-direction: column;
+    width: min(560px, 100%);
+    max-height: min(86vh, 760px);
+    overflow-y: auto;
+    padding: 22px;
+    border: 1px solid #ded7cb;
+    border-radius: 6px;
+    background: #fffcf6;
+    box-shadow: 0 30px 60px -30px #24231ecc;
+}
+.checklist-panel > header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+}
+.checklist-panel h2 {
+    margin-top: 7px;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+}
+.checklist-sub {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #68665f;
+}
+.checklist-close {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    color: #68665f;
+}
+.checklist-close:hover {
+    background: #efeadf;
+    color: #24231e;
+}
+.checklist-progress {
+    height: 5px;
+    margin: 16px 0 6px;
+    border-radius: 3px;
+    background: #efeadf;
+    overflow: hidden;
+}
+.checklist-progress > span {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    background: #6f9a5d;
+    transition: width 0.3s;
+}
+.checklist-group {
+    margin: 16px 0 6px;
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    color: #ad3b19;
+}
+.checklist-body ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.checklist-body li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 0;
+    border-top: 1px solid #ece5da;
+}
+.checklist-mark {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border: 1px solid #d4cdbf;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 800;
+    color: #777268;
+}
+.checklist-body li.is-done .checklist-mark {
+    border-color: #6f9a5d;
+    background: #6f9a5d;
+    color: #fff;
+}
+.checklist-text {
+    flex: 1;
+    min-width: 0;
+}
+.checklist-text strong {
+    display: block;
+    font-size: 14px;
+    line-height: 1.35;
+}
+.checklist-body li.is-done .checklist-text strong {
+    color: #5c5a52;
+    text-decoration: line-through;
+    text-decoration-color: #b6b1a4;
+}
+.checklist-text small {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #777268;
+}
+.checklist-detail {
+    color: #948d7e !important;
+}
+.checklist-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.checklist-tick {
+    border: 1px solid #d4cdbf;
+    border-radius: 4px;
+    padding: 5px 9px;
+    background: #fffcf6;
+    font-size: 10px;
+    font-weight: 700;
+    color: #24231e;
+    white-space: nowrap;
+}
+.checklist-tick:hover:not(:disabled) {
+    background: #efeadf;
+}
+.checklist-tick:disabled {
+    opacity: 0.5;
+}
+.checklist-note {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #ece5da;
+    font-size: 10px;
+    line-height: 1.6;
+    color: #777268;
+}
 .dashboard-footer {
     display: flex;
     justify-content: space-between;
@@ -1357,6 +1727,17 @@ td small {
     .dashboard-footer {
         flex-direction: column;
         line-height: 1.6;
+    }
+    .checklist-panel {
+        padding: 16px;
+    }
+    .checklist-body li {
+        flex-wrap: wrap;
+    }
+    .checklist-actions {
+        flex-direction: row;
+        width: 100%;
+        justify-content: flex-end;
     }
 }
 @media (prefers-reduced-motion: reduce) {
