@@ -6,6 +6,16 @@ import {
     reconcileShift,
     startShift,
 } from './deposit';
+import {
+    billsSummary,
+    dailyTotals,
+    deleteEntry,
+    financialList,
+    financialSummary,
+    periodHistory,
+    recordEntry,
+    tenders as financialTenders,
+} from './financial';
 import { products as catalogue } from './orders';
 const seed = () => ({
     id: 1042,
@@ -34,18 +44,13 @@ const seed = () => ({
 let order = seed();
 let pending = [order];
 export default {
-    async get(url: string) {
+    async get(url: string, config?: { params?: Record<string, unknown> }) {
         if (url === '/api/v1/shift-checklist') {
             return { data: checklist };
         }
 
         if (url === '/api/v1/payment-tenders') {
-            return {
-                data: [
-                    { id: 1, name: 'Cash', is_active: true, display_order: 1 },
-                    { id: 2, name: 'GCash', is_active: true, display_order: 2 },
-                ],
-            };
+            return { data: financialTenders };
         }
 
         if (url === '/api/v1/orders') {
@@ -59,6 +64,26 @@ export default {
 
         if (url === '/api/v1/deposit-controls') {
             return { data: depositState() };
+        }
+
+        if (url === '/api/v1/financial-transactions/summary') {
+            return { data: financialSummary() };
+        }
+
+        if (url === '/api/v1/financial-transactions') {
+            return { data: financialList(config?.params) };
+        }
+
+        if (url === '/api/v1/financial-transactions/daily') {
+            return { data: dailyTotals };
+        }
+
+        if (url === '/api/v1/financial-transactions/periods') {
+            return { data: periodHistory };
+        }
+
+        if (url === '/api/v1/bills/summary') {
+            return { data: billsSummary };
         }
 
         throw Error('Unsupported sample GET ' + url);
@@ -84,6 +109,11 @@ export default {
 
         if (url === '/api/v1/print-jobs') {
             return { data: { success: true } };
+        }
+
+        // Recording an expense or an income adjustment from the Financial page.
+        if (url === '/api/v1/financial-transactions') {
+            return { data: recordEntry(payload) };
         }
 
         // The deposit-control flow: start, then close, then submit the counts.
@@ -118,5 +148,14 @@ export default {
         }
 
         throw Error('Unsupported sample PUT ' + url);
+    },
+    async delete(url: string) {
+        const match = url.match(/^\/api\/v1\/financial-transactions\/(\d+)$/);
+
+        if (match) {
+            return { data: deleteEntry(Number(match[1])) };
+        }
+
+        throw Error('Unsupported sample DELETE ' + url);
     },
 };

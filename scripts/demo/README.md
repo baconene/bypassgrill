@@ -25,6 +25,7 @@ node scripts/demo/capture.cjs
 node scripts/demo/capture-dashboard.cjs
 node scripts/demo/capture-orders.cjs
 node scripts/demo/capture-deposit-control.cjs
+node scripts/demo/capture-financial.cjs
 node scripts/demo/verify.cjs
 ```
 
@@ -72,3 +73,17 @@ shift is deliberately ₱50.00 short, because recognising a shortage is the poin
 of the screen. `deposit.ts` also supplies the sample user id that
 `inertia.ts` reports, since the page compares it with the shift owner before
 showing the close and count controls.
+
+The financial guide is `/demo/functionality/financial`, using the actual
+`FinancialPage.vue` with `financial.ts`. Preview it at
+`http://127.0.0.1:4181/?preview=financial`.
+
+The fixture is a small ledger rather than a canned response: it filters,
+searches, sorts and pages server-side the way the real endpoint does, so the
+search step shows a real result and the pager has somewhere to go. Recording an
+entry adds to it and the totals move. Its day matches the deposit-control
+sample deliberately — ₱8,000.00 forward, ₱12,450.00 in, ₱3,700.00 out, closing
+₱16,750.00 — so a reader moving between the two guides sees one day, not two.
+
+`capture-financial.cjs` clears `localStorage` first, because the page remembers
+its last tab and would otherwise open wherever the previous run finished.

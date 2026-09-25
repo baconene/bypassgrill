@@ -106,10 +106,15 @@ const { chromium } = require('../../.demo-capture/node_modules/playwright');
         'dashboard',
         'orders',
         'deposit-control',
+        'financial',
     ]) {
-        const path = ['POS', 'dashboard', 'orders', 'deposit-control'].includes(
-            guide,
-        )
+        const path = [
+            'POS',
+            'dashboard',
+            'orders',
+            'deposit-control',
+            'financial',
+        ].includes(guide)
             ? guide
             : 'POS/' + guide;
         await page.goto('http://127.0.0.1:4181/demo/functionality/' + path);
@@ -252,6 +257,47 @@ const { chromium } = require('../../.demo-capture/node_modules/playwright');
         console.log(
             width +
                 ' deposit-control navigation, lightbox and mobile presentation passed',
+        );
+    }
+
+    for (const width of [1440, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('http://127.0.0.1:4181/demo/functionality/financial');
+        await page
+            .getByRole('heading', {
+                name: 'Pick the period first',
+                exact: true,
+            })
+            .waitFor();
+        await page
+            .getByRole('button', { name: 'Next step', exact: true })
+            .click();
+        await page
+            .getByRole('heading', {
+                name: 'Read the four figures across the top',
+                exact: true,
+            })
+            .waitFor();
+        await page.getByRole('button', { name: /Enlarge screenshot:/ }).click();
+        await page
+            .getByRole('dialog', { name: 'Enlarged Financial screenshot' })
+            .waitFor();
+        await page.keyboard.press('Escape');
+        await page
+            .getByRole('button', { name: 'Presentation mode', exact: true })
+            .click();
+        assert(
+            await page.evaluate(
+                () => document.documentElement.scrollWidth <= innerWidth,
+            ),
+        );
+        await page
+            .getByRole('button', { name: 'Show all steps', exact: true })
+            .click();
+        assert.equal(await page.locator('.demo-all article').count(), 9);
+        console.log(
+            width +
+                ' financial navigation, lightbox and mobile presentation passed',
         );
     }
 

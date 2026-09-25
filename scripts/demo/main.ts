@@ -5,6 +5,7 @@ import POS from '../../resources/js/pages/CashierDashboard.vue';
 import Dashboard from '../../resources/js/pages/Dashboard.vue';
 import Demo from '../../resources/js/pages/DemoFunctionality.vue';
 import DepositControl from '../../resources/js/pages/DepositControlPage.vue';
+import Financial from '../../resources/js/pages/FinancialPage.vue';
 import OrderDetail from '../../resources/js/pages/OrderDetail.vue';
 import { dashboard } from './dashboard';
 import { order } from './orders';
@@ -73,7 +74,9 @@ const app = createApp({
                       ? h(DepositControl, {
                             historyView: query.get('history') === '1',
                         })
-                      : h(POS, { products, categories }),
+                      : mode === 'financial'
+                        ? h(Financial)
+                        : h(POS, { products, categories }),
             h(Toaster),
         ]),
 });

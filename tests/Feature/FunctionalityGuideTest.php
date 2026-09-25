@@ -44,12 +44,14 @@ class FunctionalityGuideTest extends TestCase
         $this->assertContains('dashboard', $keys);
         $this->assertContains('orders', $keys);
         $this->assertContains('deposit-control', $keys);
+        $this->assertContains('financial', $keys);
         $this->assertContains('POS', $keys);
 
         // Read guideUrl()'s own list of top-level guides rather than repeating it
         // here, or this test needs editing every time a guide is added and stops
         // being the thing that notices.
-        preg_match("/\[([^\]]*)\]\.includes\(key\)/", $source, $topLevel);
+        // Tolerant of line breaks: Prettier wraps the call once the list grows.
+        preg_match("/\[([^\]]*)\]\s*\.includes\(\s*key\s*,?\s*\)/s", $source, $topLevel);
         preg_match_all("/'([A-Za-z][A-Za-z-]*)'/", $topLevel[1] ?? '', $found);
         $topLevelKeys = $found[1];
         $this->assertNotEmpty($topLevelKeys, 'guideUrl() no longer lists its top-level guides.');
@@ -72,10 +74,10 @@ class FunctionalityGuideTest extends TestCase
         // "dashboard/", so the orders screenshots were silently going unchecked.
         preg_match_all("/'((?:[a-z][a-z-]*\/)?[0-9]{2}-[a-z-]+)'/", $source, $matches);
         $names = array_unique($matches[1]);
-        $this->assertGreaterThanOrEqual(48, count($names));
+        $this->assertGreaterThanOrEqual(57, count($names));
 
         // Each guide keeps its own folder, so every one must be represented.
-        foreach (['dashboard/', 'orders/', 'deposit-control/'] as $folder) {
+        foreach (['dashboard/', 'orders/', 'deposit-control/', 'financial/'] as $folder) {
             $this->assertNotEmpty(
                 array_filter($names, fn ($name) => str_starts_with($name, $folder)),
                 $folder.' screenshots are not being checked.'

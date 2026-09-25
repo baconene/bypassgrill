@@ -790,8 +790,87 @@ export const guides: Guide[] = [
             ),
         ],
     },
+    {
+        key: 'financial',
+        area: 'Financial',
+        title: 'Follow the money for any period',
+        summary:
+            'Read where the cash sits, find any movement, record what was spent, and see how the period compares with the ones before it.',
+        duration: '7 minutes',
+        before: [
+            'Open Financial from the sidebar, or /financial. It needs the view-reports permission.',
+            'These screenshots use fictional sample data for one trading day. It is the same day as the deposit-control guide, so the figures line up between them.',
+            'This presentation explains the screen; it does not record an entry or move any money.',
+        ],
+        done: 'You can read the cash position for any period, find a single movement among hundreds, record an expense, and tell a cash figure apart from a profit figure.',
+        steps: [
+            step(
+                'Pick the period first',
+                'Choose Today, Yesterday, Last 7 days, This month or Last month. Use Custom for any other range.',
+                'Every figure on the page — the totals, the ledger, the comparison — is for the period shown in the dark bar.',
+                'financial/01-period',
+                'Nothing here is live. The page answers for the period you picked, so if a number looks wrong, check the dates before anything else.',
+            ),
+            step(
+                'Read the four figures across the top',
+                'Read them left to right: opening balance, money in, money out, closing balance.',
+                'They are one sentence: ₱8,000.00 brought forward, plus ₱12,450.00 in, less ₱3,700.00 out, leaves ₱16,750.00.',
+                'financial/02-totals',
+                'This is cash, not profit. Closing balance is what you should be holding, not what you earned: it has no cost of goods in it, and money you have not been paid yet is not here at all. Profit is in Reports.',
+            ),
+            step(
+                'See where the money is sitting',
+                'Read the tender table.',
+                'Each tender carries its own balance, so cash and GCash are counted apart.',
+                'financial/03-tenders',
+                'These are the figures deposit control compares your counts against at closing. If one is wrong, the shift will read short or over by exactly that much.',
+            ),
+            step(
+                'Check what came in against what went out',
+                'Read the cash-flow panel.',
+                'Money in, money out, and the net movement for the period.',
+                'financial/04-cashflow',
+                'Money in is payments plus income adjustments. Money out is expenses, payroll, asset deductions and payout shares together, so a large figure here is not necessarily expenses — open the ledger and look.',
+            ),
+            step(
+                'Know what is owed but not yet paid',
+                'Read the Bills due panel, split into overdue and upcoming.',
+                'It shows what the business owes in this period.',
+                'financial/05-bills',
+                'Nothing here has left the drawer yet, so none of it appears in money out. A bill only becomes a movement when it is paid, which is why a healthy closing balance can still sit beside a problem.',
+            ),
+            step(
+                'Open the ledger for every movement',
+                'Click Ledger. Each row shows the date, type, description, tender, who recorded it, the amount and the balance after it.',
+                'The balance column is the running total, newest first.',
+                'financial/06-ledger',
+                'The running balance is cumulative across the whole ledger, not just this period. The first row of a period therefore starts from the opening balance, not from zero.',
+            ),
+            step(
+                'Find one movement among hundreds',
+                'Type into the search box, or use the type buttons and the tender list. Remove a filter from the Showing row.',
+                'The list narrows to matching entries and the count updates.',
+                'financial/07-search',
+                'Search looks across the whole period, not only the page you are on, and it covers the description, type, tender, staff member and customer name. A search that finds nothing means the period holds nothing matching — widen the dates before concluding an entry is missing.',
+            ),
+            step(
+                'Record what was spent',
+                'Click Record entry. Choose Expense or Income adjustment, enter the amount and a description, pick the tender it came from, then save.',
+                'The entry appears in the ledger and the totals move with it.',
+                'financial/08-entry',
+                'Pick the right tender. An expense paid in cash that is logged against GCash leaves both balances wrong, and the shift will not reconcile. Record it before the shift is closed: anything added afterwards lands outside that shift and turns up as a difference.',
+            ),
+            step(
+                'Compare with the periods before',
+                'Click Performance to see the last thirty days and the period-by-period comparison.',
+                'The chart shows income, expenses and the running balance; the table carries each period’s opening, movement and closing.',
+                'financial/09-performance',
+                'A rising balance is not the same as a profitable week — collecting an old debt raises it, and paying a bill lowers it. Use the shape here to spot the day worth asking about, then open the ledger for that day.',
+            ),
+        ],
+    },
 ];
 export const guideUrl = (key: string) =>
-    ['POS', 'dashboard', 'orders', 'deposit-control'].includes(key)
+    ['POS', 'dashboard', 'orders', 'deposit-control', 'financial'].includes(key)
         ? `/demo/functionality/${key}`
         : `/demo/functionality/POS/${key}`;
