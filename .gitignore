@@ -35,3 +35,4 @@ yarn-error.log
 /storage/app/public/logo
 /storage/app/private/logo
 /public/logo
+/.demo-capture/

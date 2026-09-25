@@ -32,9 +32,9 @@ import {
     SidebarMenuItem,
     SidebarTrigger,
 } from '@/components/ui/sidebar';
+import { dashboard } from '@/routes';
 import type { NavItem } from '@/types';
 import type { Auth } from '@/types/auth';
-import { dashboard } from '@/routes';
 
 const page = usePage<{ auth: Auth & { roles: string[] } }>();
 const roles = computed<string[]>(() => page.props.auth?.roles ?? []);
@@ -111,6 +111,8 @@ const mainNavItems = computed<NavItem[]>(() => {
             icon: Settings,
         });
     }
+
+    items.push({ title: 'User Guide', href: '/demo/functionality', icon: BookOpen });
 
     return items;
 });
