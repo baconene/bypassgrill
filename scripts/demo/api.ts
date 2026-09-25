@@ -1,5 +1,6 @@
 // Isolated sample responses only. No requests leave this fixture.
 import { checklist } from './dashboard';
+import { products as catalogue } from './orders';
 const seed = () => ({
     id: 1042,
     queue_number: 42,
@@ -33,17 +34,22 @@ export default {
         }
 
         if (url === '/api/v1/payment-tenders') {
-return {
+            return {
                 data: [
                     { id: 1, name: 'Cash', is_active: true, display_order: 1 },
                     { id: 2, name: 'GCash', is_active: true, display_order: 2 },
                 ],
             };
-}
+        }
 
         if (url === '/api/v1/orders') {
-return { data: { data: pending } };
-}
+            return { data: { data: pending } };
+        }
+
+        // Loaded by the order detail Edit panel's product search.
+        if (url === '/api/v1/products') {
+            return { data: catalogue };
+        }
 
         throw Error('Unsupported sample GET ' + url);
     },
@@ -67,8 +73,8 @@ return { data: { data: pending } };
         }
 
         if (url === '/api/v1/print-jobs') {
-return { data: { success: true } };
-}
+            return { data: { success: true } };
+        }
 
         throw Object.assign(Error('Unsupported sample POST ' + url), {
             response: { data: { message: 'Unsupported sample action' } },

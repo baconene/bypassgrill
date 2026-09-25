@@ -4,7 +4,9 @@ import { Toaster } from 'vue-sonner';
 import POS from '../../resources/js/pages/CashierDashboard.vue';
 import Dashboard from '../../resources/js/pages/Dashboard.vue';
 import Demo from '../../resources/js/pages/DemoFunctionality.vue';
+import OrderDetail from '../../resources/js/pages/OrderDetail.vue';
 import { dashboard } from './dashboard';
+import { order } from './orders';
 import './style.css';
 const categories = [
     { id: 1, name: 'Meals' },
@@ -64,7 +66,9 @@ const app = createApp({
                 ? h(Demo, { guide })
                 : mode === 'dashboard'
                   ? h(Dashboard, dashboard)
-                  : h(POS, { products, categories }),
+                  : mode === 'orders'
+                    ? h(OrderDetail, { order })
+                    : h(POS, { products, categories }),
             h(Toaster),
         ]),
 });

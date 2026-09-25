@@ -20,6 +20,7 @@ Route::get('/', [WelcomeController::class, 'index'])->name('home');
 // Public, read-only training pages. Screenshots contain fictional sample data.
 Route::inertia('/demo/functionality', 'DemoFunctionality')->name('demo.functionality');
 Route::inertia('/demo/functionality/dashboard', 'DemoFunctionality', ['guide' => 'dashboard'])->name('demo.dashboard');
+Route::inertia('/demo/functionality/orders', 'DemoFunctionality', ['guide' => 'orders'])->name('demo.orders');
 Route::inertia('/demo/functionality/POS', 'DemoFunctionality', ['guide' => 'POS'])->name('demo.pos');
 Route::get('/demo/functionality/POS/{guide}', function (string $guide) {
     abort_unless(in_array($guide, ['cancelOrder', 'pendingPayment', 'modifyOrder', 'gcash', 'receipt'], true), 404);

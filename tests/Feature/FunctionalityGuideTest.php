@@ -41,11 +41,19 @@ class FunctionalityGuideTest extends TestCase
         $keys = array_unique($matches[1]);
 
         $this->assertContains('dashboard', $keys);
+        $this->assertContains('orders', $keys);
         $this->assertContains('POS', $keys);
 
+        // Read guideUrl()'s own list of top-level guides rather than repeating it
+        // here, or this test needs editing every time a guide is added and stops
+        // being the thing that notices.
+        preg_match("/\[([^\]]*)\]\.includes\(key\)/", $source, $topLevel);
+        preg_match_all("/'([A-Za-z]+)'/", $topLevel[1] ?? '', $found);
+        $topLevelKeys = $found[1];
+        $this->assertNotEmpty($topLevelKeys, 'guideUrl() no longer lists its top-level guides.');
+
         foreach ($keys as $key) {
-            // Mirrors guideUrl() in the content file.
-            $url = in_array($key, ['POS', 'dashboard'], true)
+            $url = in_array($key, $topLevelKeys, true)
                 ? '/demo/functionality/'.$key
                 : '/demo/functionality/POS/'.$key;
 

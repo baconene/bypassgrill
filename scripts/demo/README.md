@@ -23,6 +23,7 @@ In a second terminal:
 ```sh
 node scripts/demo/capture.cjs
 node scripts/demo/capture-dashboard.cjs
+node scripts/demo/capture-orders.cjs
 node scripts/demo/verify.cjs
 ```
 
@@ -44,3 +45,14 @@ actual `Dashboard.vue` with an administrator example from `dashboard.ts`.
 Preview it at `http://127.0.0.1:4181/?preview=dashboard`. Role-dependent sections
 are explained in the guide. Checklist reads and overview refresh use local
 fixtures; no live business data is accessed or changed.
+
+The orders guide is `/demo/functionality/orders`, using the actual
+`OrderDetail.vue` with the completed, paid example in `orders.ts`. Preview it at
+`http://127.0.0.1:4181/?preview=orders`. That order is deliberately completed and
+paid, because it is the only state that shows every panel at once, including cost
+and gross profit under the totals. The Edit panel's product search and the
+receipt reprint answer from the local fixture; neither saves an order nor prints.
+
+One caveat worth keeping: the public-link panel shows the preview machine's own
+address, because the component builds the link from `window.location.origin`.
+The guide step says so rather than editing the image.

@@ -632,8 +632,87 @@ export const guides: Guide[] = [
             ),
         ],
     },
+    {
+        key: 'orders',
+        area: 'Orders',
+        title: 'Read and correct a finished order',
+        summary:
+            'Check what was sold, what it cost, and what was actually paid, then correct or reprint the order without touching the money.',
+        duration: '5 minutes',
+        before: [
+            'Open an order from Recent orders on the dashboard, or from a link to /orders/ and the order number.',
+            'Viewing needs the view-orders permission and correcting needs update-orders. Without them the order number is plain text and no Edit button appears.',
+            'These screenshots use fictional sample data. This presentation explains the screen; it does not change an order, move stock, or record a payment.',
+        ],
+        done: 'You can tell preparation from payment, read the cost and profit of a single order, correct a mistake, and send the receipt again.',
+        steps: [
+            step(
+                'Read the two badges separately',
+                'Open the order and read the badges beside the order number.',
+                'The first badge is preparation status and the second is payment status. This example is Completed and Paid.',
+                'orders/01-status',
+                'These are different questions and they move independently. Completed means the kitchen finished it, not that anyone paid; an order can sit Completed and Pending for days. Always read the second badge before treating an order as settled.',
+            ),
+            step(
+                'Check when it happened',
+                'Read the Timeline panel.',
+                'Placed shows when the order was taken. Completed shows when it was finished, or a dash while it is still open.',
+                'orders/02-timeline',
+                'Reports count an order by when it was placed, so correcting the date and time in Edit moves it between days. Change it only to fix a genuinely wrong entry.',
+            ),
+            step(
+                'Confirm who it was for',
+                'Read the Customer panel.',
+                'Table, name and contact appear when they were entered. Delivery orders also show an address.',
+                'orders/03-customer',
+                'Blank rows simply mean nothing was entered at the till; they are not an error.',
+            ),
+            step(
+                'See what was sold and what it cost',
+                'Read the Items table.',
+                'Each line shows quantity, unit price and subtotal, with the cost of that line in the last column. Modifiers and special instructions appear under the product name.',
+                'orders/04-items',
+                'Cost is the recipe cost recorded when the order was sold, not the price of those ingredients today. That is deliberate: it is what this order actually consumed.',
+            ),
+            step(
+                'Read the money on this order',
+                'Read the Totals panel.',
+                'Subtotal, any discount and the Total are the customer-facing figures. Below them, COGS and Gross Profit show what the order cost and what it earned.',
+                'orders/05-totals',
+                'This is the profit of one order, before wages, rent, expenses and waste. It is not the business profit for the day; that is the profit-and-loss report. The COGS figure only appears once the items carry a recorded cost.',
+            ),
+            step(
+                'Check what was actually paid',
+                'Read the Payments panel.',
+                'Each payment shows its tender, amount, time and status. An order with nothing collected reads No payments recorded.',
+                'orders/06-payments',
+                'Payments are recorded separately from the order. Several part payments can appear here, and the payment badge at the top only reads Paid once the total is covered.',
+            ),
+            step(
+                'Share a tracking link with the customer',
+                'Click Public URL, then Copy Link to send it, or Open to view it yourself.',
+                'A short panel appears with the order link and its two buttons.',
+                'orders/07-public-url',
+                'The link works without signing in, so anyone holding it can see the order status. It shows status only, never cost or profit. The address in this screenshot is the preview machine; on your own system it uses your restaurant address.',
+            ),
+            step(
+                'Correct a mistake on the order',
+                'Click Edit. Adjust quantities with the minus and plus buttons, remove a line with the bin icon, search Add product to add one, then click Save Changes.',
+                'The Edit Order panel opens with the notes, date and time, discount and items, and an Estimated Total that updates as you change them.',
+                'orders/08-edit',
+                'Saving rebuilds the order, so stock is corrected for what changed. It does not move money: a payment already taken stays as it is, and a corrected total can leave the order under or over paid. Settle the difference in Payments.',
+            ),
+            step(
+                'Send the receipt again',
+                'Click Reprint Receipt.',
+                'The receipt is queued for the printer and a confirmation appears.',
+                'orders/09-reprint',
+                'This prints a copy of an existing order. It does not charge the customer again and does not create a second order.',
+            ),
+        ],
+    },
 ];
 export const guideUrl = (key: string) =>
-    key === 'POS' || key === 'dashboard'
+    ['POS', 'dashboard', 'orders'].includes(key)
         ? `/demo/functionality/${key}`
         : `/demo/functionality/POS/${key}`;
