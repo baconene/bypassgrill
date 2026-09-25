@@ -1,6 +1,13 @@
 # Deposit Reconciliation Plan
 
-Status: **Proposed, not started** (2026-09-26)
+Status: **Proposed, not started. Open questions answered 2026-09-26** (2026-09-26)
+
+**Answered:** reopening is administrators only; the time limit is a setting; and
+no large-variance threshold is built yet — every non-zero variance posts, which
+is the behaviour described throughout. Read "3 variance do not change yet" as
+leaving the variance rules exactly as written rather than as holding off on
+posting; say so if that is wrong, because it is the difference between a small
+addition later and rewriting the middle of this plan.
 
 ## What you asked for
 
@@ -137,15 +144,38 @@ The cashier then records what was missed, closes again, and counts again.
 
 ### Guards
 
+- **Administrators only.** Closing and counting belong to the cashier who owns
+  the shift; reopening rewrites a record that was already submitted, and that is
+  a different kind of power. A cashier who needs one reopened asks for it, which
+  is the point — it puts a second person in the loop.
 - Only the **most recently submitted** shift, and only while **no shift is
   open**. Reopening an older one would leave the ones after it built on a
   balance that moved underneath them.
+- **Within the configured window** (below). Outside it, the control is absent
+  and the endpoint refuses, naming when the shift was submitted.
 - A **reason is required**, stored on the shift and written to `audit_logs`.
 - The count of reopens is kept and **shown on the closing report**. A shift
   that can be quietly reopened and re-closed until the numbers look right is a
   way to hide a theft, and the deterrent is that it is visible, not that it is
   hard.
-- Consider a time limit; see the open questions.
+
+### The reopen window is a setting
+
+`deposit_control_settings`, a single row, following `KitchenSetting`:
+
+| Column | Default | Meaning |
+| --- | --- | --- |
+| `reopen_window_hours` | `24` | Hours after `submitted_at` that reopening stays available |
+| | `0` | **Reopening is switched off entirely** |
+
+Edited at **Settings → Deposit control**, admin-gated like every other settings
+page. Keep the kill switch: a business that decides submitted means submitted
+should be able to say so without a deploy, and it is also the fastest response
+if the audit trail ever shows the feature being misused.
+
+The structural guards are not configurable. No setting lets an older shift be
+reopened, or one reopened while another is open, because those produce a ledger
+whose later shifts were built on a balance that has since changed.
 
 ### What happens to the adjustment that was already posted
 
@@ -184,6 +214,11 @@ then counted twice.**
 | `last_reopened_by` | nullable FK to users |
 | `reopen_reason` | nullable string — required when reopening |
 
+### `deposit_control_settings`
+
+One row, `getSetting()` with `firstOrCreate(['id' => 1], …)`, exactly as
+`KitchenSetting` does it. Holds `reopen_window_hours`, default 24.
+
 ## Flows
 
 | Action | Ledger | Shift |
@@ -213,12 +248,20 @@ then counted twice.**
 - On the closing report, after submitting: **"Adjustment posted: ₱50.00 short
   (Cash)"**, linking to the entry in Financial. Silence would leave the cashier
   unaware the books just moved.
-- A **Reopen last shift** control, on the submitted report only, with the reason
-  field required and text naming what will happen: the shift returns to open,
-  the closing count is discarded, and the adjustment is removed.
+- A **Reopen last shift** control, shown to administrators only, on the last
+  submitted shift, while no shift is open and the window has not passed. The
+  reason field is required, and the text names what will happen: the shift
+  returns to open, the closing count is discarded, and the adjustment is
+  removed.
+- A cashier looking at their own submitted shift sees **why there is no button**
+  — that an administrator can reopen it — rather than nothing at all. Otherwise
+  the answer to "can this be fixed?" is a shrug.
 - **"Reopened twice"** on any report where the count is above zero.
 - The untagged balance shown on the closing report when it is not zero, with a
   line saying it is not counted.
+- **Settings → Deposit control**: the window in hours, with the note that 0
+  switches reopening off, and a line saying the last shift can only be reopened
+  while no other is open.
 
 ## Phases
 
@@ -235,8 +278,9 @@ like-for-like expected balance, the report line and the P&L line.
 
 ### Phase 3: Reopening
 
-Columns, endpoint, guards, adjustment deletion, audit log, the UI control and
-the reopened marker.
+Columns, `deposit_control_settings` and its admin settings page, the endpoint,
+the guards, adjustment deletion, the audit log, the UI control and the reopened
+marker.
 
 ### Phase 4: Backfill, optional
 
@@ -257,21 +301,21 @@ the running balance to be true all the way back rather than from now on.
 7. **A reason is required and the reopen count is visible.**
 8. **Deposit control is the only writer of this type.**
 9. **No auto-post when the variance is zero.** An entry of nothing is noise.
+10. **Administrators only may reopen.** *(Answered 2026-09-26.)*
+11. **The reopen window is `reopen_window_hours`, default 24, 0 to switch
+    reopening off.** *(Answered 2026-09-26.)*
+12. **Every non-zero variance posts. No size threshold.** *(Answered
+    2026-09-26.)* Worth knowing what that means in practice: a ₱15,000
+    difference adjusts the books as quietly as a ₱50 one. The plan's answer to
+    that is visibility rather than refusal — the entry names its shift and
+    tender, it sits on its own P&L line instead of inside expenses, and the
+    closing report states the amount. If a shortage that size should instead
+    stop and ask for a manager, the threshold is a later addition and nothing
+    here blocks it.
 
-## Questions I could not answer from the code
+## Questions still open
 
-1. **Who may reopen?** The cashier who owns the shift can close and count it
-   today. Reopening is a stronger power — it rewrites a submitted record — so
-   the default in this plan is **administrators only**. If the cashier should be
-   able to, say so, because it changes what the audit trail is for.
-2. **How long may a shift stay reopenable?** Until the next one starts is the
-   structural limit. A time limit — same business day, or 24 hours — would stop
-   last week's shift being reopened after the figures have been reported on.
-3. **Is there a variance large enough to refuse?** A ₱50 difference is a
-   miscount. A ₱15,000 difference is an incident, and quietly adjusting the
-   books to match it may be the wrong thing to do automatically. A threshold
-   above which it posts nothing and asks for a manager would be easy to add.
-4. **Should the backfill in Phase 4 run at all?** It changes historical
+1. **Should the backfill in Phase 4 run at all?** It changes historical
    balances, which may already have been reported.
 
 ## Verification
@@ -292,6 +336,16 @@ the running balance to be true all the way back rather than from now on.
 - Reopening: restores open state, deletes the adjustment, keeps the opening
   snapshot, requires a reason, writes an audit row, increments the count.
 - Reopening is refused for any but the last shift, and while one is open.
+- A cashier is refused, including the one who owns the shift. An administrator
+  is allowed.
+- Inside `reopen_window_hours` it is allowed; an hour past it, refused, and the
+  refusal names when the shift was submitted.
+- `reopen_window_hours = 0` refuses every reopen and hides the control.
+- Changing the setting takes effect without a deploy, and a shift already
+  outside a shortened window becomes un-reopenable immediately.
+- A large variance — ₱15,000 — posts like any other, since no threshold exists.
+  Pinned deliberately, so adding one later is a visible decision rather than an
+  accident.
 - Reopen, log the forgotten expense, close and submit again: the second
   adjustment reflects only the real remaining difference, and the discrepancy
   is not counted twice.
