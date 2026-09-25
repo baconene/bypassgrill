@@ -10,7 +10,7 @@ import {
     ShoppingBag,
     X,
 } from 'lucide-vue-next';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 interface Product {
     id: number;
@@ -36,6 +36,8 @@ const facebook = 'https://www.facebook.com/profile.php?id=61588899475779';
 const category = ref('All');
 const quantities = ref<Record<number, number>>({});
 const bagOpen = ref(false);
+const orderReady = ref(false);
+const availabilityDialog = ref<HTMLDialogElement | null>(null);
 const copied = ref(false);
 const copyError = ref('');
 const paused = ref(false);
@@ -52,9 +54,6 @@ const products = computed(() =>
 const signature = computed(() =>
     products.value.find((p) => /rib/i.test(p.name)),
 );
-const soldOutIds = computed(
-    () => new Set(products.value.filter((p) => p.soldOut).map((p) => p.id)),
-);
 // Keep stock banners and availability in sync with the inventory
 usePoll(10000, { only: ['categories'] });
 const activeCategory = computed(() =>
@@ -70,9 +69,14 @@ const visibleProducts = computed(() =>
 );
 const bag = computed(() =>
     products.value
-        .filter((p) => !p.soldOut && quantities.value[p.id] > 0)
+        .filter((p) => quantities.value[p.id] > 0)
         .map((p) => ({ ...p, quantity: quantities.value[p.id] })),
 );
+const availabilityItems = computed(() =>
+    bag.value.filter((p) => p.soldOut || p.lowStock),
+);
+const stockLabel = (product: Product) =>
+    product.soldOut ? 'Sold out' : 'Low stock';
 const itemCount = computed(() =>
     bag.value.reduce((sum, p) => sum + p.quantity, 0),
 );
@@ -91,8 +95,18 @@ const peso = (amount: number) =>
     }).format(amount);
 const orderText = computed(
     () =>
-        `Hi Bypass Grill! I'd like to ask about this order:\n\n${bag.value.map((p) => `${p.quantity} x ${p.name} — ${peso(p.price * p.quantity)}`).join('\n')}\n\nEstimated total: ${peso(total.value)}\nPlease confirm availability, final total, and pickup/delivery options. Thank you!`,
+        `Hi Bypass Grill! I'd like to ask about this order:\n\n${bag.value.map((p) => `${p.quantity} x ${p.name} — ${peso(p.price * p.quantity)}${p.soldOut || p.lowStock ? ` (${stockLabel(p)} — please confirm availability)` : ''}`).join('\n')}\n\nEstimated total: ${peso(total.value)}\n${availabilityItems.value.length ? 'Some items are currently low stock or sold out. Can you confirm availability, including options for advance ordering or a reservation?\n' : ''}Please confirm the final total and pickup/delivery options. Thank you!`,
 );
+// A quantity, price, or stock update requires a fresh review without losing the cart.
+watch(orderText, () => {
+    orderReady.value = false;
+    copied.value = false;
+    copyError.value = '';
+
+    if (!bag.value.length) {
+        availabilityDialog.value?.close();
+    }
+});
 const shots = [
     {
         src: '/images/welcome/ribs-plate.jpg',
@@ -109,10 +123,6 @@ let observer: IntersectionObserver | undefined;
 let copyTimer: ReturnType<typeof setTimeout> | undefined;
 let dialog: HTMLDialogElement | null = null;
 function updateQuantity(id: number, amount: number) {
-    if (amount > 0 && soldOutIds.value.has(id)) {
-        return;
-    }
-
     quantities.value[id] = Math.min(
         99,
         Math.max(0, (quantities.value[id] ?? 0) + amount),
@@ -124,8 +134,24 @@ function openBag() {
     dialog?.showModal();
 }
 function closeBag() {
+    availabilityDialog.value?.close();
     dialog?.close();
     bagOpen.value = false;
+}
+function finalizeOrder() {
+    if (!bag.value.length) {
+        return;
+    }
+
+    if (availabilityItems.value.length) {
+        availabilityDialog.value?.showModal();
+    } else {
+        orderReady.value = true;
+    }
+}
+function confirmAvailability() {
+    availabilityDialog.value?.close();
+    orderReady.value = true;
 }
 async function copyOrder() {
     copyError.value = '';
@@ -344,7 +370,6 @@ onBeforeUnmount(() => {
                         v-for="product in visibleProducts"
                         :key="product.id"
                         class="product-card"
-                        :class="{ 'is-sold-out': product.soldOut }"
                     >
                         <div class="product-image">
                             <img
@@ -375,13 +400,19 @@ onBeforeUnmount(() => {
                                 class="product-tag"
                                 >MONSTER APPETITE</span
                             >
-                            <div v-if="product.soldOut" class="sold-out-banner">
-                                <span>SOLD OUT</span>
-                            </div>
                             <span
-                                v-else-if="product.lowStock"
-                                class="low-stock-banner"
-                                >LOW STOCK · ORDER SOON</span
+                                v-if="product.soldOut || product.lowStock"
+                                class="stock-banner"
+                                :class="
+                                    product.soldOut
+                                        ? 'sold-out-banner'
+                                        : 'low-stock-banner'
+                                "
+                                >{{
+                                    product.soldOut
+                                        ? 'SOLD OUT · ASK AVAILABILITY'
+                                        : 'LOW STOCK · ORDER SOON'
+                                }}</span
                             >
                         </div>
                         <div class="product-info">
@@ -396,22 +427,14 @@ onBeforeUnmount(() => {
                                 }}
                             </p>
                             <div class="product-bottom">
-                                <span v-if="product.soldOut"
-                                    >Back soon — check again later</span
-                                ><span v-else-if="quantities[product.id]"
+                                <span v-if="quantities[product.id]"
                                     >{{ quantities[product.id] }} in your
                                     order</span
                                 ><span v-else class="product-hint"
                                     >Made for your next craving</span
                                 ><button
-                                    v-if="product.soldOut"
-                                    disabled
-                                    :aria-label="`${product.name} is sold out`"
-                                >
-                                    Sold out</button
-                                ><button
-                                    v-else
                                     :aria-label="`Add ${product.name} to your order`"
+                                    :disabled="quantities[product.id] >= 99"
                                     @click="updateQuantity(product.id, 1)"
                                 >
                                     <Plus :size="18" /> Add
@@ -588,6 +611,13 @@ onBeforeUnmount(() => {
                         >
                             <div>
                                 <h3>{{ product.name }}</h3>
+                                <p
+                                    v-if="product.soldOut || product.lowStock"
+                                    class="cart-stock-note"
+                                >
+                                    {{ stockLabel(product) }} · confirm with our
+                                    team
+                                </p>
                                 <span>{{
                                     peso(product.price * product.quantity)
                                 }}</span>
@@ -618,17 +648,34 @@ onBeforeUnmount(() => {
                         availability, final pricing, and pickup or delivery.
                         Nothing is submitted until you send it on Facebook.
                     </p>
-                    <button class="button button-orange" @click="copyOrder">
-                        <Check v-if="copied" :size="18" />{{
-                            copied ? 'Order copied!' : '1. Copy order request'
-                        }}</button
-                    ><a
-                        :href="facebook"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="button button-dark"
-                        >2. Open Facebook &amp; send <ArrowUpRight :size="18"
-                    /></a>
+                    <button
+                        v-if="!orderReady"
+                        class="button button-orange"
+                        @click="finalizeOrder"
+                    >
+                        Finalize order request <ArrowUpRight :size="18" />
+                    </button>
+                    <template v-else>
+                        <p class="order-note" role="status">
+                            Your request is ready to share. Copy it, then
+                            message our page. This does not confirm an order or
+                            reservation.
+                        </p>
+                        <button class="button button-orange" @click="copyOrder">
+                            <Check v-if="copied" :size="18" />{{
+                                copied
+                                    ? 'Order copied!'
+                                    : '1. Copy order request'
+                            }}</button
+                        ><a
+                            :href="facebook"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="button button-dark"
+                            >2. Open Facebook &amp; send
+                            <ArrowUpRight :size="18"
+                        /></a>
+                    </template>
                     <p v-if="copyError" role="alert">{{ copyError }}</p>
                     <details class="order-preview">
                         <summary>View order text</summary>
@@ -649,6 +696,70 @@ onBeforeUnmount(() => {
                         @click="closeBag"
                         >Find your grill fix <ArrowUpRight :size="18"
                     /></a>
+                </div>
+            </div>
+        </dialog>
+        <dialog
+            ref="availabilityDialog"
+            class="availability-dialog"
+            aria-labelledby="availability-title"
+            aria-describedby="availability-description"
+            @click="
+                (event) => {
+                    if (event.target === event.currentTarget)
+                        availabilityDialog?.close();
+                }
+            "
+        >
+            <div class="availability-panel">
+                <header class="availability-heading">
+                    <div>
+                        <p class="eyebrow">LET'S CHECK WITH THE GRILL</p>
+                        <h2 id="availability-title">Availability check.</h2>
+                    </div>
+                    <button
+                        class="icon-button"
+                        aria-label="Close availability notice"
+                        @click="availabilityDialog?.close()"
+                    >
+                        <X :size="22" />
+                    </button>
+                </header>
+                <p id="availability-description">
+                    These items are still low stock or sold out. You can keep
+                    them in your request and message our page to confirm
+                    availability, especially for advance orders or reservations.
+                </p>
+                <ul class="availability-list">
+                    <li v-for="product in availabilityItems" :key="product.id">
+                        <span>{{ product.quantity }} × {{ product.name }}</span>
+                        <strong
+                            :class="{
+                                'availability-sold-out': product.soldOut,
+                            }"
+                            >{{ stockLabel(product) }}</strong
+                        >
+                    </li>
+                </ul>
+                <p class="order-note">
+                    Our team will confirm what we can prepare and when. Sending
+                    a message does not guarantee availability or reserve these
+                    items.
+                </p>
+                <div class="availability-actions">
+                    <button
+                        class="button button-orange"
+                        @click="confirmAvailability"
+                    >
+                        Continue with availability request
+                        <ArrowUpRight :size="18" />
+                    </button>
+                    <button
+                        class="button button-dark"
+                        @click="availabilityDialog?.close()"
+                    >
+                        Back to my cart
+                    </button>
                 </div>
             </div>
         </dialog>
@@ -1136,25 +1247,7 @@ h2 em {
     cursor: not-allowed;
     opacity: 0.55;
 }
-.sold-out-banner {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #24231e8c;
-}
-.sold-out-banner span {
-    background: var(--orange);
-    color: #fff;
-    font-family: Impact, 'Arial Narrow', sans-serif;
-    font-size: 30px;
-    letter-spacing: 2px;
-    padding: 8px 60px;
-    transform: rotate(-8deg);
-    box-shadow: 0 6px 20px #0004;
-}
-.low-stock-banner {
+.stock-banner {
     position: absolute;
     left: 0;
     right: 0;
@@ -1167,12 +1260,9 @@ h2 em {
     letter-spacing: 2px;
     padding: 9px;
 }
-.product-card.is-sold-out:hover {
-    transform: none;
-    box-shadow: none;
-}
-.product-card.is-sold-out .product-image img {
-    filter: grayscale(0.8);
+.sold-out-banner {
+    background: #c3441c;
+    color: #fff;
 }
 .product-placeholder {
     height: 100%;
@@ -1452,6 +1542,92 @@ h2 em {
     line-height: 1.8;
     color: #77746b;
 }
+.cart-stock-note {
+    margin-top: 6px;
+    color: #a73513;
+    font-size: 11px;
+    line-height: 1.5;
+}
+.availability-dialog {
+    margin: auto;
+    padding: 0;
+    width: min(540px, calc(100% - 24px));
+    max-height: calc(100dvh - 24px);
+    border: 1px solid #ded7cb;
+    border-radius: 16px;
+    background: var(--cream);
+    color: var(--ink);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-shadow: 0 24px 80px #0005;
+}
+.availability-dialog::backdrop {
+    background: #15120ec9;
+    backdrop-filter: blur(3px);
+}
+.availability-panel {
+    padding: clamp(18px, 4vw, 30px);
+    display: grid;
+    gap: 20px;
+}
+.availability-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+.availability-heading h2 {
+    font-size: clamp(25px, 5vw, 32px);
+    font-weight: 800;
+    letter-spacing: -1px;
+}
+.availability-heading .icon-button {
+    flex-shrink: 0;
+    min-width: 44px;
+    min-height: 44px;
+}
+.availability-panel > p {
+    font-size: 13px;
+    line-height: 1.7;
+}
+.availability-list {
+    display: grid;
+    gap: 12px;
+}
+.availability-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 14px;
+    background: #eee7da;
+    border-radius: 6px;
+    font-size: 13px;
+}
+.availability-list span {
+    flex: 1 1 160px;
+    overflow-wrap: anywhere;
+}
+.availability-list strong {
+    padding: 5px 8px;
+    border-radius: 4px;
+    background: #f2c230;
+    font-size: 11px;
+}
+.availability-list .availability-sold-out {
+    background: #c3441c;
+    color: #fff;
+}
+.availability-actions {
+    display: grid;
+    gap: 10px;
+}
+.availability-actions .button {
+    white-space: normal;
+    min-height: 48px;
+    text-align: center;
+}
 .order-preview {
     font-size: 12px;
 }
@@ -1724,12 +1900,7 @@ h2 em {
         bottom: 4px;
         font-size: 7px;
     }
-    .sold-out-banner span {
-        padding: 4px 10px;
-        font-size: 13px;
-        letter-spacing: 1px;
-    }
-    .low-stock-banner {
+    .stock-banner {
         padding: 4px 3px;
         font-size: 8px;
         letter-spacing: 0.5px;
