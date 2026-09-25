@@ -17,6 +17,7 @@ import {
     tenders as financialTenders,
 } from './financial';
 import { products as catalogue } from './orders';
+import * as reports from './reports';
 const seed = () => ({
     id: 1042,
     queue_number: 42,
@@ -53,8 +54,12 @@ export default {
             return { data: financialTenders };
         }
 
+        // Both the POS and the reports orders tab read this. The POS asks only for
+        // unpaid ones, which is what tells the two apart.
         if (url === '/api/v1/orders') {
-            return { data: { data: pending } };
+            return config?.params?.payment_status === 'pending'
+                ? { data: { data: pending } }
+                : { data: reports.orders };
         }
 
         // Loaded by the order detail Edit panel's product search.
@@ -84,6 +89,32 @@ export default {
 
         if (url === '/api/v1/bills/summary') {
             return { data: billsSummary };
+        }
+
+        // Reports. Each tab reads its own endpoint; all of them answer here.
+        const report: Record<string, unknown> = {
+            '/api/v1/reports/daily-sales': reports.dailyReport,
+            '/api/v1/reports/monthly-sales': reports.monthlyReport,
+            '/api/v1/reports/product-sales': reports.productSales,
+            '/api/v1/reports/product-daily-sales': reports.productDailySales,
+            '/api/v1/reports/daily-chart': reports.dailyChart,
+            '/api/v1/reports/monthly-chart': reports.monthlyChart,
+            '/api/v1/reports/ft-breakdown': reports.ftBreakdown,
+            '/api/v1/reports/heatmap': reports.heatmap,
+            '/api/v1/reports/profit-loss': reports.profitLoss,
+            '/api/v1/reports/inventory-transactions':
+                reports.inventoryTransactions,
+            '/api/v1/inventory': reports.inventory,
+            '/api/v1/bills': reports.bills,
+            '/api/v1/bills/forecast': reports.billsForecast,
+            '/api/v1/reports/analytics': reports.analytics,
+            '/api/v1/reports/serving-time': reports.servingTime,
+            '/api/v1/reports/serving-time-orders': reports.servingTimeOrders,
+            '/api/v1/categories': reports.categories,
+        };
+
+        if (url in report) {
+            return { data: report[url] };
         }
 
         throw Error('Unsupported sample GET ' + url);

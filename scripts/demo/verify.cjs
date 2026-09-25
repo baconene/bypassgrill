@@ -107,16 +107,22 @@ const { chromium } = require('../../.demo-capture/node_modules/playwright');
         'orders',
         'deposit-control',
         'financial',
+        'reports',
+        'reports/pl',
+        'reports/orders',
     ]) {
-        const path = [
-            'POS',
-            'dashboard',
-            'orders',
-            'deposit-control',
-            'financial',
-        ].includes(guide)
-            ? guide
-            : 'POS/' + guide;
+        const path =
+            guide.includes('/') ||
+            [
+                'POS',
+                'dashboard',
+                'orders',
+                'deposit-control',
+                'financial',
+                'reports',
+            ].includes(guide)
+                ? guide
+                : 'POS/' + guide;
         await page.goto('http://127.0.0.1:4181/demo/functionality/' + path);
         await page
             .getByRole('button', { name: 'Show all steps', exact: true })

@@ -87,3 +87,21 @@ sample deliberately — ₱8,000.00 forward, ₱12,450.00 in, ₱3,700.00 out, c
 
 `capture-financial.cjs` clears `localStorage` first, because the page remembers
 its last tab and would otherwise open wherever the previous run finished.
+
+The reports guides are `/demo/functionality/reports` and one page per report at
+`/demo/functionality/reports/{report}`, mirroring how the POS sub-guides sit
+under theirs. Preview a tab at
+`http://127.0.0.1:4181/?preview=reports&tab=pl`.
+
+`reports.ts` answers all seventeen endpoints the page reads, sized so every tab
+has something to show. September 2026 is the period, and 26 September — the day
+the other guides use — is its last day.
+
+`capture-reports.cjs` walks each report and takes three shots: the report, the
+controls that change it, and the panel it is about. Add a report by adding its
+key to the list there, to the route in `web.php`, and to `functionality.ts`.
+
+**Trends (the analytics tab) has no guide yet.** Its endpoint returns eight
+nested structures — heatmaps, funnels, affinity and a forecast — and a fixture
+for it is a piece of work in its own right rather than a few more rows. The tab
+itself is untouched; only the guide is missing.

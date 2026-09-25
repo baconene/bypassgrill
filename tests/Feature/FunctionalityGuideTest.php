@@ -57,9 +57,13 @@ class FunctionalityGuideTest extends TestCase
         $this->assertNotEmpty($topLevelKeys, 'guideUrl() no longer lists its top-level guides.');
 
         foreach ($keys as $key) {
-            $url = in_array($key, $topLevelKeys, true)
-                ? '/demo/functionality/'.$key
-                : '/demo/functionality/POS/'.$key;
+            // Mirrors guideUrl(): reports get their own folder, everything else is
+            // either a top-level guide or a POS sub-guide.
+            $url = match (true) {
+                str_starts_with($key, 'reports-') => '/demo/functionality/reports/'.substr($key, strlen('reports-')),
+                in_array($key, $topLevelKeys, true) => '/demo/functionality/'.$key,
+                default => '/demo/functionality/POS/'.$key,
+            };
 
             $this->get($url)
                 ->assertOk()
@@ -72,12 +76,13 @@ class FunctionalityGuideTest extends TestCase
         $source = file_get_contents(resource_path('js/data/functionality.ts'));
         // Any guide folder, not a named one: the previous pattern only allowed
         // "dashboard/", so the orders screenshots were silently going unchecked.
-        preg_match_all("/'((?:[a-z][a-z-]*\/)?[0-9]{2}-[a-z-]+)'/", $source, $matches);
+        // Any depth of folder: the reports guides nest one level further.
+        preg_match_all("/'((?:[a-z][a-z-]*\/)*[0-9]{2}-[a-z-]+)'/", $source, $matches);
         $names = array_unique($matches[1]);
-        $this->assertGreaterThanOrEqual(57, count($names));
+        $this->assertGreaterThanOrEqual(87, count($names));
 
         // Each guide keeps its own folder, so every one must be represented.
-        foreach (['dashboard/', 'orders/', 'deposit-control/', 'financial/'] as $folder) {
+        foreach (['dashboard/', 'orders/', 'deposit-control/', 'financial/', 'reports/'] as $folder) {
             $this->assertNotEmpty(
                 array_filter($names, fn ($name) => str_starts_with($name, $folder)),
                 $folder.' screenshots are not being checked.'

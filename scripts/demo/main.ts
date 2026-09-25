@@ -7,8 +7,10 @@ import Demo from '../../resources/js/pages/DemoFunctionality.vue';
 import DepositControl from '../../resources/js/pages/DepositControlPage.vue';
 import Financial from '../../resources/js/pages/FinancialPage.vue';
 import OrderDetail from '../../resources/js/pages/OrderDetail.vue';
+import Reports from '../../resources/js/pages/ReportsPage.vue';
 import { dashboard } from './dashboard';
 import { order } from './orders';
+import { dailyReport, productSales as reportProducts } from './reports';
 import './style.css';
 const categories = [
     { id: 1, name: 'Meals' },
@@ -55,11 +57,23 @@ const products = [
 ];
 const query = new URLSearchParams(location.search);
 const mode = query.get('preview');
-const guide = location.pathname.startsWith('/demo/')
-    ? location.pathname.split('/').filter(Boolean).at(-1) === 'functionality'
-        ? undefined
-        : location.pathname.split('/').filter(Boolean).at(-1)
-    : query.get('guide') || undefined;
+// Mirrors the Laravel routes: the directory has no guide, a report page is
+// reports-<type>, and everything else is named by its last path segment.
+const resolveGuide = () => {
+    if (!location.pathname.startsWith('/demo/')) {
+        return query.get('guide') || undefined;
+    }
+
+    const parts = location.pathname.split('/').filter(Boolean);
+    const last = parts.at(-1);
+
+    if (last === 'functionality') {
+        return undefined;
+    }
+
+    return parts.at(-2) === 'reports' ? `reports-${last}` : last;
+};
+const guide = resolveGuide();
 const isGuide = mode === 'guide' || location.pathname.startsWith('/demo/');
 const app = createApp({
     render: () =>
@@ -76,7 +90,12 @@ const app = createApp({
                         })
                       : mode === 'financial'
                         ? h(Financial)
-                        : h(POS, { products, categories }),
+                        : mode === 'reports'
+                          ? h(Reports, {
+                                initialDailyReport: dailyReport,
+                                initialProductSales: reportProducts,
+                            })
+                          : h(POS, { products, categories }),
             h(Toaster),
         ]),
 });
