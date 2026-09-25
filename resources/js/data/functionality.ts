@@ -711,8 +711,87 @@ export const guides: Guide[] = [
             ),
         ],
     },
+    {
+        key: 'deposit-control',
+        area: 'Deposit Control',
+        title: 'Open, close and count a shift',
+        summary:
+            'Compare the system balance with what you actually count, and leave a record of any difference.',
+        duration: '8 minutes',
+        before: [
+            'Sign in as the cashier who will work the shift, then open Deposit control from the dashboard or /deposit-control.',
+            'Cashiers and administrators can start a shift. Only the cashier who opened one can close it and enter the counts; anyone with access can read the finished report.',
+            'These screenshots use fictional sample data and deliberately end fifty pesos short, because recognising a shortage is the point of the screen. This presentation records nothing.',
+        ],
+        done: 'You can open a shift on a counted drawer, close it once, enter the four amounts, and read both checks well enough to explain a difference.',
+        steps: [
+            step(
+                'Count the drawer before you start',
+                'Count the cash already in the drawer, type it into Cash in drawer at start, then click Start shift.',
+                'The shift opens against a snapshot of the system balance at that moment.',
+                'deposit-control/01-start',
+                'Count first and type second. This figure is the baseline every later comparison is measured from, so a guess here becomes a variance you cannot explain at closing.',
+            ),
+            step(
+                'Know where you are in the shift',
+                'Read the three-step progress bar at the top.',
+                'Start shift, Close shift, then Count & submit. The current step is highlighted.',
+                'deposit-control/02-progress',
+                'The steps only run forwards. There is no way back to an earlier one, which is why each step asks you to confirm before it moves.',
+            ),
+            step(
+                'Work the shift',
+                'Leave the shift open and serve as normal. Return here at the end of the day.',
+                'The bar shows the shift number, who opened it, when, and how long it has been running.',
+                'deposit-control/03-open',
+                'One shift is open at a time for the whole business. Nobody else can start one until this is submitted, and only the cashier named here can close it.',
+            ),
+            step(
+                'Release the payroll before you close',
+                'Finish every expense, payment and salary release first. Then click Close shift and read the question before confirming.',
+                'The confirmation asks whether everything has been recorded and synced.',
+                'deposit-control/04-close-confirm',
+                'Closing takes the final snapshot and cannot be undone. Anything recorded afterwards — a salary released late especially — lands outside this shift and turns up as a difference you will have to explain. Choose Not yet and go and finish it.',
+            ),
+            step(
+                'Count this shift: drawer and GCash',
+                'Click Enter counts. Count the cash in the drawer and type it into Cash in the drawer, then enter GCash for this shift.',
+                'These two are what the shift itself collected.',
+                'deposit-control/05-counts',
+                'Count the money, then read the screen. Entering the figure the system expects defeats the whole exercise: the comparison is only worth anything if the count was independent.',
+            ),
+            step(
+                'Count the overall funds: lockbox and wallet',
+                'Enter the whole lockbox in Manually counted lockbox total and the whole wallet in Total GCash wallet value.',
+                'These two are every peso you hold, not only this shift.',
+                'deposit-control/06-lockbox',
+                'The drawer cash has already gone into the lockbox, so the lockbox total includes it and cannot be smaller. The same goes for the wallet and this shift’s GCash. The screen refuses a lockbox total below the drawer cash for that reason.',
+            ),
+            step(
+                'Check the amounts before saving',
+                'Click Review & save, read the summary, then click Save final counts. Use Edit amounts to go back.',
+                'The button changes to Save final counts, so saving takes two deliberate presses.',
+                'deposit-control/07-review',
+                'Add a note now if you already know why the money is off — a float taken out, a refund paid in cash. A difference with an explanation is a record; one without is a question somebody asks you next week.',
+            ),
+            step(
+                'Read both checks',
+                'Read the closing report. Check 1 is this shift; Check 2 is the overall balance.',
+                'In this example both come out fifty pesos short: the shift expected ₱8,750.00 and ₱8,700.00 was counted, and the overall balance expected ₱16,750.00 against ₱16,700.00 counted.',
+                'deposit-control/08-report',
+                'They answer different questions. Check 1 asks whether today adds up, from payment income less expenses and payroll. Check 2 asks whether everything you hold adds up, including every shift before this one. A clean Check 1 with a broken Check 2 means the problem is older than today.',
+            ),
+            step(
+                'Look back at earlier shifts',
+                'Click Previous snapshots to see completed shifts, and open a row to read its report.',
+                'The table lists each shift with its drawer cash, shift GCash, lockbox and total GCash.',
+                'deposit-control/09-history',
+                'Drawer cash is already counted inside the lockbox total on every row, so adding the two columns together double-counts the cash. Compare like with like: drawer against drawer, lockbox against lockbox.',
+            ),
+        ],
+    },
 ];
 export const guideUrl = (key: string) =>
-    ['POS', 'dashboard', 'orders'].includes(key)
+    ['POS', 'dashboard', 'orders', 'deposit-control'].includes(key)
         ? `/demo/functionality/${key}`
         : `/demo/functionality/POS/${key}`;

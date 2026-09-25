@@ -1,5 +1,11 @@
 // Isolated sample responses only. No requests leave this fixture.
 import { checklist } from './dashboard';
+import {
+    closeShift,
+    depositState,
+    reconcileShift,
+    startShift,
+} from './deposit';
 import { products as catalogue } from './orders';
 const seed = () => ({
     id: 1042,
@@ -51,6 +57,10 @@ export default {
             return { data: catalogue };
         }
 
+        if (url === '/api/v1/deposit-controls') {
+            return { data: depositState() };
+        }
+
         throw Error('Unsupported sample GET ' + url);
     },
     async post(url: string, payload: any) {
@@ -74,6 +84,21 @@ export default {
 
         if (url === '/api/v1/print-jobs') {
             return { data: { success: true } };
+        }
+
+        // The deposit-control flow: start, then close, then submit the counts.
+        if (url === '/api/v1/deposit-controls') {
+            return { data: startShift(payload?.opening_cash) };
+        }
+
+        if (url.startsWith('/api/v1/deposit-controls/')) {
+            if (url.endsWith('/close')) {
+                return { data: closeShift() };
+            }
+
+            if (url.endsWith('/reconcile')) {
+                return { data: reconcileShift(payload) };
+            }
         }
 
         throw Object.assign(Error('Unsupported sample POST ' + url), {

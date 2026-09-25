@@ -37,18 +37,20 @@ class FunctionalityGuideTest extends TestCase
     public function test_every_guide_in_the_content_file_has_a_route(): void
     {
         $source = file_get_contents(resource_path('js/data/functionality.ts'));
-        preg_match_all("/^        key: '([A-Za-z]+)',$/m", $source, $matches);
+        // Hyphens allowed: deposit-control is a guide key as well as a folder.
+        preg_match_all("/^        key: '([A-Za-z][A-Za-z-]*)',$/m", $source, $matches);
         $keys = array_unique($matches[1]);
 
         $this->assertContains('dashboard', $keys);
         $this->assertContains('orders', $keys);
+        $this->assertContains('deposit-control', $keys);
         $this->assertContains('POS', $keys);
 
         // Read guideUrl()'s own list of top-level guides rather than repeating it
         // here, or this test needs editing every time a guide is added and stops
         // being the thing that notices.
         preg_match("/\[([^\]]*)\]\.includes\(key\)/", $source, $topLevel);
-        preg_match_all("/'([A-Za-z]+)'/", $topLevel[1] ?? '', $found);
+        preg_match_all("/'([A-Za-z][A-Za-z-]*)'/", $topLevel[1] ?? '', $found);
         $topLevelKeys = $found[1];
         $this->assertNotEmpty($topLevelKeys, 'guideUrl() no longer lists its top-level guides.');
 
@@ -66,9 +68,21 @@ class FunctionalityGuideTest extends TestCase
     public function test_every_referenced_screenshot_exists(): void
     {
         $source = file_get_contents(resource_path('js/data/functionality.ts'));
-        preg_match_all("/'((?:dashboard\/)?[0-9]{2}-[a-z-]+)'/", $source, $matches);
-        $this->assertGreaterThanOrEqual(30, count(array_unique($matches[1])));
-        foreach (array_unique($matches[1]) as $name) {
+        // Any guide folder, not a named one: the previous pattern only allowed
+        // "dashboard/", so the orders screenshots were silently going unchecked.
+        preg_match_all("/'((?:[a-z][a-z-]*\/)?[0-9]{2}-[a-z-]+)'/", $source, $matches);
+        $names = array_unique($matches[1]);
+        $this->assertGreaterThanOrEqual(48, count($names));
+
+        // Each guide keeps its own folder, so every one must be represented.
+        foreach (['dashboard/', 'orders/', 'deposit-control/'] as $folder) {
+            $this->assertNotEmpty(
+                array_filter($names, fn ($name) => str_starts_with($name, $folder)),
+                $folder.' screenshots are not being checked.'
+            );
+        }
+
+        foreach ($names as $name) {
             $path = str_contains($name, '/') ? $name : 'pos/'.$name;
             $this->assertFileExists(public_path('images/demo/'.$path.'.jpg'));
         }

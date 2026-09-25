@@ -1,4 +1,5 @@
 import { defineComponent, h } from 'vue';
+import { DEMO_USER_ID } from './deposit';
 export const Head = defineComponent({ setup: () => () => null });
 export const Link = defineComponent({
     props: ['href'],
@@ -10,7 +11,9 @@ export const Link = defineComponent({
 export const usePage = () => ({
     props: {
         auth: {
-            user: { name: 'Demo Cashier' },
+            // Deposit control compares this id with the shift owner before it will
+            // show the close and count controls, so the sample user needs one.
+            user: { id: DEMO_USER_ID, name: 'Demo Cashier' },
             roles: [
                 new URLSearchParams(location.search).get('preview') ===
                 'dashboard'

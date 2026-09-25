@@ -24,6 +24,7 @@ In a second terminal:
 node scripts/demo/capture.cjs
 node scripts/demo/capture-dashboard.cjs
 node scripts/demo/capture-orders.cjs
+node scripts/demo/capture-deposit-control.cjs
 node scripts/demo/verify.cjs
 ```
 
@@ -56,3 +57,18 @@ receipt reprint answer from the local fixture; neither saves an order nor prints
 One caveat worth keeping: the public-link panel shows the preview machine's own
 address, because the component builds the link from `window.location.origin`.
 The guide step says so rather than editing the image.
+
+The deposit-control guide is `/demo/functionality/deposit-control`, using the
+actual `DepositControlPage.vue` with the stateful fixture in `deposit.ts`.
+Preview it at `http://127.0.0.1:4181/?preview=deposit`, and the history table at
+`?preview=deposit&history=1`.
+
+`capture-deposit-control.cjs` walks the whole shift in one browser session —
+start, close, count, submit — rather than posing each screen, so the screenshots
+show the transitions a cashier really sees. The fixture lives in the page's
+module scope, so reloading starts a fresh day; keep the flow in one session if
+you add steps. Its arithmetic mirrors `DepositReconciliation`, and the sample
+shift is deliberately ₱50.00 short, because recognising a shortage is the point
+of the screen. `deposit.ts` also supplies the sample user id that
+`inertia.ts` reports, since the page compares it with the shift owner before
+showing the close and count controls.

@@ -4,6 +4,7 @@ import { Toaster } from 'vue-sonner';
 import POS from '../../resources/js/pages/CashierDashboard.vue';
 import Dashboard from '../../resources/js/pages/Dashboard.vue';
 import Demo from '../../resources/js/pages/DemoFunctionality.vue';
+import DepositControl from '../../resources/js/pages/DepositControlPage.vue';
 import OrderDetail from '../../resources/js/pages/OrderDetail.vue';
 import { dashboard } from './dashboard';
 import { order } from './orders';
@@ -68,7 +69,11 @@ const app = createApp({
                   ? h(Dashboard, dashboard)
                   : mode === 'orders'
                     ? h(OrderDetail, { order })
-                    : h(POS, { products, categories }),
+                    : mode === 'deposit'
+                      ? h(DepositControl, {
+                            historyView: query.get('history') === '1',
+                        })
+                      : h(POS, { products, categories }),
             h(Toaster),
         ]),
 });
