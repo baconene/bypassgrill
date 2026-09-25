@@ -1,4 +1,5 @@
 // Isolated sample responses only. No requests leave this fixture.
+import { checklist } from './dashboard';
 const seed = () => ({
     id: 1042,
     queue_number: 42,
@@ -27,6 +28,10 @@ let order = seed();
 let pending = [order];
 export default {
     async get(url: string) {
+        if (url === '/api/v1/shift-checklist') {
+            return { data: checklist };
+        }
+
         if (url === '/api/v1/payment-tenders') {
 return {
                 data: [

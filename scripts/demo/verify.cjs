@@ -103,8 +103,11 @@ const { chromium } = require('../../.demo-capture/node_modules/playwright');
         'modifyOrder',
         'gcash',
         'receipt',
+        'dashboard',
     ]) {
-        const path = guide === 'POS' ? 'POS' : 'POS/' + guide;
+        const path = ['POS', 'dashboard'].includes(guide)
+            ? guide
+            : 'POS/' + guide;
         await page.goto('http://127.0.0.1:4181/demo/functionality/' + path);
         await page
             .getByRole('button', { name: 'Show all steps', exact: true })
@@ -116,6 +119,50 @@ const { chromium } = require('../../.demo-capture/node_modules/playwright');
             }
         });
         console.log(guide + ' screenshot assets loaded');
+    }
+
+    for (const width of [1440, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('http://127.0.0.1:4181/demo/functionality/dashboard');
+        await page
+            .getByRole('heading', {
+                name: 'Read the daily overview',
+                exact: true,
+            })
+            .waitFor();
+        await page
+            .getByRole('button', { name: 'Next step', exact: true })
+            .click();
+        await page
+            .getByRole('heading', {
+                name: 'Open the shift checklist',
+                exact: true,
+            })
+            .waitFor();
+        await page.getByRole('button', { name: /Enlarge screenshot:/ }).click();
+        await page
+            .getByRole('dialog', { name: 'Enlarged Dashboard screenshot' })
+            .waitFor();
+        await page.keyboard.press('Escape');
+        await page
+            .getByRole('button', { name: 'Presentation mode', exact: true })
+            .click();
+        assert(
+            await page.evaluate(
+                () => document.documentElement.scrollWidth <= innerWidth,
+            ),
+        );
+        await page.screenshot({
+            path: '.demo-capture/dashboard-guide-' + width + '.png',
+        });
+        await page
+            .getByRole('button', { name: 'Show all steps', exact: true })
+            .click();
+        assert.equal(await page.locator('.demo-all article').count(), 9);
+        console.log(
+            width +
+                ' dashboard navigation, lightbox and mobile presentation passed',
+        );
     }
 
     assert.deepEqual(errors, []);

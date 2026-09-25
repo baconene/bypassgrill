@@ -277,6 +277,7 @@ export interface GuideStep {
 }
 export interface Guide {
     key: string;
+    area?: string;
     title: string;
     summary: string;
     duration: string;
@@ -295,11 +296,89 @@ const step = (
     title,
     action,
     expected,
-    image: `/images/demo/pos/${image}.jpg`,
+    image: `/images/demo/${image.includes('/') ? image : `pos/${image}`}.jpg`,
     note,
     prompt,
 });
 export const guides: Guide[] = [
+    {
+        key: 'dashboard',
+        area: 'Dashboard',
+        title: 'Start your shift from the dashboard',
+        summary:
+            'Read the daily overview, follow the shift routine, and find the next task without losing track of the business.',
+        duration: '5 minutes',
+        before: [
+            'Sign in and choose Dashboard in the sidebar, or open /dashboard.',
+            'These screenshots use an administrator account and fictional sample data. Cashiers, kitchen staff, and auditors see different figures and shortcuts based on their roles.',
+            'This presentation explains the screen; it does not change stock, mark a checklist, or record money.',
+        ],
+        done: 'You can read the overview, check your shift routine, and choose the correct screen for orders, stock, or closing counts.',
+        steps: [
+            step(
+                'Read the daily overview',
+                'Open Dashboard and read the four key figures below the quick actions.',
+                'In this administrator example, the cards show paid sales today, orders today, in-progress orders, and average serving time.',
+                'dashboard/01-overview',
+                'Paid sales covers paid orders created today. Orders today includes all orders created today. In progress includes pending and preparing orders across all open orders; it excludes ready orders. Sales is not profit or cash counted in the drawer.',
+            ),
+            step(
+                'Open the shift checklist',
+                'Click Shift checklist in the dark quick-actions bar.',
+                'The Manager & cashier checklist opens with Before the shift and After the shift sections.',
+                'dashboard/02-checklist-button',
+            ),
+            step(
+                'Follow the shift routine',
+                'Read the next unfinished step. Click Open beside it to go to the relevant screen. Close the checklist with the X when finished reviewing.',
+                'The routine covers opening deposit control, checking stock, recording expenses, releasing payroll, and closing deposit control.',
+                'dashboard/03-checklist',
+                'Recorded activity completes the matching steps automatically. Use Mark done only when there is nothing to record, such as no stock correction or no salary due. A manual tick does not record an expense or pay an employee.',
+            ),
+            step(
+                'Choose your next work screen',
+                'Use Open point of sale for a new order. Use Deposit control for opening or closing counts.',
+                'The shortcut takes you to the screen where the work is performed.',
+                'dashboard/04-actions',
+                'Kitchen staff instead get Open kitchen monitor; auditors get Open reports. Available shortcuts depend on your role. For order creation and payment, continue with the POS guide in the guide directory.',
+            ),
+            step(
+                'Check what is still to serve',
+                'Read Still to serve. If there are more than five products, click Show all products using the number shown on the button.',
+                'The list expands to show quantities across pending, preparing, and ready orders.',
+                'dashboard/05-queue',
+                'These are item quantities, not an order count. Use Kitchen (where available) to update preparation; this list is a summary.',
+            ),
+            step(
+                'Review recent orders',
+                'Scroll to Recent orders. Click Show latest orders with the number shown to expand the list. Click an order number if your account has permission to view orders.',
+                'Each row separates preparation Status from Payment and shows the order total.',
+                'dashboard/06-orders',
+                'Ready or Completed does not mean Paid. Check the Payment column separately. Accounts without order-view permission see plain order numbers.',
+            ),
+            step(
+                'Continue the deposit-control shift',
+                'Find the shift card. For your own open shift, click Continue your shift. Use Previous snapshots to review earlier reconciliations.',
+                'The card identifies the shift owner, opening cash, and whether counting or submission is still pending.',
+                'dashboard/07-deposit',
+                'Only the cashier who opened the shift can close and submit it. Another cashier sees View the open shift. With no open shift, the card offers Open deposit control (or Review deposit control for a reviewer). A closed count still needs submission to finish the shift.',
+            ),
+            step(
+                'Review stock and monthly finances',
+                'Administrators and auditors can scroll to Stock check and Financial summary. Use Review inventory or View full reports for the details.',
+                'Stock check flags ingredients at or below minimum quantity. Financial summary shows month-to-date net revenue, cost of goods, expenses, and net profit.',
+                'dashboard/08-summary',
+                'These monthly profit figures are a different measure from paid sales today and the physical drawer or lockbox balance. Cashier and kitchen accounts do not see this financial section.',
+            ),
+            step(
+                'Refresh the overview',
+                'Return to the top and click Refresh overview after new activity.',
+                'Updated appears with the refresh time and the overview figures are requested again.',
+                'dashboard/09-refresh',
+                'The overview is not a live feed. This button refreshes figures, orders, queue items, and financial totals. Reopen the checklist to refresh its progress; reopen the dashboard to reload the deposit-shift card.',
+            ),
+        ],
+    },
     {
         key: 'POS',
         title: 'Create an order & take cash payment',
@@ -555,6 +634,6 @@ export const guides: Guide[] = [
     },
 ];
 export const guideUrl = (key: string) =>
-    key === 'POS'
-        ? '/demo/functionality/POS'
+    key === 'POS' || key === 'dashboard'
+        ? `/demo/functionality/${key}`
         : `/demo/functionality/POS/${key}`;

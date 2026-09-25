@@ -2,7 +2,9 @@ import { createPinia } from 'pinia';
 import { createApp, h } from 'vue';
 import { Toaster } from 'vue-sonner';
 import POS from '../../resources/js/pages/CashierDashboard.vue';
+import Dashboard from '../../resources/js/pages/Dashboard.vue';
 import Demo from '../../resources/js/pages/DemoFunctionality.vue';
+import { dashboard } from './dashboard';
 import './style.css';
 const categories = [
     { id: 1, name: 'Meals' },
@@ -58,7 +60,11 @@ const isGuide = mode === 'guide' || location.pathname.startsWith('/demo/');
 const app = createApp({
     render: () =>
         h('div', {}, [
-            isGuide ? h(Demo, { guide }) : h(POS, { products, categories }),
+            isGuide
+                ? h(Demo, { guide })
+                : mode === 'dashboard'
+                  ? h(Dashboard, dashboard)
+                  : h(POS, { products, categories }),
             h(Toaster),
         ]),
 });

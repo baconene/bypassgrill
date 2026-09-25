@@ -165,7 +165,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keyboard));
                     aria-labelledby="walkthroughs-title"
                 >
                     <p class="demo-eyebrow">LEARN BY FOLLOWING ALONG</p>
-                    <h2 id="walkthroughs-title">At the counter.</h2>
+                    <!-- Not only the counter any more: the walkthroughs now start at
+                         the dashboard before reaching the till. -->
+                    <h2 id="walkthroughs-title">
+                        From the dashboard to the counter.
+                    </h2>
                     <div class="demo-guide-grid">
                         <Link
                             v-for="(item, index) in guides"
@@ -177,8 +181,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keyboard));
                             }}</span>
                             <h3>{{ item.title }}</h3>
                             <p>{{ item.summary }}</p>
+                            <!-- Which screen it covers, now that the walkthroughs
+                                 are no longer all about the POS. -->
                             <span
-                                >{{ item.steps.length }} steps ·
+                                >{{ item.area ?? 'POS' }} ·
+                                {{ item.steps.length }} steps ·
                                 {{ item.duration }}
                                 <ArrowRight :size="18" /></span
                         ></Link>
@@ -252,7 +259,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keyboard));
                         ><ArrowLeft :size="16" /> All functionality</Link
                     >
                     <p class="demo-eyebrow">
-                        POS / {{ currentGuide.duration }} /
+                        {{ currentGuide.area ?? 'POS' }} /
+                        {{ currentGuide.duration }} /
                         {{ currentGuide.steps.length }} STEPS
                     </p>
                     <h1>{{ currentGuide.title }}</h1>
@@ -266,9 +274,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keyboard));
                         </ul>
                     </details>
                     <p class="demo-source">
-                        Actual POS screenshots with fictional sample data ·
-                        Reviewed September 26, 2026 · No live orders or payments
-                        are created by this guide.
+                        Actual {{ currentGuide.area ?? 'POS' }} screenshots with
+                        fictional sample data · Reviewed September 26, 2026 · No
+                        live orders or payments are created by this guide.
                     </p>
                 </section>
                 <div class="demo-controls">
@@ -345,7 +353,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keyboard));
                         >
                             <img
                                 :src="currentStep.image"
-                                :alt="`${currentStep.title}: actual POS screenshot with the action highlighted`"
+                                :alt="`${currentStep.title}: actual ${currentGuide.area ?? 'POS'} screenshot with the action highlighted`"
                                 width="1440"
                                 height="1000"
                             /><span
@@ -373,7 +381,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keyboard));
                         <p v-if="item.note" class="demo-tip">{{ item.note }}</p>
                         <img
                             :src="item.image"
-                            :alt="`${item.title}: POS screen with highlighted action`"
+                            :alt="`${item.title}: ${currentGuide.area ?? 'POS'} screen with highlighted action`"
                             width="1440"
                             height="1000"
                             loading="lazy"
@@ -428,7 +436,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', keyboard));
         <dialog
             ref="imageDialog"
             class="demo-lightbox"
-            aria-label="Enlarged POS screenshot"
+            :aria-label="`Enlarged ${currentGuide?.area ?? 'POS'} screenshot`"
             @click="
                 (event) => {
                     if (event.target === event.currentTarget)

@@ -22,6 +22,7 @@ In a second terminal:
 
 ```sh
 node scripts/demo/capture.cjs
+node scripts/demo/capture-dashboard.cjs
 node scripts/demo/verify.cjs
 ```
 
@@ -37,3 +38,9 @@ Check each screenshot against the instructions, including actual button names,
 money totals, before/after states, and mobile presentation layout. Re-run the
 FunctionalityGuideTest route/asset checks and the production frontend build.
 Existing role checks on the real staff screens are unchanged by the public guide.
+
+The dashboard guide is `/demo/functionality/dashboard`. Its screenshots use the
+actual `Dashboard.vue` with an administrator example from `dashboard.ts`.
+Preview it at `http://127.0.0.1:4181/?preview=dashboard`. Role-dependent sections
+are explained in the guide. Checklist reads and overview refresh use local
+fixtures; no live business data is accessed or changed.

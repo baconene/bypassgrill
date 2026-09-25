@@ -8,6 +8,27 @@ export const Link = defineComponent({
             h('a', { href: p.href }, slots.default?.()),
 });
 export const usePage = () => ({
-    props: { auth: { user: { name: 'Demo Cashier' }, roles: ['cashier'] } },
+    props: {
+        auth: {
+            user: { name: 'Demo Cashier' },
+            roles: [
+                new URLSearchParams(location.search).get('preview') ===
+                'dashboard'
+                    ? 'admin'
+                    : 'cashier',
+            ],
+        },
+    },
 });
+export const router = {
+    reload(options: {
+        onStart?: () => void;
+        onSuccess?: () => void;
+        onFinish?: () => void;
+    }) {
+        options.onStart?.();
+        options.onSuccess?.();
+        options.onFinish?.();
+    },
+};
 export const usePoll = () => {};
