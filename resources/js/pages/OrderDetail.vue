@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
-import { ArrowLeft, ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt, Printer, Pencil, X, Plus, Minus, Trash2, Check, Search, Eye, Copy, ChevronRight } from 'lucide-vue-next'
+import { ArrowLeft, ShoppingBag, User, MapPin, Clock, CreditCard, Package, Receipt, Printer, Pencil, X, Plus, Minus, Trash2, Check, Search, Eye, Copy, ArrowUpRight, Flame } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 
@@ -77,20 +77,13 @@ const fmtDatetime = (s: string | null) => {
     })
 }
 
-const statusMeta = computed(() => ({
-    pending:   { label: 'Pending',   cls: 'status-pending',   dot: 'bg-yellow-400', ring: 'ring-yellow-400/20', pulse: true },
-    preparing: { label: 'Preparing', cls: 'status-preparing', dot: 'bg-blue-400',   ring: 'ring-blue-400/20',   pulse: true },
-    ready:     { label: 'Ready',     cls: 'status-ready',     dot: 'bg-purple-400', ring: 'ring-purple-400/20', pulse: false },
-    completed: { label: 'Completed', cls: 'status-completed', dot: 'bg-green-400',  ring: 'ring-green-400/20',  pulse: false },
-    cancelled: { label: 'Cancelled', cls: 'status-cancelled', dot: 'bg-red-400',    ring: 'ring-red-400/20',    pulse: false },
-}[props.order.status] ?? { label: props.order.status, cls: '', dot: 'bg-muted-foreground', ring: '', pulse: false }))
-
-const payMeta = computed(() => ({
-    paid:     { label: 'Paid',     cls: 'pay-paid' },
-    pending:  { label: 'Unpaid',   cls: 'pay-pending' },
-    refunded: { label: 'Refunded', cls: 'pay-refunded' },
-    voided:   { label: 'Voided',   cls: 'pay-voided' },
-}[props.order.payment_status] ?? { label: props.order.payment_status, cls: '' }))
+const statusLabel: Record<string, string> = {
+    pending: 'Pending', preparing: 'Preparing', ready: 'Ready',
+    completed: 'Completed', cancelled: 'Cancelled',
+}
+const payLabel: Record<string, string> = {
+    paid: 'Paid', pending: 'Unpaid', refunded: 'Refunded', voided: 'Voided',
+}
 
 const totalCost   = computed(() => props.order.items.reduce((s, i) => s + i.cost_subtotal, 0))
 const grossProfit = computed(() => props.order.total_amount - totalCost.value)
@@ -119,10 +112,8 @@ const startEdit = async () => {
     editDiscount.value  = props.order.discount_amount ?? 0
     editCreatedAt.value = props.order.created_at ? props.order.created_at.replace(' ', 'T').substring(0, 16) : ''
     editItems.value     = props.order.items.map(i => ({
-        product_id:   i.product_id,
-        product_name: i.product_name,
-        unit_price:   i.unit_price,
-        quantity:     i.quantity,
+        product_id: i.product_id, product_name: i.product_name,
+        unit_price: i.unit_price, quantity: i.quantity,
     }))
     productSearch.value = ''
     showDropdown.value  = false
@@ -133,36 +124,27 @@ const cancelEdit = () => { editing.value = false }
 
 const addProduct = (p: Product) => {
     const existing = editItems.value.find(i => i.product_id === p.id)
-    if (existing) {
-        existing.quantity++
-    } else {
-        editItems.value.push({ product_id: p.id, product_name: p.name, unit_price: p.price, quantity: 1 })
-    }
+    if (existing) { existing.quantity++ }
+    else { editItems.value.push({ product_id: p.id, product_name: p.name, unit_price: p.price, quantity: 1 }) }
     productSearch.value = ''
     showDropdown.value  = false
 }
 
 const changeQty = (index: number, delta: number) => {
-    const item = editItems.value[index]
-    item.quantity = Math.max(1, item.quantity + delta)
+    editItems.value[index].quantity = Math.max(1, editItems.value[index].quantity + delta)
 }
 
-const removeItem = (index: number) => {
-    editItems.value.splice(index, 1)
-}
+const removeItem = (index: number) => { editItems.value.splice(index, 1) }
 
 const saveEdit = async () => {
-    if (editItems.value.length === 0) {
-        toast.error('Order must have at least one item')
-        return
-    }
+    if (editItems.value.length === 0) { toast.error('Order must have at least one item'); return }
     saving.value = true
     try {
         await api.put('/api/v1/orders/' + props.order.id, {
-            notes:           editNotes.value || null,
+            notes: editNotes.value || null,
             discount_amount: editDiscount.value || 0,
-            created_at:      editCreatedAt.value || null,
-            items:           editItems.value.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+            created_at: editCreatedAt.value || null,
+            items: editItems.value.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
         })
         toast.success('Order updated')
         editing.value = false
@@ -190,469 +172,390 @@ const reprintReceipt = async () => {
 <template>
     <Head :title="`Order #${order.id}`" />
 
-    <div class="max-w-3xl mx-auto space-y-4 pb-8">
+    <div class="order-page">
 
-        <!-- ── Top nav bar ────────────────────────────────── -->
-        <div class="flex items-center gap-3">
-            <button @click="goBack()"
-                class="shrink-0 rounded-xl border bg-card p-2 hover:bg-muted text-muted-foreground transition-colors">
-                <ArrowLeft class="h-4 w-4" />
-            </button>
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 flex-wrap">
-                    <span class="text-xs text-muted-foreground font-medium">Orders</span>
-                    <ChevronRight class="h-3 w-3 text-muted-foreground/50" />
-                    <span class="text-xs font-semibold">#{{ order.id }}</span>
-                </div>
-            </div>
-            <!-- Desktop actions -->
-            <div class="hidden sm:flex items-center gap-2 shrink-0">
-                <button @click="startEdit" v-if="!editing"
-                    class="flex items-center gap-1.5 rounded-xl border bg-card px-3.5 py-2 text-sm font-semibold hover:bg-muted transition-colors">
-                    <Pencil class="h-3.5 w-3.5" /> Edit
+        <!-- ── Page heading ── -->
+        <header class="order-heading">
+            <div class="heading-left">
+                <button class="back-btn" @click="goBack()" title="Back">
+                    <ArrowLeft :size="15" />
                 </button>
-                <button v-if="publicUrl" @click="showPublicUrl = true"
-                    class="flex items-center gap-1.5 rounded-xl border bg-card px-3.5 py-2 text-sm font-semibold hover:bg-muted transition-colors">
-                    <Eye class="h-3.5 w-3.5" /> Share
-                </button>
-                <button @click="reprintReceipt" :disabled="printing"
-                    class="flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
-                    <Printer class="h-3.5 w-3.5" />
-                    {{ printing ? 'Printing…' : 'Reprint' }}
-                </button>
-            </div>
-            <!-- Mobile icon actions -->
-            <div class="sm:hidden flex items-center gap-1.5 shrink-0">
-                <button @click="startEdit" v-if="!editing"
-                    class="rounded-xl border bg-card p-2 hover:bg-muted transition-colors">
-                    <Pencil class="h-4 w-4" />
-                </button>
-                <button v-if="publicUrl" @click="showPublicUrl = true"
-                    class="rounded-xl border bg-card p-2 hover:bg-muted transition-colors">
-                    <Eye class="h-4 w-4" />
-                </button>
-                <button @click="reprintReceipt" :disabled="printing"
-                    class="rounded-xl bg-primary p-2 text-primary-foreground disabled:opacity-50 transition-colors">
-                    <Printer class="h-4 w-4" />
-                </button>
-            </div>
-        </div>
-
-        <!-- ── Status Hero ─────────────────────────────────── -->
-        <div :class="['hero-card rounded-2xl p-5 sm:p-6', statusMeta.cls]">
-            <div class="flex items-start justify-between gap-4">
-                <div class="space-y-1.5">
-                    <div class="flex items-center gap-2">
-                        <span class="relative flex h-2.5 w-2.5">
-                            <span v-if="statusMeta.pulse"
-                                :class="['absolute inline-flex h-full w-full animate-ping rounded-full opacity-75', statusMeta.dot]" />
-                            <span :class="['relative inline-flex h-2.5 w-2.5 rounded-full', statusMeta.dot]" />
-                        </span>
-                        <span class="text-[11px] font-bold uppercase tracking-widest opacity-70">Status</span>
-                    </div>
-                    <h1 class="text-2xl sm:text-3xl font-black tracking-tight leading-none">
-                        {{ statusMeta.label }}
-                    </h1>
-                    <p class="text-sm opacity-70 font-medium">
+                <div>
+                    <p class="eyebrow"><Flame :size="13" aria-hidden="true" /> BYPASS GRILL / ORDER DETAIL</p>
+                    <h1>Order <em>#{{ order.id }}</em></h1>
+                    <p class="heading-sub">
                         {{ order.order_type_label }}
                         <template v-if="order.table_number"> · Table {{ order.table_number }}</template>
+                        <template v-if="order.created_by"> · by {{ order.created_by }}</template>
                     </p>
                 </div>
-
-                <div class="text-right shrink-0 space-y-2">
-                    <div>
-                        <p class="text-[10px] font-bold uppercase tracking-widest opacity-60">Order</p>
-                        <p class="text-xl font-black">#{{ order.id }}</p>
-                    </div>
-                    <div v-if="order.queue_number"
-                        class="inline-flex items-center gap-1 rounded-full bg-black/10 dark:bg-white/10 px-3 py-1">
-                        <span class="text-xs font-black">Q{{ order.queue_number }}</span>
-                    </div>
-                </div>
             </div>
-
-            <!-- Meta chips -->
-            <div class="flex flex-wrap gap-2 mt-4">
-                <span :class="['pay-badge rounded-full px-3 py-1 text-xs font-bold', payMeta.cls]">
-                    {{ payMeta.label }}
-                </span>
-                <span class="rounded-full bg-black/10 dark:bg-white/10 px-3 py-1 text-xs font-semibold opacity-80">
-                    {{ fmtDatetime(order.created_at) }}
-                </span>
-                <span v-if="order.created_by" class="rounded-full bg-black/10 dark:bg-white/10 px-3 py-1 text-xs font-semibold opacity-80">
-                    by {{ order.created_by }}
-                </span>
-            </div>
-        </div>
-
-        <!-- ── Info grid ───────────────────────────────────── -->
-        <div class="grid sm:grid-cols-2 gap-3">
-            <!-- Timeline -->
-            <div class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
-                <h3 class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    <Clock class="h-3 w-3" /> Timeline
-                </h3>
-                <div class="space-y-3">
-                    <div class="flex items-center gap-3">
-                        <div class="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
-                        <div>
-                            <p class="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Placed</p>
-                            <p class="text-sm font-semibold">{{ fmtDatetime(order.created_at) }}</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <div :class="['w-1.5 h-1.5 rounded-full shrink-0', order.completed_at ? 'bg-green-500' : 'bg-muted']" />
-                        <div>
-                            <p class="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Completed</p>
-                            <p class="text-sm font-semibold">{{ fmtDatetime(order.completed_at) }}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Customer / Order info -->
-            <div v-if="order.customer_name || order.table_number" class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
-                <h3 class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    <User class="h-3 w-3" /> Customer
-                </h3>
-                <div class="space-y-2 text-sm">
-                    <div v-if="order.table_number" class="flex justify-between gap-2">
-                        <span class="text-muted-foreground text-xs">Table</span>
-                        <span class="font-semibold">{{ order.table_number }}</span>
-                    </div>
-                    <div v-if="order.customer_name" class="flex justify-between gap-2">
-                        <span class="text-muted-foreground text-xs">Name</span>
-                        <span class="font-semibold text-right break-all">{{ order.customer_name }}</span>
-                    </div>
-                    <div v-if="order.customer_contact" class="flex justify-between gap-2">
-                        <span class="text-muted-foreground text-xs">Contact</span>
-                        <span class="font-semibold">{{ order.customer_contact }}</span>
-                    </div>
-                    <div v-if="order.customer_address" class="flex items-start justify-between gap-2">
-                        <span class="text-muted-foreground text-xs flex items-center gap-0.5 shrink-0">
-                            <MapPin class="h-3 w-3" /> Address
-                        </span>
-                        <span class="font-semibold text-right">{{ order.customer_address }}</span>
-                    </div>
-                </div>
-            </div>
-
-            <div v-else class="rounded-xl border bg-card shadow-sm p-4 space-y-3">
-                <h3 class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    <ShoppingBag class="h-3 w-3" /> Order Info
-                </h3>
-                <div class="space-y-2 text-sm">
-                    <div class="flex justify-between gap-2">
-                        <span class="text-muted-foreground text-xs">Type</span>
-                        <span class="font-semibold">{{ order.order_type_label }}</span>
-                    </div>
-                    <div v-if="order.table_number" class="flex justify-between gap-2">
-                        <span class="text-muted-foreground text-xs">Table</span>
-                        <span class="font-semibold">{{ order.table_number }}</span>
-                    </div>
-                    <div class="flex justify-between gap-2">
-                        <span class="text-muted-foreground text-xs">Cashier</span>
-                        <span class="font-semibold">{{ order.created_by ?? '—' }}</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ── Edit panel ──────────────────────────────────── -->
-        <div v-if="editing" class="rounded-2xl border-2 border-primary bg-card shadow-sm overflow-hidden">
-            <div class="px-4 py-3 border-b bg-primary/5 flex items-center justify-between gap-2">
-                <div class="flex items-center gap-2">
-                    <Pencil class="h-4 w-4 text-primary" />
-                    <h2 class="font-bold text-sm">Edit Order #{{ order.id }}</h2>
-                </div>
-                <button @click="cancelEdit" class="rounded-lg p-1.5 hover:bg-muted text-muted-foreground transition-colors">
-                    <X class="h-4 w-4" />
+            <div class="heading-actions">
+                <button v-if="!editing" class="action-ghost" @click="startEdit">
+                    <Pencil :size="14" /> Edit
+                </button>
+                <button v-if="publicUrl" class="action-ghost" @click="showPublicUrl = true">
+                    <Eye :size="14" /> Share
+                </button>
+                <button class="action-primary" :disabled="printing" @click="reprintReceipt">
+                    <Printer :size="14" /> {{ printing ? 'Printing…' : 'Reprint' }}
                 </button>
             </div>
+        </header>
 
-            <div class="p-4 space-y-4">
-                <div>
-                    <label class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1.5">Notes</label>
-                    <textarea v-model="editNotes" rows="2"
-                        class="w-full rounded-xl border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
-                        placeholder="Order notes…" />
-                </div>
+        <!-- ── Status bar ── -->
+        <section class="status-bar">
+            <div class="status-bar-left">
+                <span class="status-indicator" :class="`status-${order.status}`">
+                    <span class="status-dot" :class="['pending','preparing'].includes(order.status) ? 'dot-pulse' : ''" />
+                    {{ statusLabel[order.status] ?? order.status }}
+                </span>
+                <span class="pay-indicator" :class="`pay-${order.payment_status}`">
+                    {{ payLabel[order.payment_status] ?? order.payment_status }}
+                </span>
+                <span v-if="order.queue_number" class="queue-badge">Queue {{ order.queue_number }}</span>
+            </div>
+            <div class="status-bar-right">
+                <span class="placed-time">Placed {{ fmtDatetime(order.created_at) }}</span>
+            </div>
+        </section>
 
-                <div>
-                    <label class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1.5">Date &amp; Time</label>
-                    <input v-model="editCreatedAt" type="datetime-local"
-                        class="rounded-xl border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
+        <!-- ── Metric cards ── -->
+        <section class="metric-row" aria-label="Order summary">
+            <article class="metric metric-featured">
+                <p>Order total</p>
+                <strong>{{ fmt(order.total_amount) }}</strong>
+                <span>
+                    <template v-if="order.discount_amount > 0">After −{{ fmt(order.discount_amount) }} discount</template>
+                    <template v-else>Including all items</template>
+                </span>
+            </article>
+            <article class="metric">
+                <p>Items</p>
+                <strong>{{ order.items.length }}</strong>
+                <span>{{ order.items.reduce((s,i) => s + i.quantity, 0) }} total quantity</span>
+            </article>
+            <article class="metric">
+                <p>Completed</p>
+                <strong>{{ order.completed_at ? fmtDatetime(order.completed_at).split(',')[0] : '—' }}</strong>
+                <span>{{ order.completed_at ? fmtDatetime(order.completed_at) : 'Not yet completed' }}</span>
+            </article>
+            <article class="metric" v-if="totalCost > 0">
+                <p>Gross profit</p>
+                <strong :class="grossProfit >= 0 ? 'profit-pos' : 'profit-neg'">{{ fmt(grossProfit) }}</strong>
+                <span>COGS {{ fmt(totalCost) }}</span>
+            </article>
+            <article class="metric" v-else>
+                <p>Payment method</p>
+                <strong>{{ order.payments.length ? order.payments[0].tender : '—' }}</strong>
+                <span>{{ order.payments.length }} payment{{ order.payments.length !== 1 ? 's' : '' }} recorded</span>
+            </article>
+        </section>
 
-                <div>
-                    <label class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1.5">Discount (₱)</label>
-                    <input v-model.number="editDiscount" type="number" min="0" step="0.01"
-                        class="w-40 rounded-xl border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-                </div>
+        <div class="columns">
+            <div class="main-col">
 
-                <div>
-                    <label class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-2">Items</label>
-                    <div class="divide-y border rounded-xl overflow-hidden">
-                        <div v-for="(item, idx) in editItems" :key="item.product_id"
-                            class="flex items-center gap-3 px-3 py-2.5 bg-background">
-                            <div class="flex-1 min-w-0">
-                                <p class="font-semibold text-sm truncate">{{ item.product_name }}</p>
-                                <p class="text-xs text-muted-foreground">{{ fmt(item.unit_price) }} each</p>
-                            </div>
-                            <div class="flex items-center gap-1 shrink-0">
-                                <button @click="changeQty(idx, -1)"
-                                    class="rounded-lg border p-1 hover:bg-muted transition-colors">
-                                    <Minus class="h-3.5 w-3.5" />
-                                </button>
-                                <span class="w-8 text-center font-bold text-sm">{{ item.quantity }}</span>
-                                <button @click="changeQty(idx, 1)"
-                                    class="rounded-lg border p-1 hover:bg-muted transition-colors">
-                                    <Plus class="h-3.5 w-3.5" />
-                                </button>
-                            </div>
-                            <span class="w-20 text-right font-bold text-sm shrink-0">{{ fmt(item.unit_price * item.quantity) }}</span>
-                            <button @click="removeItem(idx)" class="text-red-500 hover:text-red-700 transition-colors p-1 shrink-0">
-                                <Trash2 class="h-4 w-4" />
-                            </button>
+                <!-- ── Edit panel ── -->
+                <section v-if="editing" class="panel edit-panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow"><Pencil :size="12" /> EDITING ORDER</p>
+                            <h2>Edit Order #{{ order.id }}</h2>
                         </div>
-                        <div v-if="editItems.length === 0" class="px-3 py-4 text-sm text-muted-foreground text-center">
-                            No items. Add a product below.
+                        <button class="icon-btn" @click="cancelEdit" title="Cancel edit"><X :size="16" /></button>
+                    </div>
+
+                    <div class="edit-fields">
+                        <div class="field">
+                            <label>Notes</label>
+                            <textarea v-model="editNotes" rows="2" placeholder="Order notes…" />
+                        </div>
+                        <div class="field">
+                            <label>Date &amp; Time</label>
+                            <input v-model="editCreatedAt" type="datetime-local" />
+                        </div>
+                        <div class="field">
+                            <label>Discount (₱)</label>
+                            <input v-model.number="editDiscount" type="number" min="0" step="0.01" class="w-discount" />
                         </div>
                     </div>
-                </div>
 
-                <div class="relative">
-                    <label class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-1.5">Add Product</label>
-                    <div class="flex items-center gap-2 rounded-xl border bg-background px-3 py-2">
-                        <Search class="h-4 w-4 text-muted-foreground shrink-0" />
-                        <input v-model="productSearch"
+                    <p class="section-label">Items</p>
+                    <div class="edit-items">
+                        <div v-for="(item, idx) in editItems" :key="item.product_id" class="edit-item-row">
+                            <div class="edit-item-info">
+                                <span class="edit-item-name">{{ item.product_name }}</span>
+                                <span class="edit-item-price">{{ fmt(item.unit_price) }} each</span>
+                            </div>
+                            <div class="qty-ctrl">
+                                <button @click="changeQty(idx, -1)"><Minus :size="12" /></button>
+                                <span>{{ item.quantity }}</span>
+                                <button @click="changeQty(idx, 1)"><Plus :size="12" /></button>
+                            </div>
+                            <span class="edit-item-total">{{ fmt(item.unit_price * item.quantity) }}</span>
+                            <button class="remove-btn" @click="removeItem(idx)" title="Remove"><Trash2 :size="14" /></button>
+                        </div>
+                        <div v-if="editItems.length === 0" class="edit-empty">No items. Add a product below.</div>
+                    </div>
+
+                    <p class="section-label" style="margin-top: 18px;">Add Product</p>
+                    <div class="search-wrap">
+                        <Search :size="14" class="search-icon" />
+                        <input
+                            v-model="productSearch"
                             @focus="showDropdown = true"
                             @blur="setTimeout(() => showDropdown = false, 150)"
-                            class="flex-1 bg-transparent text-sm focus:outline-none"
-                            placeholder="Search product name…" />
+                            placeholder="Search product name…"
+                            class="search-input"
+                        />
+                        <div v-if="showDropdown && filteredProducts.length" class="search-dropdown">
+                            <button v-for="p in filteredProducts" :key="p.id"
+                                @mousedown.prevent="addProduct(p)" class="search-row">
+                                <span>{{ p.name }}</span>
+                                <span>{{ fmt(p.price) }}</span>
+                            </button>
+                        </div>
                     </div>
-                    <div v-if="showDropdown && filteredProducts.length"
-                        class="absolute z-20 mt-1 w-full rounded-xl border bg-popover shadow-xl max-h-56 overflow-y-auto">
-                        <button v-for="p in filteredProducts" :key="p.id"
-                            @mousedown.prevent="addProduct(p)"
-                            class="w-full flex items-center justify-between gap-2 px-3 py-2.5 hover:bg-muted text-sm text-left transition-colors">
-                            <span class="font-medium truncate">{{ p.name }}</span>
-                            <span class="text-muted-foreground shrink-0 text-xs">{{ fmt(p.price) }}</span>
+
+                    <div class="edit-total-row">
+                        <span>Estimated Total</span>
+                        <strong>{{ fmt(editTotal) }}</strong>
+                    </div>
+
+                    <div class="edit-actions">
+                        <button class="action-primary" :disabled="saving || editItems.length === 0" @click="saveEdit">
+                            <Check :size="14" /> {{ saving ? 'Saving…' : 'Save Changes' }}
                         </button>
+                        <button class="action-ghost" @click="cancelEdit">Cancel</button>
                     </div>
-                </div>
+                </section>
 
-                <div class="flex items-center justify-between border-t pt-3">
-                    <span class="text-sm text-muted-foreground">Estimated Total</span>
-                    <span class="text-xl font-black text-primary">{{ fmt(editTotal) }}</span>
-                </div>
-
-                <div class="flex items-center gap-3 pt-1">
-                    <button @click="saveEdit" :disabled="saving || editItems.length === 0"
-                        class="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
-                        <Check class="h-4 w-4" />
-                        {{ saving ? 'Saving…' : 'Save Changes' }}
-                    </button>
-                    <button @click="cancelEdit"
-                        class="rounded-xl border px-5 py-2.5 text-sm font-semibold hover:bg-muted transition-colors">
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- ── Items card ──────────────────────────────────── -->
-        <div v-else class="rounded-2xl border bg-card shadow-sm overflow-hidden">
-            <div class="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <Package class="h-4 w-4 text-primary" />
-                    <h2 class="font-bold text-sm">Items</h2>
-                    <span class="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-bold">{{ order.items.length }}</span>
-                </div>
-            </div>
-
-            <!-- Mobile list -->
-            <div class="sm:hidden divide-y">
-                <div v-for="item in order.items" :key="item.id" class="px-4 py-3.5">
-                    <div class="flex items-start justify-between gap-2 mb-1">
-                        <div class="flex-1 min-w-0">
-                            <p class="font-semibold text-sm leading-snug">{{ item.product_name }}</p>
-                            <p v-if="item.category_name" class="text-xs text-muted-foreground">{{ item.category_name }}</p>
+                <!-- ── Items panel ── -->
+                <section v-else class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow"><Package :size="12" /> ORDER ITEMS</p>
+                            <h2>Items <span class="count-badge">{{ order.items.reduce((s,i) => s+i.quantity, 0) }} qty</span></h2>
                         </div>
-                        <p class="font-bold text-sm shrink-0 text-primary">{{ fmt(item.subtotal) }}</p>
                     </div>
-                    <div class="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                        <span class="rounded-full bg-muted px-2 py-0.5 font-medium">× {{ item.quantity }}</span>
-                        <span>@ {{ fmt(item.unit_price) }}</span>
-                        <span v-if="item.unit_cost > 0" class="opacity-60">cost {{ fmt(item.cost_subtotal) }}</span>
-                    </div>
-                    <div v-if="item.modifiers.length" class="flex flex-wrap gap-1 mt-1.5">
-                        <span v-for="m in item.modifiers" :key="m.name"
-                            class="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
-                            +{{ m.name }} {{ fmt(m.price) }}
-                        </span>
-                    </div>
-                    <p v-if="item.special_instructions" class="text-xs italic text-muted-foreground mt-1">
-                        "{{ item.special_instructions }}"
-                    </p>
-                </div>
-            </div>
 
-            <!-- Desktop table -->
-            <div class="hidden sm:block overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead>
-                        <tr class="bg-muted/30 text-muted-foreground text-[10px] uppercase tracking-widest">
-                            <th class="px-4 py-3 text-left font-bold">Product</th>
-                            <th class="px-4 py-3 text-center font-bold">Qty</th>
-                            <th class="px-4 py-3 text-right font-bold">Unit Price</th>
-                            <th class="px-4 py-3 text-right font-bold">Subtotal</th>
-                            <th class="px-4 py-3 text-right font-bold">Cost</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y">
-                        <tr v-for="item in order.items" :key="item.id" class="hover:bg-muted/20 transition-colors">
-                            <td class="px-4 py-3">
-                                <p class="font-semibold">{{ item.product_name }}</p>
-                                <p v-if="item.category_name" class="text-xs text-muted-foreground">{{ item.category_name }}</p>
-                                <div v-if="item.modifiers.length" class="mt-1 flex flex-wrap gap-1">
-                                    <span v-for="m in item.modifiers" :key="m.name"
-                                        class="rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-medium">
-                                        +{{ m.name }} ({{ fmt(m.price) }})
-                                    </span>
+                    <!-- Mobile list -->
+                    <div class="items-mobile">
+                        <div v-for="item in order.items" :key="item.id" class="item-mobile-row">
+                            <div class="item-mobile-top">
+                                <div>
+                                    <strong>{{ item.product_name }}</strong>
+                                    <small v-if="item.category_name">{{ item.category_name }}</small>
                                 </div>
-                                <p v-if="item.special_instructions" class="text-xs italic text-muted-foreground mt-0.5">
-                                    "{{ item.special_instructions }}"
-                                </p>
-                            </td>
-                            <td class="px-4 py-3 text-center">
-                                <span class="rounded-full bg-muted px-3 py-0.5 text-xs font-bold">× {{ item.quantity }}</span>
-                            </td>
-                            <td class="px-4 py-3 text-right text-muted-foreground">{{ fmt(item.unit_price) }}</td>
-                            <td class="px-4 py-3 text-right font-bold text-primary">{{ fmt(item.subtotal) }}</td>
-                            <td class="px-4 py-3 text-right text-muted-foreground text-xs">
-                                {{ item.unit_cost > 0 ? fmt(item.cost_subtotal) : '—' }}
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                                <strong class="item-subtotal">{{ fmt(item.subtotal) }}</strong>
+                            </div>
+                            <div class="item-mobile-meta">
+                                <span class="qty-pill">× {{ item.quantity }}</span>
+                                <span>@ {{ fmt(item.unit_price) }}</span>
+                                <span v-if="item.unit_cost > 0" class="cost-note">cost {{ fmt(item.cost_subtotal) }}</span>
+                            </div>
+                            <div v-if="item.modifiers.length" class="mod-tags">
+                                <span v-for="m in item.modifiers" :key="m.name" class="mod-tag">+{{ m.name }} ({{ fmt(m.price) }})</span>
+                            </div>
+                            <p v-if="item.special_instructions" class="item-note">"{{ item.special_instructions }}"</p>
+                        </div>
+                    </div>
 
-        <!-- ── Totals + Payments ────────────────────────────── -->
-        <div class="grid sm:grid-cols-2 gap-3">
-            <!-- Totals -->
-            <div class="rounded-2xl border bg-card shadow-sm p-4 space-y-3">
-                <h3 class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    <Receipt class="h-3 w-3" /> Totals
-                </h3>
-                <div class="space-y-2 text-sm">
-                    <div class="flex justify-between">
-                        <span class="text-muted-foreground">Subtotal</span>
-                        <span class="font-medium">{{ fmt(order.subtotal) }}</span>
+                    <!-- Desktop table -->
+                    <div class="table-scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th class="col-center">Qty</th>
+                                    <th class="col-right">Unit Price</th>
+                                    <th class="col-right">Subtotal</th>
+                                    <th class="col-right">Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="item in order.items" :key="item.id">
+                                    <td>
+                                        <strong>{{ item.product_name }}</strong>
+                                        <small v-if="item.category_name">{{ item.category_name }}</small>
+                                        <div v-if="item.modifiers.length" class="mod-tags" style="margin-top:5px;">
+                                            <span v-for="m in item.modifiers" :key="m.name" class="mod-tag">+{{ m.name }} ({{ fmt(m.price) }})</span>
+                                        </div>
+                                        <p v-if="item.special_instructions" class="item-note">"{{ item.special_instructions }}"</p>
+                                    </td>
+                                    <td class="col-center"><span class="qty-pill">× {{ item.quantity }}</span></td>
+                                    <td class="col-right muted">{{ fmt(item.unit_price) }}</td>
+                                    <td class="col-right accent-bold">{{ fmt(item.subtotal) }}</td>
+                                    <td class="col-right muted">{{ item.unit_cost > 0 ? fmt(item.cost_subtotal) : '—' }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                    <div v-if="order.discount_amount > 0" class="flex justify-between text-red-500">
-                        <span>Discount</span>
-                        <span class="font-medium">−{{ fmt(order.discount_amount) }}</span>
-                    </div>
-                    <div v-if="order.tax_amount > 0" class="flex justify-between">
-                        <span class="text-muted-foreground">Tax</span>
-                        <span class="font-medium">{{ fmt(order.tax_amount) }}</span>
-                    </div>
-                    <div class="flex justify-between items-center border-t pt-2.5 mt-1">
-                        <span class="font-bold">Total</span>
-                        <span class="text-xl font-black text-primary">{{ fmt(order.total_amount) }}</span>
-                    </div>
-                    <template v-if="totalCost > 0">
-                        <div class="flex justify-between text-xs text-muted-foreground border-t pt-2">
-                            <span>COGS</span>
-                            <span>−{{ fmt(totalCost) }}</span>
-                        </div>
-                        <div class="flex justify-between text-xs font-bold"
-                            :class="grossProfit >= 0 ? 'text-green-600' : 'text-red-600'">
-                            <span>Gross Profit</span>
-                            <span>{{ fmt(grossProfit) }}</span>
-                        </div>
-                    </template>
-                </div>
+                </section>
+
+                <!-- ── Notes ── -->
+                <section v-if="order.notes" class="panel">
+                    <p class="eyebrow" style="margin-bottom:12px;"><Package :size="12" /> ORDER NOTES</p>
+                    <p class="notes-text">{{ order.notes }}</p>
+                </section>
+
             </div>
 
-            <!-- Payments -->
-            <div class="rounded-2xl border bg-card shadow-sm p-4 space-y-3">
-                <h3 class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    <CreditCard class="h-3 w-3" /> Payments
-                </h3>
-                <div v-if="order.payments.length === 0" class="text-sm text-muted-foreground">No payments recorded.</div>
-                <div v-else class="space-y-2">
-                    <div v-for="p in order.payments" :key="p.id"
-                        class="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5 gap-2">
-                        <div class="min-w-0">
-                            <p class="font-semibold text-sm truncate">{{ p.tender }}</p>
-                            <p v-if="p.reference" class="text-xs text-muted-foreground truncate">Ref: {{ p.reference }}</p>
-                            <p class="text-xs text-muted-foreground">{{ fmtDatetime(p.created_at) }}</p>
-                        </div>
-                        <div class="text-right shrink-0">
-                            <p class="font-black text-green-600">{{ fmt(p.amount) }}</p>
-                            <span class="text-xs text-muted-foreground capitalize">{{ p.status }}</span>
+            <aside class="side-col">
+
+                <!-- ── Customer ── -->
+                <section v-if="order.customer_name || order.table_number || order.customer_contact || order.customer_address" class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow"><User :size="12" /> CUSTOMER</p>
+                            <h2>{{ order.customer_name ?? 'Walk-in' }}</h2>
                         </div>
                     </div>
-                </div>
-            </div>
+                    <dl class="summary-list">
+                        <div v-if="order.table_number">
+                            <dt>Table</dt>
+                            <dd>{{ order.table_number }}</dd>
+                        </div>
+                        <div v-if="order.customer_contact">
+                            <dt>Contact</dt>
+                            <dd>{{ order.customer_contact }}</dd>
+                        </div>
+                        <div v-if="order.customer_address">
+                            <dt><MapPin :size="11" /> Address</dt>
+                            <dd>{{ order.customer_address }}</dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <!-- ── Timeline ── -->
+                <section class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow"><Clock :size="12" /> TIMELINE</p>
+                            <h2>Key times</h2>
+                        </div>
+                    </div>
+                    <dl class="summary-list">
+                        <div>
+                            <dt>Placed</dt>
+                            <dd>{{ fmtDatetime(order.created_at) }}</dd>
+                        </div>
+                        <div>
+                            <dt>Completed</dt>
+                            <dd>{{ fmtDatetime(order.completed_at) }}</dd>
+                        </div>
+                        <div v-if="order.created_by">
+                            <dt>Cashier</dt>
+                            <dd>{{ order.created_by }}</dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <!-- ── Totals ── -->
+                <section class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow"><Receipt :size="12" /> TOTALS</p>
+                            <h2>Bill breakdown</h2>
+                        </div>
+                    </div>
+                    <dl class="summary-list">
+                        <div>
+                            <dt>Subtotal</dt>
+                            <dd>{{ fmt(order.subtotal) }}</dd>
+                        </div>
+                        <div v-if="order.discount_amount > 0" class="row-discount">
+                            <dt>Discount</dt>
+                            <dd>−{{ fmt(order.discount_amount) }}</dd>
+                        </div>
+                        <div v-if="order.tax_amount > 0">
+                            <dt>Tax</dt>
+                            <dd>{{ fmt(order.tax_amount) }}</dd>
+                        </div>
+                        <div class="summary-total">
+                            <dt>Total</dt>
+                            <dd>{{ fmt(order.total_amount) }}</dd>
+                        </div>
+                        <template v-if="totalCost > 0">
+                            <div>
+                                <dt>COGS</dt>
+                                <dd class="muted">−{{ fmt(totalCost) }}</dd>
+                            </div>
+                            <div class="summary-total">
+                                <dt>Gross Profit</dt>
+                                <dd :class="grossProfit >= 0 ? 'profit-pos' : 'profit-neg'">{{ fmt(grossProfit) }}</dd>
+                            </div>
+                        </template>
+                    </dl>
+                </section>
+
+                <!-- ── Payments ── -->
+                <section class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow"><CreditCard :size="12" /> PAYMENTS</p>
+                            <h2>Tender records</h2>
+                        </div>
+                    </div>
+                    <div v-if="order.payments.length === 0" class="empty-note">No payments recorded.</div>
+                    <dl v-else class="summary-list">
+                        <div v-for="p in order.payments" :key="p.id" class="payment-row">
+                            <dt>
+                                <strong>{{ p.tender }}</strong>
+                                <small v-if="p.reference">Ref: {{ p.reference }}</small>
+                                <small>{{ fmtDatetime(p.created_at) }}</small>
+                            </dt>
+                            <dd>
+                                <span class="pay-amount">{{ fmt(p.amount) }}</span>
+                                <small :class="`pay-${p.status}`">{{ p.status }}</small>
+                            </dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <!-- ── Share link ── -->
+                <section v-if="publicUrl" class="panel share-panel">
+                    <p class="eyebrow"><Eye :size="12" /> PUBLIC LINK</p>
+                    <h2>Customer tracking</h2>
+                    <p class="panel-copy">Share this URL so the customer can track their order status in real time.</p>
+                    <button class="text-link" @click="showPublicUrl = true">
+                        Open share dialog <ArrowUpRight :size="14" />
+                    </button>
+                </section>
+
+            </aside>
         </div>
 
-        <!-- Notes -->
-        <div v-if="order.notes" class="rounded-2xl border bg-card shadow-sm p-4">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Notes</p>
-            <p class="text-sm">{{ order.notes }}</p>
-        </div>
-
-        <!-- Mobile reprint -->
-        <div class="sm:hidden">
-            <button @click="reprintReceipt" :disabled="printing"
-                class="w-full flex items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-3.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
-                <Printer class="h-4 w-4" />
-                {{ printing ? 'Printing…' : 'Reprint Receipt' }}
-            </button>
-        </div>
+        <footer class="order-footer">
+            <span>BYPASS GRILL · ORDER #{{ order.id }}</span>
+            <span>{{ order.order_type_label }} · {{ statusLabel[order.status] ?? order.status }}</span>
+        </footer>
 
     </div>
 
-    <!-- ── Public URL modal ────────────────────────────── -->
+    <!-- ── Public URL modal ── -->
     <Teleport to="body">
         <Transition name="fade">
-            <div v-if="showPublicUrl"
-                class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:bg-black/50 sm:p-4"
-                @click.self="showPublicUrl = false">
-                <div class="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl bg-background shadow-2xl overflow-hidden">
-                    <div class="p-4 border-b flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <Eye class="h-4 w-4 text-primary" />
-                            <h3 class="font-bold text-sm">Share Order Link</h3>
+            <div v-if="showPublicUrl" class="modal-backdrop order-page" @click.self="showPublicUrl = false">
+                <div class="modal-panel">
+                    <header class="modal-header">
+                        <div>
+                            <p class="eyebrow"><Eye :size="12" /> PUBLIC ORDER URL</p>
+                            <h2>Share with customer</h2>
                         </div>
-                        <button @click="showPublicUrl = false" class="rounded-full p-1 hover:bg-muted transition-colors">
-                            <X class="h-4 w-4" />
+                        <button class="icon-btn" @click="showPublicUrl = false"><X :size="16" /></button>
+                    </header>
+                    <p class="panel-copy">The customer can track their order status using this link.</p>
+                    <div class="url-box">{{ publicUrl }}</div>
+                    <div class="modal-actions">
+                        <button @click="copyPublicUrl"
+                            :class="['action-primary', urlCopied ? 'action-success' : '']">
+                            <Check v-if="urlCopied" :size="14" /><Copy v-else :size="14" />
+                            {{ urlCopied ? 'Copied!' : 'Copy link' }}
                         </button>
-                    </div>
-                    <div class="p-4 space-y-4">
-                        <p class="text-xs text-muted-foreground">
-                            Share this link with the customer so they can track their order status.
-                        </p>
-                        <div class="rounded-xl border bg-muted/40 px-3 py-2.5">
-                            <span class="text-xs break-all font-mono text-foreground select-all">{{ publicUrl }}</span>
-                        </div>
-                        <div class="flex gap-2">
-                            <button @click="copyPublicUrl"
-                                :class="['flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold transition-colors',
-                                    urlCopied ? 'bg-green-600 text-white' : 'bg-primary text-primary-foreground hover:bg-primary/90']">
-                                <Check v-if="urlCopied" class="h-4 w-4" />
-                                <Copy v-else class="h-4 w-4" />
-                                {{ urlCopied ? 'Copied!' : 'Copy Link' }}
-                            </button>
-                            <a :href="publicUrl!" target="_blank"
-                                class="flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold hover:bg-muted transition-colors">
-                                <Eye class="h-4 w-4" /> Open
-                            </a>
-                        </div>
+                        <a :href="publicUrl!" target="_blank" class="action-ghost">
+                            <Eye :size="14" /> Open
+                        </a>
                     </div>
                 </div>
             </div>
@@ -661,49 +564,546 @@ const reprintReceipt = async () => {
 </template>
 
 <style scoped>
-/* ── Status hero gradients ──────────────────────────────────────────── */
-.hero-card { color: var(--hero-fg); }
-
-.status-pending   { --hero-fg: #78350f; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); }
-.status-preparing { --hero-fg: #1e40af; background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); }
-.status-ready     { --hero-fg: #4c1d95; background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%); }
-.status-completed { --hero-fg: #14532d; background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); }
-.status-cancelled { --hero-fg: #7f1d1d; background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); }
-
-@media (prefers-color-scheme: dark) {
-    .status-pending   { --hero-fg: #fef3c7; background: linear-gradient(135deg, #78350f80 0%, #92400e60 100%); }
-    .status-preparing { --hero-fg: #dbeafe;  background: linear-gradient(135deg, #1e3a8a80 0%, #1e40af60 100%); }
-    .status-ready     { --hero-fg: #ede9fe;  background: linear-gradient(135deg, #4c1d9580 0%, #5b21b660 100%); }
-    .status-completed { --hero-fg: #dcfce7;  background: linear-gradient(135deg, #14532d80 0%, #16653060 100%); }
-    .status-cancelled { --hero-fg: #fee2e2;  background: linear-gradient(135deg, #7f1d1d80 0%, #99181860 100%); }
+/* ── Base ── */
+.order-page {
+    background: #f6f2e9;
+    color: #24231e;
+    min-height: 100%;
+    padding: 30px clamp(16px, 3vw, 40px);
+    font-family: Arial, Helvetica, sans-serif;
+    color-scheme: light;
+    max-width: 1100px;
 }
 
-/* Force dark mode via data-theme="dark" too */
-:root[data-theme="dark"] .status-pending   { --hero-fg: #fef3c7; background: linear-gradient(135deg, #78350f80 0%, #92400e60 100%); }
-:root[data-theme="dark"] .status-preparing { --hero-fg: #dbeafe;  background: linear-gradient(135deg, #1e3a8a80 0%, #1e40af60 100%); }
-:root[data-theme="dark"] .status-ready     { --hero-fg: #ede9fe;  background: linear-gradient(135deg, #4c1d9580 0%, #5b21b660 100%); }
-:root[data-theme="dark"] .status-completed { --hero-fg: #dcfce7;  background: linear-gradient(135deg, #14532d80 0%, #16653060 100%); }
-:root[data-theme="dark"] .status-cancelled { --hero-fg: #fee2e2;  background: linear-gradient(135deg, #7f1d1d80 0%, #99181860 100%); }
-
-/* ── Payment badges ─────────────────────────────────────────────────── */
-.pay-badge { color: var(--pay-fg); background: var(--pay-bg); }
-.pay-paid     { --pay-bg: #dcfce7; --pay-fg: #14532d; }
-.pay-pending  { --pay-bg: #fef9c3; --pay-fg: #713f12; }
-.pay-refunded { --pay-bg: #ede9fe; --pay-fg: #4c1d95; }
-.pay-voided   { --pay-bg: #fee2e2; --pay-fg: #7f1d1d; }
-
-@media (prefers-color-scheme: dark) {
-    .pay-paid     { --pay-bg: #14532d60; --pay-fg: #bbf7d0; }
-    .pay-pending  { --pay-bg: #71350f60; --pay-fg: #fef3c7; }
-    .pay-refunded { --pay-bg: #4c1d9560; --pay-fg: #ddd6fe; }
-    .pay-voided   { --pay-bg: #7f1d1d60; --pay-fg: #fecaca; }
+/* ── Header ── */
+.order-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
 }
-:root[data-theme="dark"] .pay-paid     { --pay-bg: #14532d60; --pay-fg: #bbf7d0; }
-:root[data-theme="dark"] .pay-pending  { --pay-bg: #71350f60; --pay-fg: #fef3c7; }
-:root[data-theme="dark"] .pay-refunded { --pay-bg: #4c1d9560; --pay-fg: #ddd6fe; }
-:root[data-theme="dark"] .pay-voided   { --pay-bg: #7f1d1d60; --pay-fg: #fecaca; }
+.heading-left {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+.back-btn {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid #d4cdbf;
+    border-radius: 4px;
+    background: #fffcf6;
+    color: #24231e;
+    flex-shrink: 0;
+    margin-top: 2px;
+    cursor: pointer;
+}
+.back-btn:hover { background: #efeadf; }
+.eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1.4px;
+    color: #ad3b19;
+    text-transform: uppercase;
+}
+.order-heading h1 {
+    font-size: clamp(26px, 3vw, 40px);
+    font-weight: 850;
+    letter-spacing: -1.5px;
+    line-height: 1.1;
+    margin: 10px 0 6px;
+}
+.order-heading h1 em {
+    font-family: Georgia, serif;
+    font-weight: 400;
+    color: #ad3b19;
+    font-style: normal;
+}
+.heading-sub {
+    font-size: 12px;
+    color: #68665f;
+    line-height: 1.5;
+}
+.heading-actions {
+    display: flex;
+    gap: 9px;
+    align-items: center;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    padding-top: 4px;
+}
+.action-primary, .action-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 10px 14px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.action-primary {
+    background: #c3441c;
+    color: #fff;
+    border: none;
+}
+.action-primary:hover:not(:disabled) { background: #a73513; }
+.action-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+.action-success { background: #376229 !important; }
+.action-ghost {
+    border: 1px solid #d4cdbf;
+    background: #fffcf6;
+    color: #24231e;
+    text-decoration: none;
+}
+.action-ghost:hover { background: #efeadf; }
+.icon-btn {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: #68665f;
+    cursor: pointer;
+}
+.icon-btn:hover { background: #efeadf; color: #24231e; }
 
-/* ── Modal fade transition ──────────────────────────────────────────── */
-.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+/* ── Status bar ── */
+.status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: #24231e;
+    color: #f6f2e9;
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+}
+.status-bar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.status-bar-right { font-size: 11px; color: #c3bfb3; white-space: nowrap; }
+.placed-time { font-size: 11px; color: #c3bfb3; }
+
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    font-weight: 800;
+    border-radius: 4px;
+    padding: 6px 10px;
+}
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+.dot-pulse { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+.status-pending   { background: #7b581520; color: #f5c842; }
+.status-preparing { background: #9d401d20; color: #f99b6e; }
+.status-ready     { background: #37622920; color: #7bc87c; }
+.status-completed { background: #37622920; color: #7bc87c; }
+.status-cancelled { background: #9c302820; color: #f07070; }
+
+.pay-indicator {
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 3px;
+    padding: 4px 9px;
+}
+.pay-paid     { background: #37622920; color: #7bc87c; }
+.pay-pending  { background: #7b581520; color: #f5c842; }
+.pay-refunded { background: #4a327020; color: #c4a0f8; }
+.pay-voided   { background: #9c302820; color: #f07070; }
+
+.queue-badge {
+    font-size: 10px;
+    font-weight: 800;
+    border: 1px solid #ffffff30;
+    border-radius: 20px;
+    padding: 3px 10px;
+    color: #f6f2e9;
+}
+
+/* ── Metric cards ── */
+.metric-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 13px;
+    margin-bottom: 22px;
+}
+.metric {
+    background: #fffcf6;
+    border: 1px solid #ded7cb;
+    padding: 19px;
+    border-radius: 5px;
+}
+.metric-featured {
+    background: #f2e5d8;
+    border-color: #e4c4ab;
+}
+.metric p {
+    font-size: 10px;
+    font-weight: 700;
+    color: #68665f;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.metric strong {
+    display: block;
+    font-size: clamp(20px, 2.2vw, 30px);
+    letter-spacing: -0.8px;
+    line-height: 1.25;
+    margin: 10px 0 6px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.metric-featured strong { color: #ad3b19; }
+.metric > span {
+    font-size: 10px;
+    color: #777268;
+    line-height: 1.5;
+}
+.profit-pos { color: #376229; }
+.profit-neg { color: #a03015; }
+
+/* ── Layout columns ── */
+.columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 20px;
+    align-items: start;
+}
+.main-col, .side-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+/* ── Panel ── */
+.panel {
+    background: #fffcf6;
+    border: 1px solid #ded7cb;
+    border-radius: 6px;
+    padding: 21px;
+    min-width: 0;
+}
+.panel-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.panel-heading .eyebrow { margin-bottom: 6px; }
+.panel h2 {
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -0.4px;
+}
+.count-badge {
+    display: inline-block;
+    margin-left: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    background: #f2e5d8;
+    color: #ad3b19;
+    padding: 3px 8px;
+    border-radius: 20px;
+    vertical-align: middle;
+}
+.text-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #ad3b19;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+}
+.text-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.empty-note { font-size: 12px; color: #777268; padding: 8px 0; }
+.panel-copy { font-size: 11px; line-height: 1.8; color: #68665f; margin: 8px 0 16px; }
+.notes-text { font-size: 13px; line-height: 1.8; color: #24231e; }
+
+/* ── Items: mobile ── */
+.items-mobile { display: block; }
+.table-scroll { display: none; }
+.item-mobile-row {
+    padding: 14px 0;
+    border-top: 1px solid #ece5da;
+}
+.item-mobile-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.item-mobile-top strong { font-size: 13px; display: block; line-height: 1.4; }
+.item-mobile-top small { display: block; font-size: 10px; color: #777268; margin-top: 2px; }
+.item-subtotal { font-size: 13px; font-weight: 800; color: #ad3b19; white-space: nowrap; }
+.item-mobile-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: #68665f; margin-top: 5px; }
+.qty-pill { background: #efeadf; padding: 2px 8px; border-radius: 3px; font-weight: 700; font-size: 11px; }
+.cost-note { color: #999; }
+.mod-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.mod-tag { background: #f2e5d8; color: #ad3b19; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px; }
+.item-note { font-size: 11px; color: #777268; font-style: italic; margin-top: 4px; }
+
+/* ── Summary list ── */
+.summary-list { font-size: 12px; }
+.summary-list > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #ece5da;
+}
+.summary-list dt { color: #68665f; display: flex; align-items: center; gap: 4px; }
+.summary-list dd { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.summary-total dt, .summary-total dd { font-weight: 800; color: #24231e; font-size: 13px; }
+.row-discount dt, .row-discount dd { color: #a03015; }
+.muted { color: #777268; font-weight: 400; }
+.accent-bold { font-weight: 800; color: #ad3b19; }
+
+/* ── Payment rows ── */
+.payment-row dt strong { display: block; font-weight: 700; font-size: 13px; }
+.payment-row dt small { display: block; color: #777268; font-size: 10px; margin-top: 2px; }
+.pay-amount { font-size: 14px; font-weight: 800; color: #376229; display: block; text-align: right; }
+
+/* ── Edit panel ── */
+.edit-panel { border: 2px solid #c3441c; }
+.section-label {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #68665f;
+    margin-bottom: 10px;
+}
+.edit-fields { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+.field label { display: block; font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #68665f; margin-bottom: 6px; }
+.field textarea, .field input {
+    width: 100%;
+    border: 1px solid #d4cdbf;
+    border-radius: 4px;
+    padding: 9px 11px;
+    font-size: 13px;
+    background: #fff;
+    color: #24231e;
+    font-family: inherit;
+    resize: none;
+}
+.field textarea:focus, .field input:focus { outline: 2px solid #ad3b19; outline-offset: 1px; }
+.w-discount { width: 140px !important; }
+.edit-items { border: 1px solid #ded7cb; border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+.edit-item-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-top: 1px solid #ece5da;
+    background: #fffcf6;
+    font-size: 12px;
+}
+.edit-item-row:first-child { border-top: none; }
+.edit-item-info { flex: 1; min-width: 0; }
+.edit-item-name { font-weight: 700; display: block; }
+.edit-item-price { color: #777268; font-size: 10px; }
+.qty-ctrl { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.qty-ctrl button {
+    display: grid; place-items: center;
+    width: 26px; height: 26px;
+    border: 1px solid #d4cdbf;
+    border-radius: 3px;
+    background: #fffcf6;
+    cursor: pointer;
+}
+.qty-ctrl button:hover { background: #efeadf; }
+.qty-ctrl span { width: 30px; text-align: center; font-weight: 800; font-size: 13px; }
+.edit-item-total { width: 70px; text-align: right; font-weight: 800; font-size: 12px; flex-shrink: 0; }
+.remove-btn { color: #a03015; background: none; border: none; cursor: pointer; padding: 3px; flex-shrink: 0; }
+.remove-btn:hover { color: #7f1d1d; }
+.edit-empty { padding: 16px; text-align: center; font-size: 12px; color: #777268; }
+.search-wrap { position: relative; }
+.search-input {
+    width: 100%;
+    border: 1px solid #d4cdbf;
+    border-radius: 4px;
+    padding: 9px 11px 9px 34px;
+    font-size: 13px;
+    background: #fff;
+    color: #24231e;
+    font-family: inherit;
+}
+.search-input:focus { outline: 2px solid #ad3b19; outline-offset: 1px; }
+.search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #777268; pointer-events: none; }
+.search-dropdown {
+    position: absolute;
+    z-index: 20;
+    width: 100%;
+    margin-top: 3px;
+    border: 1px solid #d4cdbf;
+    border-radius: 4px;
+    background: #fffcf6;
+    box-shadow: 0 8px 24px -4px #24231e26;
+    max-height: 220px;
+    overflow-y: auto;
+}
+.search-row {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    padding: 9px 14px;
+    font-size: 12px;
+    text-align: left;
+    border-top: 1px solid #ece5da;
+    background: none;
+    cursor: pointer;
+    color: #24231e;
+}
+.search-row:first-child { border-top: none; }
+.search-row:hover { background: #efeadf; }
+.edit-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #ece5da;
+    padding-top: 14px;
+    margin-top: 14px;
+    font-size: 12px;
+    color: #68665f;
+}
+.edit-total-row strong { font-size: 20px; font-weight: 800; color: #ad3b19; letter-spacing: -0.5px; }
+.edit-actions { display: flex; gap: 10px; margin-top: 18px; }
+
+/* ── Desktop table ── */
+table { border-collapse: collapse; width: 100%; white-space: nowrap; font-size: 12px; }
+th {
+    text-align: left;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #777268;
+    font-weight: 700;
+    padding: 0 14px 12px 0;
+}
+td {
+    padding: 13px 14px 13px 0;
+    border-top: 1px solid #ece5da;
+    vertical-align: top;
+}
+td strong { font-size: 13px; }
+td small { display: block; color: #777268; font-size: 10px; margin-top: 3px; }
+.col-center { text-align: center; }
+.col-right { text-align: right; }
+
+/* ── Share panel ── */
+.share-panel { background: #ebe8d3; border-color: #d0c9af; }
+.share-panel h2 { margin: 8px 0; }
+
+/* ── Footer ── */
+.order-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 28px;
+    padding-top: 16px;
+    border-top: 1px solid #ded7cb;
+    font-size: 9px;
+    color: #777268;
+    letter-spacing: 0.5px;
+}
+.order-footer > span:first-child { font-weight: 700; letter-spacing: 1px; }
+
+/* ── Modal ── */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: #24231e8c;
+    padding: 16px;
+}
+@media (min-width: 560px) {
+    .modal-backdrop { align-items: center; }
+}
+.modal-panel {
+    width: min(500px, 100%);
+    border: 1px solid #ded7cb;
+    border-radius: 6px;
+    background: #fffcf6;
+    padding: 22px;
+    box-shadow: 0 30px 60px -20px #24231ecc;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.modal-header .eyebrow { margin-bottom: 6px; }
+.modal-header h2 { font-size: 17px; font-weight: 800; }
+.url-box {
+    border: 1px solid #d4cdbf;
+    border-radius: 4px;
+    background: #f6f2e9;
+    padding: 10px 13px;
+    font-size: 11px;
+    font-family: monospace;
+    word-break: break-all;
+    color: #24231e;
+    margin-bottom: 14px;
+    user-select: all;
+}
+.modal-actions { display: flex; gap: 9px; }
+
+/* ── Focus & interaction ── */
+.order-page :focus-visible { outline: 2px solid #ad3b19; outline-offset: 3px; }
+.order-page button { cursor: pointer; }
+
+/* ── Fade transition ── */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.18s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* ── Responsive ── */
+@media (max-width: 960px) {
+    .columns { grid-template-columns: 1fr; }
+    .side-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+    .metric-row { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 640px) {
+    .items-mobile { display: none; }
+    .table-scroll { display: block; overflow-x: auto; }
+}
+@media (max-width: 640px) {
+    .order-heading { gap: 12px; }
+    .heading-actions { gap: 7px; }
+    .metric-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .metric { padding: 14px; }
+    .metric strong { font-size: 22px; }
+    .status-bar { padding: 13px 16px; }
+    .status-bar-right { display: none; }
+    .side-col { display: flex; }
+    .order-footer { flex-direction: column; }
+}
+@media (max-width: 400px) {
+    .heading-actions .action-ghost { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .dot-pulse { animation: none; }
+}
 </style>
