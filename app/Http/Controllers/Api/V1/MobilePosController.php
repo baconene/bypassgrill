@@ -36,7 +36,8 @@ class MobilePosController extends Controller
         return response()->json([
             'server_time' => now()->toIso8601String(),
             'categories' => Category::where('is_active', true)->orderBy('display_order')->get(),
-            'products' => Product::with('category')->where('is_active', true)->orderBy('display_order')->get(),
+            'products' => Product::with('category')->where('is_active', true)->orderBy('display_order')->get()->map(function ($product) { $row = $product->toArray(); $row['image_url'] = $product->image ? asset('storage/'.$product->image) : null; return $row; }),
+            'orders' => Order::with(['items.product'])->latest()->limit(100)->get(),
         ]);
     }
 
