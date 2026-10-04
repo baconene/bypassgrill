@@ -14,6 +14,12 @@ Route::middleware('auth')->get('/user', function (Request $request) {
     return $request->user();
 });
 
+Route::prefix('v1/mobile-pos')->group(function () {
+    Route::post('/login', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'login']);
+    Route::get('/bootstrap', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'bootstrap']);
+    Route::post('/sync', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'sync']);
+});
+
 Route::prefix('v1')->group(function () {
     Route::get('/payment-tenders', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'index']);
 
