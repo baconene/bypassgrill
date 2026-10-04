@@ -1,0 +1,1 @@
+import {Stack} from 'expo-router';export default function Layout(){return <Stack screenOptions={{headerStyle:{backgroundColor:'#111'},headerTintColor:'#fff',contentStyle:{backgroundColor:'#090909'}}}><Stack.Screen name="index" options={{title:'Bypass Grill POS'}}/><Stack.Screen name="pos" options={{title:'Offline POS'}}/></Stack>}
