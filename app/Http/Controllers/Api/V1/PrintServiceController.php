@@ -39,6 +39,8 @@ class PrintServiceController extends Controller
             'print_auto_print'    => 'boolean',
             'print_enabled'       => 'boolean',
             'print_channel'       => 'nullable|string|max:100|regex:/^[A-Za-z0-9._-]+$/',
+            'print_bluetooth_name' => 'nullable|string|max:255',
+            'print_bluetooth_address' => ['nullable','string','max:32','regex:/^$|^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/'],
             'social_facebook'     => 'nullable|string|max:255',
             'social_instagram'    => 'nullable|string|max:255',
             'receipt_qr_type'     => 'nullable|string|in:none,facebook,order_url',
@@ -50,7 +52,7 @@ class PrintServiceController extends Controller
         // These columns are NOT NULL in the DB; empty inputs arrive as null
         // (ConvertEmptyStringsToNull middleware) — coalesce to '' to avoid a
         // 1048 "Column cannot be null" integrity violation.
-        foreach (['print_store_name', 'print_store_address', 'print_store_phone', 'print_footer'] as $field) {
+        foreach (['print_store_name', 'print_store_address', 'print_store_phone', 'print_footer', 'print_bluetooth_name', 'print_bluetooth_address'] as $field) {
             $data[$field] = $data[$field] ?? '';
         }
         $data['receipt_qr_type'] = $data['receipt_qr_type'] ?? 'order_url';

@@ -1,0 +1,2 @@
+const {withMainApplication}=require('@expo/config-plugins');
+module.exports=function withThermalPrinter(config){return withMainApplication(config,c=>{let s=c.modResults.contents;if(!s.includes('ThermalPrinterPackage')){s=s.replace('import com.facebook.react.PackageList','import com.facebook.react.PackageList\nimport com.honeypathkar.thermalprinter.ThermalPrinterPackage');s=s.replace('PackageList(this).packages','PackageList(this).packages.apply { add(ThermalPrinterPackage()) }');c.modResults.contents=s}return c})};

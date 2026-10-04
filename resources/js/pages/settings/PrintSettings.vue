@@ -24,6 +24,8 @@ interface PrintServiceSettings {
     print_auto_print: boolean
     print_enabled: boolean
     print_channel: string
+    print_bluetooth_name: string
+    print_bluetooth_address: string
     social_facebook: string | null
     social_instagram: string | null
     receipt_qr_type: 'none' | 'facebook' | 'order_url'
@@ -203,6 +205,16 @@ onMounted(() => {
                     Letters, numbers, dots, dashes and underscores only. Leave blank to use
                     <code class="bg-muted px-1 rounded">orders</code>.
                 </p>
+            </div>
+        </div>
+
+        <!-- Android POS Bluetooth printer -->
+        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+            <h3 class="font-semibold text-sm flex items-center gap-2"><Printer class="h-4 w-4" /> Android POS Bluetooth Printer</h3>
+            <p class="text-xs text-muted-foreground -mt-2">Source-of-truth settings synced to the Android POS. Pair the printer in Android first; the POS connects to this saved device and keeps the last synced settings for offline printing.</p>
+            <div class="grid gap-3 sm:grid-cols-2">
+                <div><label class="text-xs font-medium text-muted-foreground block mb-1">Paired printer name</label><input v-model="form.print_bluetooth_name" type="text" placeholder="e.g. MTP-II" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                <div><label class="text-xs font-medium text-muted-foreground block mb-1">Bluetooth MAC address</label><input v-model="form.print_bluetooth_address" type="text" placeholder="00:11:22:AA:BB:CC" class="w-full rounded-lg border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary" /></div>
             </div>
         </div>
 
