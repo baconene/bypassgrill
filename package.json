@@ -54,7 +54,8 @@
         "vue-input-otp": "^0.3.2",
         "vue-sonner": "^2.0.0",
         "vue3-apexcharts": "^1.11.1",
-        "xlsx": "^0.18.5"
+        "xlsx": "^0.18.5",
+        "swagger-ui-dist": "^5.29.0"
     },
     "optionalDependencies": {
         "@rollup/rollup-linux-x64-gnu": "4.9.5",
