@@ -67,6 +67,7 @@ class MobilePosController extends Controller
                 $orderData = $payload;
                 unset($orderData['client_id']);
                 $orderData['user_id'] = $user->id;
+                auth()->setUser($user);
                 $order = $orders->createOrder($orderData);
                 DB::table('mobile_pos_sync_records')->insert([
                     'client_id' => $payload['client_id'], 'order_id' => $order->id, 'user_id' => $user->id,
