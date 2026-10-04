@@ -736,4 +736,19 @@ const saveEdit = async () => {
 @media(max-width:390px){
 .kitchen-dashboard{padding-left:16px;padding-right:16px}.kitchen-heading h1{font-size:34px}.kitchen-toolbar>.grid p:first-child{font-size:7px!important}.kitchen-toolbar>.grid p:last-child{font-size:24px!important}
 }
+
+@media(max-width:700px){
+.kitchen-board.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.kitchen-board.grid-cols-3>div{padding:10px!important;overflow:hidden}
+.kitchen-board.grid-cols-3 [class*="border-yellow-500"],.kitchen-board.grid-cols-3 [class*="border-blue-500"],.kitchen-board.grid-cols-3 [class*="border-green-500"]{overflow:hidden}
+.kitchen-board.grid-cols-3 [class*="border-yellow-500"]>div,.kitchen-board.grid-cols-3 [class*="border-blue-500"]>div,.kitchen-board.grid-cols-3 [class*="border-green-500"]>div{padding:9px!important}
+.kitchen-board.grid-cols-3 [class*="text-2xl"],.kitchen-board.grid-cols-3 [class*="text-base"]{font-size:18px!important}
+.kitchen-board.grid-cols-3 ul{white-space:normal!important}.kitchen-board.grid-cols-3 li{white-space:normal!important;overflow-wrap:anywhere}
+.kitchen-board.grid-cols-3 [class*="rounded-full"]{max-width:100%;font-size:9px!important;padding:2px 5px!important;white-space:nowrap}
+.kitchen-board.grid-cols-3 button{max-width:100%}
+.kitchen-board.grid-cols-3 .text-xs{font-size:10px!important}
+.kitchen-board.grid-cols-3 [class*="font-bold"][class*="text-primary"]{font-size:11px!important}
+.kitchen-dashboard>.rounded-xl.border.bg-card [class*="rounded-full"]{white-space:nowrap;font-size:10px!important;padding:3px 7px!important}
+.kitchen-dashboard>.rounded-xl.border.bg-card>div>div{min-width:0}
+}
 </style>
