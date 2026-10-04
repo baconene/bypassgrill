@@ -28,6 +28,8 @@ export class SyncService {
     const j:any=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.message??'Unable to download POS catalog.');
     const db=await database(),now=new Date().toISOString();
+    for(const x of j.categories??[])await db.runAsync("INSERT OR REPLACE INTO categories(id,payload,synced_at) VALUES(?,?,?)",String(x.id),JSON.stringify(x),now);
+    for(const x of j.orders??[])await db.runAsync("INSERT OR REPLACE INTO server_orders(id,payload,status,created_at,updated_at,synced_at) VALUES(?,?,?,?,?,?)",String(x.id),JSON.stringify(x),x.status??null,x.created_at??null,x.updated_at??null,now);
     for(const x of j.products??[])await db.runAsync("INSERT OR REPLACE INTO products(id,category_id,payload,updated_at,synced_at) VALUES(?,?,?,?,?)",String(x.id),x.category_id?String(x.category_id):null,JSON.stringify(x),x.updated_at??null,now);
     await db.runAsync("INSERT OR REPLACE INTO app_meta(key,value) VALUES('last_sync_at',?)",now);
   }
