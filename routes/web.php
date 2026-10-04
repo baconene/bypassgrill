@@ -104,6 +104,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('role:admin');
 
     // Tools — read-only SQL console (admin only)
+    Route::get('tools/api', fn () => \Inertia\Inertia::render('Tools/ApiTester'))->name('tools.api')->middleware('role:admin');
+
     Route::get('tools', [\App\Http\Controllers\ToolsPageController::class, 'index'])
         ->name('tools.index')
         ->middleware('role:admin');
