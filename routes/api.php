@@ -21,6 +21,7 @@ Route::prefix('v1/mobile-pos')->group(function () {
 });
 
 Route::prefix('v1')->group(function () {
+    Route::get('/tools/openapi.json', [\App\Http\Controllers\Api\V1\OpenApiController::class, 'spec'])->middleware(['auth','role:admin']);
     Route::get('/payment-tenders', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'index']);
 
     Route::get('/categories', [CategoryController::class, 'index']);
