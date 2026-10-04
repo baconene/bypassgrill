@@ -11,3 +11,5 @@ Isolated Expo/React Native Android client. This branch does not alter the workin
 - manual product re-sync
 
 Server order upload is disabled in the initial APK intentionally, so testing cannot create duplicate or unauthorized production orders.
+
+Build trigger: 2026-10-04
