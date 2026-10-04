@@ -1,0 +1,1 @@
+{"expo":{"name":"Bypass Grill POS","slug":"bypass-grill-pos","version":"0.1.0","orientation":"portrait","scheme":"bypassgrill","userInterfaceStyle":"dark","plugins":["expo-router","expo-secure-store"],"android":{"package":"com.bypassgrill.pos","versionCode":1},"experiments":{"typedRoutes":false}}}
