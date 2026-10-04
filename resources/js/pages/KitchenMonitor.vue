@@ -299,9 +299,10 @@ const saveEdit = async () => {
 <template>
     <Head title="Kitchen Monitor" />
 
-    <div class="space-y-4">
+    <div class="kitchen-dashboard space-y-4">
+<header class="kitchen-heading"><div><p class="kitchen-eyebrow">BYPASS GRILL · LIVE SERVICE</p><h1>Kitchen <em>monitor</em></h1><p class="kitchen-intro">Move every ticket from order to grill to handoff. The board refreshes automatically every 10 seconds.</p></div><div class="kitchen-live"><span class="kitchen-live-dot"></span>LIVE QUEUE<small>{{ orders.length }} active order{{ orders.length === 1 ? '' : 's' }}</small></div></header>
         <!-- Header row: stats + orientation toggle -->
-        <div class="flex items-center gap-3">
+        <div class="kitchen-toolbar flex items-center gap-3">
             <div class="grid grid-cols-3 gap-3 flex-1">
                 <div class="rounded-xl border bg-yellow-50 dark:bg-yellow-950/20 p-3 text-center">
                     <p class="text-xs font-medium text-yellow-700 dark:text-yellow-400 uppercase tracking-wide">Pending</p>
@@ -335,7 +336,7 @@ const saveEdit = async () => {
         </div>
 
         <!-- Columns -->
-        <div :class="['grid gap-4', portraitMode ? 'grid-cols-3' : 'grid-cols-1 lg:grid-cols-3']">
+        <div :class="['kitchen-board grid gap-4', portraitMode ? 'grid-cols-3' : 'grid-cols-1 lg:grid-cols-3']">
 
             <!-- Pending -->
             <div>
@@ -710,4 +711,19 @@ const saveEdit = async () => {
 <style scoped>
 .fade-enter-active, .fade-leave-active { transition: opacity 0.15s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.kitchen-dashboard{min-height:100%;margin:-24px;padding:34px clamp(18px,3vw,44px) 44px;background:#f6f2e9;color:#24231e;color-scheme:light;font-family:Arial,Helvetica,sans-serif}
+.kitchen-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:26px}.kitchen-eyebrow{font-size:9px;font-weight:800;letter-spacing:1.6px;color:#ad3b19}
+.kitchen-heading h1{margin:10px 0 8px;font-size:clamp(32px,3.5vw,48px);font-weight:850;letter-spacing:-1.8px;line-height:1.05}.kitchen-heading h1 em{font-family:Georgia,serif;font-weight:400;color:#ad3b19}
+.kitchen-intro{max-width:620px;font-size:13px;line-height:1.6;color:#68665f}.kitchen-live{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:9px;font-weight:800;letter-spacing:1.2px;color:#ad3b19}
+.kitchen-live small{flex-basis:100%;text-align:right;font-size:10px;font-weight:400;letter-spacing:0;color:#777268}.kitchen-live-dot{width:7px;height:7px;border-radius:50%;background:#ad3b19;box-shadow:0 0 0 4px #ad3b1920}
+.kitchen-toolbar{padding:14px;border:1px solid #ded7cb;border-radius:6px;background:#fffcf6}.kitchen-toolbar>.grid>div{border-color:#ded7cb!important;border-radius:5px!important;background:#f2e5d8!important;padding:14px!important}
+.kitchen-toolbar>.grid>div:nth-child(2){background:#efeadf!important}.kitchen-toolbar>.grid>div:nth-child(3){background:#e4edde!important}.kitchen-toolbar>.grid p:first-child{color:#68665f!important;font-size:9px!important;letter-spacing:1px}
+.kitchen-toolbar>.grid p:last-child{color:#24231e!important;font-size:30px!important;font-variant-numeric:tabular-nums}.kitchen-toolbar button{border-radius:4px!important;border-color:#d4cdbf!important}
+.kitchen-board{margin-top:18px}.kitchen-board>div{min-width:0;padding:18px;border:1px solid #ded7cb;border-radius:6px;background:#fffcf6}.kitchen-board>div>h2,.kitchen-board>div>div:first-child h2{color:#68665f!important;font-size:9px!important;letter-spacing:1.3px}
+.kitchen-board>div:nth-child(1) h2 span{background:#c79a3b!important}.kitchen-board>div:nth-child(2) h2 span{background:#ad3b19!important}.kitchen-board>div:nth-child(3) h2 span{background:#6f9a5d!important}
+.kitchen-board [class*="border-yellow-500"],.kitchen-board [class*="border-blue-500"],.kitchen-board [class*="border-green-500"]{border-left-color:#ad3b19!important;border-radius:5px!important;border-top:1px solid #e5ded2;border-right:1px solid #e5ded2;border-bottom:1px solid #e5ded2;background:#fffdf8!important;box-shadow:none!important}
+.kitchen-board [class*="bg-blue-600"],.kitchen-board [class*="bg-green-600"]{background:#c3441c!important;border-radius:4px!important}.kitchen-board [class*="bg-blue-600"]:hover,.kitchen-board [class*="bg-green-600"]:hover{background:#a73513!important}.kitchen-board [class*="bg-gray-700"]{background:#24231e!important;border-radius:4px!important}
+.kitchen-dashboard>.rounded-xl.border.bg-card{border-color:#ded7cb!important;border-radius:6px!important;background:#fffcf6!important;box-shadow:none!important}.kitchen-dashboard .text-primary{color:#ad3b19!important}.kitchen-dashboard :focus-visible{outline:2px solid #ad3b19;outline-offset:3px}
+@media(max-width:700px){.kitchen-dashboard{margin:-16px;padding:24px 16px 36px}.kitchen-heading{flex-direction:column;gap:14px}.kitchen-live{justify-content:flex-start}.kitchen-live small{text-align:left}.kitchen-toolbar{align-items:stretch;flex-direction:column}.kitchen-toolbar>.grid{width:100%}.kitchen-toolbar>.flex{flex-direction:row}}
 </style>
