@@ -47,9 +47,11 @@ class MobilePosController extends Controller
 
     public function paymentStore(Request $request): JsonResponse {
         $user=$this->authenticate($request);
-        $data=$request->validate(['order_id'=>'required|integer|exists:orders,id','payment_tender_id'=>'required|integer|exists:payment_tenders,id','amount'=>'required|numeric|min:0','reference'=>'nullable|string|max:255']);
-        $request->merge($data);
-        return app(PaymentController::class)->store($request);
+        $data=$request->validate(['client_id'=>'required|string|max:100','order_id'=>'required|integer|exists:orders,id','payment_tender_id'=>'required|integer|exists:payment_tenders,id','amount'=>'required|numeric|min:0','reference'=>'nullable|string|max:255']);
+        $existing=DB::table('mobile_pos_payment_sync_records')->where('client_id',$data['client_id'])->first();
+        if($existing)return response()->json(['payment_id'=>$existing->payment_id,'status'=>'already_synced']);
+        $payment=DB::transaction(function()use($data,$user){$payload=$data;unset($payload['client_id']);$order=\App\Models\Order::findOrFail($payload['order_id']);$payment=app(\App\Services\PaymentService::class)->processPayment($order,$payload);DB::table('mobile_pos_payment_sync_records')->insert(['client_id'=>$data['client_id'],'payment_id'=>$payment->id,'order_id'=>$order->id,'user_id'=>$user->id,'created_at'=>now(),'updated_at'=>now()]);return $payment;});
+        return response()->json(['payment_id'=>$payment->id,'status'=>'synced'],201);
     }
 
     public function userInfo(Request $request): JsonResponse { return response()->json($this->userPayload($this->authenticate($request))); }

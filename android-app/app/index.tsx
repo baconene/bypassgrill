@@ -1,5 +1,6 @@
 import {useEffect,useState} from 'react';
-import {Pressable,SafeAreaView,ScrollView,StyleSheet,Text,View} from 'react-native';
+import {Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
+import {SafeAreaView,useSafeAreaInsets} from 'react-native-safe-area-context';
 import {router} from 'expo-router';
 import {database} from '../src/db/database';
 import {SyncService} from '../src/sync/SyncService';
@@ -8,6 +9,7 @@ import {getToken} from '../src/api/mobilePos';
 const NAV=[['Dashboard','/'],['Deposit Control','/deposit-control'],['Point of Sale','/pos'],['Inventory','/inventory'],['Financial Report','/financial-report'],['Report','/report'],['Printer Settings','/printer'],['User Info','/user-info']] as const;
 
 export default function Home(){
+ const insets=useSafeAreaInsets();
  const[status,setStatus]=useState('Initializing...');
  const[products,setProducts]=useState(0),[pending,setPending]=useState(0);
  const[last,setLast]=useState<string|null>(null),[orders,setOrders]=useState<any[]>([]);
@@ -29,7 +31,7 @@ export default function Home(){
  const revenue=todayOrders.filter(o=>o.payment_status==='paid').reduce((n,o)=>n+Number(o.total_amount||0),0);
  const active=orders.filter(o=>['pending','preparing'].includes(String(o.status).toLowerCase())).length;
  return <SafeAreaView style={s.root}>
-  <View style={s.top}><Pressable style={s.menuBtn} onPress={()=>setMenu(true)}><Text style={s.menuIcon}>☰</Text></Pressable><Text style={s.topBrand}>BYPASS GRILL</Text><Pressable onPress={sync}><Text style={s.sync}>SYNC</Text></Pressable></View>
+  <View style={[s.top,{paddingTop:8}]}><Pressable style={s.menuBtn} onPress={()=>setMenu(true)}><Text style={s.menuIcon}>☰</Text></Pressable><Text style={s.topBrand}>BYPASS GRILL</Text><Pressable onPress={sync}><Text style={s.sync}>SYNC</Text></Pressable></View>
   <ScrollView contentContainerStyle={s.page}>
    <Text style={s.eye}>BYPASS GRILL / DAILY OVERVIEW</Text>
    <Text style={s.title}>Today at <Text style={s.em}>the grill.</Text></Text>
