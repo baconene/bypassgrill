@@ -55,6 +55,14 @@ class MobilePosController extends Controller
     }
 
 
+
+    public function orderReconcile(Request $request): JsonResponse {
+        $this->authenticate($request);
+        $data=$request->validate(['server_ids'=>'required|array|max:500','server_ids.*'=>'integer']);
+        $ids=array_values(array_unique(array_map('intval',$data['server_ids'])));
+        return response()->json(['existing_ids'=>Order::whereIn('id',$ids)->pluck('id')->map(fn($id)=>(string)$id)->values()]);
+    }
+
     public function orderUpdate(Request $request,int $id): JsonResponse {
         $this->authenticate($request);$order=Order::findOrFail($id);return app(OrderController::class)->update($order,$request);
     }

@@ -19,6 +19,7 @@ Route::prefix('v1/mobile-pos')->group(function () {
     Route::get('/bootstrap', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'bootstrap']);
     Route::post('/sync', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'sync']);
     Route::post('/payments', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'paymentStore']);
+    Route::post('/orders/reconcile', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'orderReconcile']);
     Route::put('/orders/{id}', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'orderUpdate']);
     Route::post('/orders/{id}/cancel', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'orderCancel']);
     Route::get('/user', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'userInfo']);
