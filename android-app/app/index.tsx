@@ -26,7 +26,7 @@ export default function Home(){
   try{const r=await SyncService.syncNow();await refresh();setStatus(r.online?'Online - workspace synced':'Offline - using cached workspace')}
   catch(e:any){setStatus('Sync error - '+(e.message??'Try again'))}
  }
- useEffect(()=>{getToken().then(t=>{if(!t){router.replace('/login');return}return database().then(refresh).then(sync)})},[]);
+ useEffect(()=>{let live=true;(async()=>{try{const t=await getToken();if(!live)return;if(!t){router.replace('/login');return}await database();if(!live)return;await refresh();setStatus('Ready - tap SYNC to refresh')}catch(e:any){if(live)setStatus('Recovery mode - '+(e?.message??'local startup failed'))}})();return()=>{live=false}},[]);
  const todayOrders=orders.filter(o=>o.created_at&&new Date(o.created_at).toDateString()===new Date().toDateString());
  const revenue=todayOrders.filter(o=>o.payment_status==='paid').reduce((n,o)=>n+Number(o.total_amount||0),0);
  const active=orders.filter(o=>['pending','preparing'].includes(String(o.status).toLowerCase())).length;
