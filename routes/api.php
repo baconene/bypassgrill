@@ -18,6 +18,7 @@ Route::prefix('v1/mobile-pos')->group(function () {
     Route::post('/login', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'login']);
     Route::get('/bootstrap', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'bootstrap']);
     Route::post('/sync', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'sync']);
+    Route::post('/payments', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'paymentStore']);
     Route::get('/user', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'userInfo']);
     Route::get('/deposit-controls', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'depositIndex']);
     Route::post('/deposit-controls', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'depositStore']);

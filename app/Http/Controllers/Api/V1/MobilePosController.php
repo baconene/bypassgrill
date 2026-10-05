@@ -45,6 +45,13 @@ class MobilePosController extends Controller
         return response()->json(['server_time'=>now()->toIso8601String(),'orders'=>$results]);
     }
 
+    public function paymentStore(Request $request): JsonResponse {
+        $user=$this->authenticate($request);
+        $data=$request->validate(['order_id'=>'required|integer|exists:orders,id','payment_tender_id'=>'required|integer|exists:payment_tenders,id','amount'=>'required|numeric|min:0','reference'=>'nullable|string|max:255']);
+        $request->merge($data);
+        return app(PaymentController::class)->store($request);
+    }
+
     public function userInfo(Request $request): JsonResponse { return response()->json($this->userPayload($this->authenticate($request))); }
 
     public function depositIndex(Request $request): JsonResponse {
