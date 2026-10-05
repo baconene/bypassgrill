@@ -60,6 +60,8 @@ class MobilePosController extends Controller
     public function orderIndex(Request $request): JsonResponse {
         $this->authenticate($request);$perPage=min(max((int)$request->input('per_page',100),1),100);$search=trim((string)$request->input('search',''));
         $q=Order::with(['items.product','payments.tender','queueNumber'])->orderByDesc('id');
+        if($request->filled('from'))$q->where('created_at','>=',$request->input('from'));
+        if($request->filled('to'))$q->where('created_at','<=',$request->input('to'));
         if($search!=='')$q->where(function($w)use($search){$w->where('id',$search)->orWhere('customer_name','like','%'.$search.'%')->orWhere('customer_contact','like','%'.$search.'%')->orWhere('table_number','like','%'.$search.'%')->orWhereHas('items.product',fn($p)=>$p->where('name','like','%'.$search.'%'))->orWhereHas('queueNumber',fn($n)=>$n->where('number','like','%'.$search.'%'));});
         if($request->filled('status'))$q->where('status',$request->string('status'));
         $page=$q->cursorPaginate($perPage,['*'],'cursor',$request->input('cursor'));
