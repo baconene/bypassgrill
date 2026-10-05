@@ -20,4 +20,4 @@ CREATE TABLE IF NOT EXISTS sync_queue(id TEXT PRIMARY KEY,entity TEXT NOT NULL,e
  await db.execAsync("UPDATE sync_queue SET state='PENDING' WHERE state='SYNCING';CREATE UNIQUE INDEX IF NOT EXISTS sync_queue_entity_local_unique ON sync_queue(entity,entity_local_id);");
  await db.runAsync("INSERT OR REPLACE INTO app_meta(key,value) VALUES('db_schema_version','3')");
 }
-export function database(){if(!instance)instance=(async()=>{const db=await SQLite.openDatabaseAsync('bypass-grill-pos.db');await migrate(db);return db})();return instance}
+export function database(){if(!instance)instance=(async()=>{try{const db=await SQLite.openDatabaseAsync('bypass-grill-pos.db');await migrate(db);return db}catch(e){instance=null;throw e}})();return instance}
