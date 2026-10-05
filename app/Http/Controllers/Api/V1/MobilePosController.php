@@ -54,6 +54,14 @@ class MobilePosController extends Controller
         return response()->json(['payment_id'=>$payment->id,'status'=>'synced'],201);
     }
 
+
+    public function orderUpdate(Request $request,int $id): JsonResponse {
+        $this->authenticate($request);$order=Order::findOrFail($id);return app(OrderController::class)->update($order,$request);
+    }
+    public function orderCancel(Request $request,int $id): JsonResponse {
+        $this->authenticate($request);$order=Order::findOrFail($id);return app(OrderController::class)->cancel($order);
+    }
+
     public function userInfo(Request $request): JsonResponse { return response()->json($this->userPayload($this->authenticate($request))); }
 
     public function depositIndex(Request $request): JsonResponse {
