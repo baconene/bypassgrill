@@ -18,6 +18,17 @@ Route::prefix('v1/mobile-pos')->group(function () {
     Route::post('/login', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'login']);
     Route::get('/bootstrap', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'bootstrap']);
     Route::post('/sync', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'sync']);
+    Route::get('/user', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'userInfo']);
+    Route::get('/deposit-controls', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'depositIndex']);
+    Route::post('/deposit-controls', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'depositStore']);
+    Route::post('/deposit-controls/{id}/close', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'depositClose']);
+    Route::post('/deposit-controls/{id}/reconcile', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'depositReconcile']);
+    Route::get('/inventory', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'inventoryIndex']);
+    Route::post('/inventory/adjust', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'inventoryAdjust']);
+    Route::get('/financial-transactions', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'financialIndex']);
+    Route::get('/financial-summary', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'financialSummary']);
+    Route::post('/financial-transactions', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'financialStore']);
+    Route::get('/reports/{type}', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'report']);
 });
 
 Route::prefix('v1')->group(function () {
