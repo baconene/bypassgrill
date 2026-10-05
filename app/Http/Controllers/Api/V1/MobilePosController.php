@@ -35,7 +35,7 @@ class MobilePosController extends Controller
     public function bootstrap(Request $request): JsonResponse {
         $user=$this->authenticate($request);
         $products=Product::with(['category','modifiers','recipes.ingredient'])->where('is_active',true)->orderBy('display_order')->get()->map(function(Product $p){$row=$p->toArray();$row['image_url']=$p->image?asset('storage/'.$p->image):null;return array_merge($row,$p->stockStatus());});
-        return response()->json(['server_time'=>now()->toIso8601String(),'user'=>$this->userPayload($user),'categories'=>Category::where('is_active',true)->orderBy('display_order')->get(),'products'=>$products,'payment_tenders'=>PaymentTender::where('is_active',true)->orderBy('display_order')->orderBy('name')->get(),'print_settings'=>PrintServiceSetting::getSetting(),'orders'=>Order::with(['items.product','payments.tender'])->latest()->limit(100)->get()]);
+        return response()->json(['server_time'=>now()->toIso8601String(),'user'=>$this->userPayload($user),'categories'=>Category::where('is_active',true)->orderBy('display_order')->get(),'products'=>$products,'payment_tenders'=>PaymentTender::where('is_active',true)->orderBy('display_order')->orderBy('name')->get(),'print_settings'=>PrintServiceSetting::getSetting()]);
     }
 
     public function sync(Request $request,OrderService $orders): JsonResponse {
@@ -55,6 +55,16 @@ class MobilePosController extends Controller
     }
 
 
+
+
+    public function orderIndex(Request $request): JsonResponse {
+        $this->authenticate($request);$perPage=min(max((int)$request->input('per_page',100),1),100);$search=trim((string)$request->input('search',''));
+        $q=Order::with(['items.product','payments.tender','queueNumber'])->orderByDesc('id');
+        if($search!=='')$q->where(function($w)use($search){$w->where('id',$search)->orWhere('customer_name','like','%'.$search.'%')->orWhere('customer_contact','like','%'.$search.'%')->orWhere('table_number','like','%'.$search.'%')->orWhereHas('items.product',fn($p)=>$p->where('name','like','%'.$search.'%'))->orWhereHas('queueNumber',fn($n)=>$n->where('number','like','%'.$search.'%'));});
+        if($request->filled('status'))$q->where('status',$request->string('status'));
+        $page=$q->cursorPaginate($perPage,['*'],'cursor',$request->input('cursor'));
+        return response()->json(['data'=>$page->items(),'next_cursor'=>$page->nextCursor()?->encode(),'has_more'=>$page->hasMorePages()]);
+    }
 
     public function orderReconcile(Request $request): JsonResponse {
         $this->authenticate($request);
