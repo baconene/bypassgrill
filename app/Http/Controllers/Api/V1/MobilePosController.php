@@ -74,10 +74,10 @@ class MobilePosController extends Controller
     }
 
     public function orderUpdate(Request $request,int $id): JsonResponse {
-        $this->authenticate($request);$order=Order::findOrFail($id);return app(OrderController::class)->update($order,$request);
+        $this->authenticate($request);$order=Order::findOrFail($id);abort_if($order->status==='cancelled',422,'A cancelled order cannot be edited.');abort_if($order->payment_status==='paid',422,'A paid order cannot be edited.');return app(OrderController::class)->update($order,$request);
     }
     public function orderCancel(Request $request,int $id): JsonResponse {
-        $this->authenticate($request);$order=Order::findOrFail($id);return app(OrderController::class)->cancel($order);
+        $this->authenticate($request);$order=Order::findOrFail($id);abort_if($order->status==='cancelled',422,'Order is already cancelled.');abort_if($order->payment_status==='paid',422,'A paid order cannot be cancelled.');return app(OrderController::class)->cancel($order);
     }
 
     public function userInfo(Request $request): JsonResponse { return response()->json($this->userPayload($this->authenticate($request))); }
