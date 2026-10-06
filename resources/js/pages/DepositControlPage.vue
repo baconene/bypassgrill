@@ -100,9 +100,8 @@ const openingCashValid = computed(() => validAmount(openingCash.value));
 const canStart = computed(() =>
     page.props.auth.roles.some((role) => ['cashier', 'admin'].includes(role)),
 );
-const isOwner = computed(
-    () => active.value?.user_id === page.props.auth.user.id,
-);
+const depositSuperUser = computed(() => page.props.auth.user.email?.toLowerCase() === 'john.adrian.bacon2@gmail.com');
+const isOwner = computed(() => active.value?.user_id === page.props.auth.user.id || depositSuperUser.value);
 const reports = computed(() =>
     props.historyView
         ? history.value.filter((shift) => shift.id === selectedId.value)
@@ -321,6 +320,18 @@ async function refresh(targetPage = historyPage.value) {
     } finally {
         busy.value = false;
     }
+}
+async function reopenShift() {
+    if (!active.value || !depositSuperUser.value) return;
+    busy.value = true; error.value = '';
+    try { await api.post(`/api/v1/deposit-controls/${active.value.id}/reopen`); await load(1); }
+    catch (e) { showError(e); } finally { busy.value = false; }
+}
+async function deleteSnapshot(id: number) {
+    if (!depositSuperUser.value || !window.confirm(`Delete deposit snapshot #${id}? This cannot be undone.`)) return;
+    busy.value = true; error.value = '';
+    try { await api.delete(`/api/v1/deposit-controls/${id}`); selectedId.value = null; completed.value = null; await load(1); }
+    catch (e) { showError(e); } finally { busy.value = false; }
 }
 async function act(action: 'start' | 'close' | 'reconcile') {
     busy.value = true;
@@ -582,6 +593,7 @@ onUnmounted(() => clearInterval(clock));
                         >
                     </div>
                     <div class="work-actions">
+                        <button v-if="depositSuperUser" class="text-link" :disabled="busy" @click="reopenShift">Back to open shift</button>
                         <button
                             v-if="isOwner"
                             class="primary-action"
@@ -885,6 +897,7 @@ onUnmounted(() => clearInterval(clock));
                                     >
                                 </td>
                                 <td>
+                                    <button v-if="depositSuperUser" class="row-toggle" aria-label="Delete snapshot" @click.stop="deleteSnapshot(row.id)">Delete</button>
                                     <button
                                         class="row-toggle"
                                         :aria-expanded="selectedId === row.id"

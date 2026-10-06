@@ -77,8 +77,39 @@ class DepositControlController extends Controller
         });
     }
 
+    public function reopen(Request $request, DepositControl $depositControl)
+    {
+        $this->authorizeSuperUser($request);
+        return DB::transaction(function () use ($depositControl) {
+            $shift = DepositControl::lockForUpdate()->findOrFail($depositControl->id);
+            abort_if($shift->submitted_at !== null, 409, 'Delete the completed snapshot before reopening it.');
+            $shift->update(['closed_at' => null, 'closing_snapshot' => null]);
+            return response()->json($shift);
+        });
+    }
+
+    public function destroy(Request $request, DepositControl $depositControl)
+    {
+        $this->authorizeSuperUser($request);
+        return DB::transaction(function () use ($depositControl) {
+            $shift = DepositControl::lockForUpdate()->findOrFail($depositControl->id);
+            $shift->delete();
+            return response()->json(null, 204);
+        });
+    }
+
+    private function isSuperUser(Request $request): bool
+    {
+        return strtolower((string) $request->user()?->email) === 'john.adrian.bacon2@gmail.com';
+    }
+
+    private function authorizeSuperUser(Request $request): void
+    {
+        abort_unless($this->isSuperUser($request), 403, 'This deposit-control action is restricted.');
+    }
+
     private function authorizeOwner(Request $request, DepositControl $shift): void
     {
-        abort_unless($shift->user_id === $request->user()->id, 403, 'Only the cashier who started this shift may complete it.');
+        abort_unless($shift->user_id === $request->user()->id || $this->isSuperUser($request), 403, 'Only the cashier who started this shift may complete it.');
     }
 }

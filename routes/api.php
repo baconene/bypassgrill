@@ -66,6 +66,8 @@ Route::prefix('v1')->group(function () {
                 Route::post('/', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'store']);
                 Route::post('/{depositControl}/close', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'close']);
                 Route::post('/{depositControl}/reconcile', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'reconcile']);
+                Route::post('/{depositControl}/reopen', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'reopen']);
+                Route::delete('/{depositControl}', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'destroy']);
             });
         });
         Route::post('/categories', [CategoryController::class, 'store']);
