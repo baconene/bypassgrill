@@ -63,7 +63,7 @@ class MobilePosController extends Controller
         if($request->filled('from'))$q->where('created_at','>=',$request->input('from'));
         if($request->filled('to'))$q->where('created_at','<=',$request->input('to'));
         if($search!=='')$q->where(function($w)use($search){$w->where('id',$search)->orWhere('customer_name','like','%'.$search.'%')->orWhere('customer_contact','like','%'.$search.'%')->orWhere('table_number','like','%'.$search.'%')->orWhereHas('items.product',fn($p)=>$p->where('name','like','%'.$search.'%'))->orWhereHas('queueNumber',fn($n)=>$n->where('number','like','%'.$search.'%'));});
-        if($request->filled('status'))$q->where('status',$request->string('status'));
+        if($request->filled('status'))$q->where('status',$request->string('status'));if($request->filled('payment')){$payment=strtolower((string)$request->input('payment'));if($payment==='paid')$q->whereHas('payments',fn($p)=>$p->where('status','paid'));if($payment==='unpaid')$q->whereDoesntHave('payments',fn($p)=>$p->where('status','paid'));}if($request->filled('product_id')){$productId=(int)$request->input('product_id');$q->whereHas('items',fn($i)=>$i->where('product_id',$productId));}
         $page=$q->cursorPaginate($perPage,['*'],'cursor',$request->input('cursor'));
         return response()->json(['data'=>$page->items(),'next_cursor'=>$page->nextCursor()?->encode(),'has_more'=>$page->hasMorePages()]);
     }
