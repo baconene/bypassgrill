@@ -116,6 +116,9 @@ class MobilePosController extends Controller
 
     public function financialIndex(Request $request): JsonResponse { $this->authenticate($request); return app(FinancialTransactionController::class)->index($request); }
     public function financialSummary(Request $request): JsonResponse { $this->authenticate($request); return app(FinancialTransactionController::class)->summary($request); }
+    public function financialDaily(Request $request): JsonResponse { $this->authenticate($request); return app(FinancialTransactionController::class)->daily($request); }
+    public function financialPeriods(Request $request): JsonResponse { $this->authenticate($request); return app(FinancialTransactionController::class)->periods($request); }
+    public function paymentTenders(Request $request): JsonResponse { $this->authenticate($request); return app(PaymentTenderController::class)->index(); }
     public function financialStore(Request $request): JsonResponse { $this->authenticate($request); return app(FinancialTransactionController::class)->store($request); }
 
     public function report(Request $request,string $type): JsonResponse {

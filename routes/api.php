@@ -32,6 +32,9 @@ Route::prefix('v1/mobile-pos')->group(function () {
     Route::post('/inventory/adjust', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'inventoryAdjust']);
     Route::get('/financial-transactions', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'financialIndex']);
     Route::get('/financial-summary', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'financialSummary']);
+    Route::get('/financial-daily', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'financialDaily']);
+    Route::get('/financial-periods', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'financialPeriods']);
+    Route::get('/payment-tenders', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'paymentTenders']);
     Route::post('/financial-transactions', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'financialStore']);
     Route::get('/reports/{type}', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'report']);
 });
