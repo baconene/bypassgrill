@@ -323,7 +323,15 @@ class FinancialTransactionController extends Controller {
             'notes'              => 'nullable|string',
             'transacted_at'      => 'nullable|date_format:Y-m-d\\TH:i',
             'payment_tender_id'  => 'nullable|exists:payment_tenders,id',
+            'client_id'          => 'nullable|uuid',
         ]);
+
+        if (! empty($data['client_id'])) {
+            $existing = FinancialTransaction::where('client_id', $data['client_id'])->first();
+            if ($existing) {
+                return response()->json($existing->load(['tender', 'user']), 200);
+            }
+        }
 
         \Log::info('💾 After validation', ['transacted_at' => $data['transacted_at'] ?? 'null', 'now' => now()->toDateTimeString()]);
 
@@ -335,6 +343,7 @@ class FinancialTransactionController extends Controller {
             'user_id'            => auth()->id(),
             'transacted_at'      => $data['transacted_at'] ?? now(),
             'payment_tender_id'  => $data['payment_tender_id'] ?? null,
+            'client_id'          => $data['client_id'] ?? null,
         ]);
         \Log::info('💾 Created transaction', ['id' => $tx->id, 'transacted_at' => $tx->transacted_at->toDateTimeString()]);
         return response()->json($tx, 201);

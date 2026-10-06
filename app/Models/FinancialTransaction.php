@@ -12,7 +12,7 @@ class FinancialTransaction extends Model {
         'type', 'amount', 'description',
         'order_id', 'payment_id', 'payment_tender_id', 'payroll_record_id',
         'distribution_snapshot_id', 'shareholder_id',
-        'user_id', 'notes', 'transacted_at',
+        'user_id', 'notes', 'transacted_at', 'client_id',
     ];
     protected $casts = [
         'amount'        => 'decimal:2',
