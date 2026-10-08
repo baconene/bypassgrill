@@ -87,9 +87,11 @@ const mainNavItems = computed<NavItem[]>(() => {
     }
 
     if (hasRole('admin')) {
+        items.push({ title: 'Reservations', href: '/reservations', icon: CalendarDays });
         items.push({
             title: 'Products',
-            href: '/products',
+            href: '/reservations',
+    '/products',
             icon: UtensilsCrossed,
         });
         items.push({ title: 'HRIS', href: '/hris', icon: Users });

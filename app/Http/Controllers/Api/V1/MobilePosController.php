@@ -10,6 +10,7 @@ use App\Models\Ingredient;
 use App\Models\Order;
 use App\Models\PaymentTender;
 use App\Models\Product;
+use App\Models\Reservation;
 use App\Models\PrintServiceSetting;
 use App\Services\DepositReconciliation;
 use App\Services\DepositSnapshot;
@@ -80,6 +81,14 @@ class MobilePosController extends Controller
     }
     public function orderCancel(Request $request,int $id): JsonResponse {
         $this->authenticate($request);$order=Order::findOrFail($id);abort_if($order->status==='cancelled',422,'Order is already cancelled.');abort_if($order->payment_status==='paid',422,'A paid order cannot be cancelled.');return app(OrderController::class)->cancel($order);
+    }
+
+    public function reservationIndex(Request $request): JsonResponse {
+        $this->authenticate($request);$q=Reservation::orderBy('reserved_at');if($request->filled('from'))$q->where('reserved_at','>=',$request->input('from'));if($request->filled('to'))$q->where('reserved_at','<=',$request->input('to'));return response()->json($q->get());
+    }
+    public function reservationStore(Request $request): JsonResponse {
+        $user=$this->authenticate($request);$d=$request->validate(['client_id'=>'required|uuid','contact_name'=>'required|string|max:255','phone'=>'nullable|string|max:50','social_media'=>'nullable|string|max:255','reserved_at'=>'required|date','party_size'=>'nullable|integer|min:1|max:500','notes'=>'nullable|string|max:2000']);
+        if($x=Reservation::where('client_id',$d['client_id'])->first())return response()->json($x);$d['user_id']=$user->id;$d['status']='pending';return response()->json(Reservation::create($d),201);
     }
 
     public function userInfo(Request $request): JsonResponse { return response()->json($this->userPayload($this->authenticate($request))); }

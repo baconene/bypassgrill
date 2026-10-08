@@ -6,7 +6,7 @@ import {database} from '../src/db/database';
 import {SyncService} from '../src/sync/SyncService';
 import {getToken} from '../src/api/mobilePos';
 
-const NAV=[['Dashboard','/'],['Deposit Control','/deposit-control'],['Point of Sale','/pos'],['Inventory','/inventory'],['Financial Report','/financial-report'],['Report','/report'],['Printer Settings','/printer'],['User Info','/user-info']] as const;
+const NAV=[['Dashboard','/'],['Deposit Control','/deposit-control'],['Point of Sale','/pos'],['Reservations','/reservations'],['Inventory','/inventory'],['Financial Report','/financial-report'],['Report','/report'],['Printer Settings','/printer'],['User Info','/user-info']] as const;
 
 export default function Home(){
  const insets=useSafeAreaInsets();

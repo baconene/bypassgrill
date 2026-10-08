@@ -1,0 +1,3 @@
+<?php
+use Illuminate\Database\Migrations\Migration;use Illuminate\Database\Schema\Blueprint;use Illuminate\Support\Facades\Schema;
+return new class extends Migration{public function up():void{Schema::create('reservations',function(Blueprint $t){$t->id();$t->uuid('client_id')->nullable()->unique();$t->foreignId('user_id')->nullable()->constrained()->nullOnDelete();$t->string('contact_name');$t->string('phone')->nullable();$t->string('social_media')->nullable();$t->dateTime('reserved_at');$t->unsignedInteger('party_size')->default(1);$t->string('status')->default('pending');$t->text('notes')->nullable();$t->timestamps();$t->index(['reserved_at','status']);});}public function down():void{Schema::dropIfExists('reservations');}};

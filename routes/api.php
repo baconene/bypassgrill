@@ -24,6 +24,8 @@ Route::prefix('v1/mobile-pos')->group(function () {
     Route::put('/orders/{id}', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'orderUpdate']);
     Route::post('/orders/{id}/cancel', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'orderCancel']);
     Route::get('/user', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'userInfo']);
+    Route::get('/reservations', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'reservationIndex']);
+    Route::post('/reservations', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'reservationStore']);
     Route::get('/deposit-controls', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'depositIndex']);
     Route::post('/deposit-controls', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'depositStore']);
     Route::post('/deposit-controls/{id}/close', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'depositClose']);
@@ -42,6 +44,12 @@ Route::prefix('v1/mobile-pos')->group(function () {
 Route::prefix('v1')->group(function () {
     Route::get('/tools/openapi.json', [\App\Http\Controllers\Api\V1\OpenApiController::class, 'spec'])->middleware(['auth','role:admin']);
     Route::get('/payment-tenders', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'index']);
+    Route::middleware(['auth','role:admin'])->group(function () {
+        Route::get('/reservations', [\App\Http\Controllers\Api\V1\ReservationController::class, 'index']);
+        Route::post('/reservations', [\App\Http\Controllers\Api\V1\ReservationController::class, 'store']);
+        Route::patch('/reservations/{reservation}', [\App\Http\Controllers\Api\V1\ReservationController::class, 'update']);
+        Route::delete('/reservations/{reservation}', [\App\Http\Controllers\Api\V1\ReservationController::class, 'destroy']);
+    });
 
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/categories/{category}', [CategoryController::class, 'show']);

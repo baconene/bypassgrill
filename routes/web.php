@@ -62,6 +62,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('deposit-control/history', 'DepositControlPage', ['historyView' => true])
         ->name('deposit-control.history')->middleware('role:cashier|admin|auditor');
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::inertia('reservations', 'Reservations')->name('reservations.index')->middleware('role:admin');
 
     Route::get('pos', [PosController::class, 'index'])
         ->name('pos.index')
