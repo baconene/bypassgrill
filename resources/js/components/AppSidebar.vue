@@ -90,8 +90,7 @@ const mainNavItems = computed<NavItem[]>(() => {
         items.push({ title: 'Reservations', href: '/reservations', icon: CalendarDays });
         items.push({
             title: 'Products',
-            href: '/reservations',
-    '/products',
+            href: '/products',
             icon: UtensilsCrossed,
         });
         items.push({ title: 'HRIS', href: '/hris', icon: Users });
