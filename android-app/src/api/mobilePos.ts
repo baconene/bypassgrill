@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 const API_BASE='https://bypassgrill.baconologies.com/api/v1/mobile-pos';
+export const SITE_URL=API_BASE.replace(/\/api\/v1\/mobile-pos$/,'');
 const TOKEN_KEY='bypass_grill_mobile_token';
 
 export async function login(email:string,password:string){
