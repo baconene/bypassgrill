@@ -37,7 +37,7 @@ class MobilePosController extends Controller
     public function bootstrap(Request $request): JsonResponse {
         $user=$this->authenticate($request);
         $products=Product::with(['category','modifiers','recipes.ingredient'])->where('is_active',true)->orderBy('display_order')->get()->map(function(Product $p){$row=$p->toArray();$row['image_url']=$p->image?asset('storage/'.$p->image):null;return array_merge($row,$p->stockStatus());});
-        return response()->json(['server_time'=>now()->toIso8601String(),'user'=>$this->userPayload($user),'categories'=>Category::where('is_active',true)->orderBy('display_order')->get(),'products'=>$products,'payment_tenders'=>PaymentTender::where('is_active',true)->orderBy('display_order')->orderBy('name')->get(),'print_settings'=>PrintServiceSetting::getSetting()]);
+        return response()->json(['server_time'=>now()->toIso8601String(),'user'=>$this->userPayload($user),'categories'=>Category::where('is_active',true)->orderBy('display_order')->get(),'products'=>$products,'payment_tenders'=>PaymentTender::where('is_active',true)->orderBy('display_order')->orderBy('name')->get(),'print_settings'=>PrintServiceSetting::getSetting(),'realtime'=>$this->realtimeConfig()]);
     }
 
     public function sync(Request $request,OrderService $orders): JsonResponse {
@@ -154,6 +154,11 @@ class MobilePosController extends Controller
         };
     }
 
+    /** Public Pusher settings so the Android POS can listen for web print requests (the key is public; no secret is sent) */
+    private function realtimeConfig(): ?array {
+        $key=config('broadcasting.connections.pusher.key');if(!$key)return null;$setting=PrintServiceSetting::getSetting();
+        return ['key'=>$key,'cluster'=>config('broadcasting.connections.pusher.options.cluster','ap1'),'channel'=>($setting->getAttribute('print_channel')?:\Illuminate\Support\Facades\Cache::get('print_service_channel'))?:'orders','event'=>'print'];
+    }
     private function authenticate(Request $request) {
         $plain=$request->bearerToken();abort_unless($plain,401,'Mobile POS token required.');
         $row=DB::table('mobile_pos_tokens')->where('token_hash',hash('sha256',$plain))->first();abort_unless($row,401,'Invalid mobile POS token.');
