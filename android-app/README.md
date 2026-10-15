@@ -12,4 +12,7 @@ Isolated Expo/React Native Android client. This branch does not alter the workin
 
 Server order upload is disabled in the initial APK intentionally, so testing cannot create duplicate or unauthorized production orders.
 
+## Printing
+Bluetooth printer setup, receipt layout, web (Pusher) printing and offline order numbers: see [ANDROID_POS_PRINTING.md](../ANDROID_POS_PRINTING.md).
+
 Build trigger: 2026-10-04
