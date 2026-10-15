@@ -16,6 +16,7 @@ use App\Services\DepositReconciliation;
 use App\Services\DepositSnapshot;
 use App\Services\InventoryService;
 use App\Services\OrderService;
+use App\Services\PrintJobService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +82,14 @@ class MobilePosController extends Controller
     }
     public function orderCancel(Request $request,int $id): JsonResponse {
         $this->authenticate($request);$order=Order::findOrFail($id);abort_if($order->status==='cancelled',422,'Order is already cancelled.');abort_if($order->payment_status==='paid',422,'A paid order cannot be cancelled.');return app(OrderController::class)->cancel($order);
+    }
+
+    /** Sends a receipt to the online print channel (Pusher) - used when this device has no printer connected */
+    public function orderPrint(Request $request,int $id): JsonResponse {
+        $this->authenticate($request);$order=Order::with(['items.product','user','queueNumber','payments.tender'])->findOrFail($id);
+        $job=app(PrintJobService::class)->queueForOrder($order);
+        abort_if($job->status==='failed',422,$job->failed_reason?:'Online printing is not configured.');
+        return response()->json(['id'=>$job->id,'status'=>$job->status],201);
     }
 
     public function reservationIndex(Request $request): JsonResponse {

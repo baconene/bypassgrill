@@ -23,6 +23,7 @@ Route::prefix('v1/mobile-pos')->group(function () {
     Route::post('/orders/reconcile', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'orderReconcile']);
     Route::put('/orders/{id}', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'orderUpdate']);
     Route::post('/orders/{id}/cancel', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'orderCancel']);
+    Route::post('/orders/{id}/print', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'orderPrint']);
     Route::get('/user', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'userInfo']);
     Route::get('/reservations', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'reservationIndex']);
     Route::post('/reservations', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'reservationStore']);
