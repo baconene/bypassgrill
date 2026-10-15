@@ -1,2 +1,7 @@
-const {withMainApplication}=require('@expo/config-plugins');
-module.exports=function withThermalPrinter(config){return withMainApplication(config,c=>{let s=c.modResults.contents;if(!s.includes('ThermalPrinterPackage')){s=s.replace('import com.facebook.react.PackageList','import com.facebook.react.PackageList\nimport com.honeypathkar.thermalprinter.ThermalPrinterPackage');s=s.replace('PackageList(this).packages','PackageList(this).packages.apply { add(ThermalPrinterPackage()) }');c.modResults.contents=s}return c})};
+const fs=require('fs');const path=require('path');const {withDangerousMod,withMainApplication}=require('@expo/config-plugins');
+// The thermal printer library is autolinked, so it must not be added to MainApplication again.
+// This plugin installs our own Classic Bluetooth scanner/pairing module (plugins/android/*.kt).
+const SOURCES=['BluetoothScannerModule.kt','BluetoothScannerPackage.kt'];
+function withScannerSources(config){return withDangerousMod(config,['android',async c=>{const dest=path.join(c.modRequest.platformProjectRoot,'app/src/main/java/com/bypassgrill/pos/bluetooth');fs.mkdirSync(dest,{recursive:true});for(const f of SOURCES)fs.copyFileSync(path.join(__dirname,'android',f),path.join(dest,f));return c}])}
+function withScannerPackage(config){return withMainApplication(config,c=>{let s=c.modResults.contents;s=s.replace('\nimport com.honeypathkar.thermalprinter.ThermalPrinterPackage','').replace('.apply { add(ThermalPrinterPackage()) }','');if(!s.includes('BluetoothScannerPackage')){s=s.replace('import com.facebook.react.PackageList','import com.facebook.react.PackageList\nimport com.bypassgrill.pos.bluetooth.BluetoothScannerPackage');s=s.replace('PackageList(this).packages','PackageList(this).packages.apply { add(BluetoothScannerPackage()) }')}c.modResults.contents=s;return c})}
+module.exports=function withThermalPrinter(config){return withScannerPackage(withScannerSources(config))};
