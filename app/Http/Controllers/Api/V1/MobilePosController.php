@@ -42,8 +42,8 @@ class MobilePosController extends Controller
 
     public function sync(Request $request,OrderService $orders): JsonResponse {
         $user=$this->authenticate($request);
-        $data=$request->validate(['orders'=>'array|max:100','orders.*.client_id'=>'required|string|max:100','orders.*.order_type'=>'nullable|string|max:50','orders.*.table_number'=>'nullable|string|max:50','orders.*.customer_name'=>'nullable|string|max:255','orders.*.customer_contact'=>'nullable|string|max:255','orders.*.customer_address'=>'nullable|string|max:500','orders.*.notes'=>'nullable|string|max:500','orders.*.discount_amount'=>'nullable|numeric|min:0','orders.*.items'=>'required|array|min:1','orders.*.items.*.product_id'=>'required|integer|exists:products,id','orders.*.items.*.quantity'=>'required|integer|min:1','orders.*.items.*.modifiers'=>'nullable|array']);
-        $results=[];foreach($data['orders']??[] as $payload){$existing=DB::table('mobile_pos_sync_records')->where('client_id',$payload['client_id'])->first();if($existing){$results[]=['client_id'=>$payload['client_id'],'order_id'=>$existing->order_id,'status'=>'already_synced','public_token'=>Order::whereKey($existing->order_id)->value('public_token')];continue;}try{$order=DB::transaction(function()use($orders,$payload,$user){$d=$payload;unset($d['client_id']);$d['user_id']=$user->id;$order=$orders->createOrder($d);DB::table('mobile_pos_sync_records')->insert(['client_id'=>$payload['client_id'],'order_id'=>$order->id,'user_id'=>$user->id,'created_at'=>now(),'updated_at'=>now()]);return $order;});$results[]=['client_id'=>$payload['client_id'],'order_id'=>$order->id,'status'=>'synced','public_token'=>$order->public_token];}catch(\Throwable $e){report($e);$results[]=['client_id'=>$payload['client_id'],'status'=>'error','message'=>$e->getMessage()];}}
+        $data=$request->validate(['orders'=>'array|max:100','orders.*.client_id'=>'required|string|max:100','orders.*.order_type'=>'nullable|string|max:50','orders.*.table_number'=>'nullable|string|max:50','orders.*.customer_name'=>'nullable|string|max:255','orders.*.customer_contact'=>'nullable|string|max:255','orders.*.customer_address'=>'nullable|string|max:500','orders.*.notes'=>'nullable|string|max:500','orders.*.discount_amount'=>'nullable|numeric|min:0','orders.*.offline_number'=>'nullable|string|max:20','orders.*.items'=>'required|array|min:1','orders.*.items.*.product_id'=>'required|integer|exists:products,id','orders.*.items.*.quantity'=>'required|integer|min:1','orders.*.items.*.modifiers'=>'nullable|array']);
+        $results=[];foreach($data['orders']??[] as $payload){$existing=DB::table('mobile_pos_sync_records')->where('client_id',$payload['client_id'])->first();if($existing){$results[]=['client_id'=>$payload['client_id'],'order_id'=>$existing->order_id,'status'=>'already_synced','public_token'=>Order::whereKey($existing->order_id)->value('public_token')];continue;}try{$order=DB::transaction(function()use($orders,$payload,$user){$d=$payload;unset($d['client_id'],$d['offline_number']);$d['user_id']=$user->id;$order=$orders->createOrder($d);if(!empty($payload['offline_number'])&&$this->hasOfflineNumberColumn())$order->update(['offline_number'=>$payload['offline_number']]);DB::table('mobile_pos_sync_records')->insert(['client_id'=>$payload['client_id'],'order_id'=>$order->id,'user_id'=>$user->id,'created_at'=>now(),'updated_at'=>now()]);return $order;});$results[]=['client_id'=>$payload['client_id'],'order_id'=>$order->id,'status'=>'synced','public_token'=>$order->public_token];}catch(\Throwable $e){report($e);$results[]=['client_id'=>$payload['client_id'],'status'=>'error','message'=>$e->getMessage()];}}
         return response()->json(['server_time'=>now()->toIso8601String(),'orders'=>$results]);
     }
 
@@ -83,6 +83,25 @@ class MobilePosController extends Controller
     public function orderCancel(Request $request,int $id): JsonResponse {
         $this->authenticate($request);$order=Order::findOrFail($id);abort_if($order->status==='cancelled',422,'Order is already cancelled.');abort_if($order->payment_status==='paid',422,'A paid order cannot be cancelled.');return app(OrderController::class)->cancel($order);
     }
+
+    /**
+     * Hands the device a block of today's offline order numbers. The counter restarts every day, and blocks
+     * never overlap, so two phones offline at the same time cannot print the same number.
+     */
+    public function numberPool(Request $request): JsonResponse {
+        $this->authenticate($request);$size=max(10,min(200,(int)$request->input('size',50)));
+        abort_unless(\Illuminate\Support\Facades\Schema::hasTable('mobile_pos_daily_counters'),503,'Offline number pool is not set up yet (run migrations).');
+        $date=now('Asia/Manila')->toDateString();
+        $end=DB::transaction(function()use($date,$size){
+            DB::table('mobile_pos_daily_counters')->insertOrIgnore(['counter_date'=>$date,'last_number'=>0,'created_at'=>now(),'updated_at'=>now()]);
+            $row=DB::table('mobile_pos_daily_counters')->where('counter_date',$date)->lockForUpdate()->first();
+            $end=(int)$row->last_number+$size;
+            DB::table('mobile_pos_daily_counters')->where('counter_date',$date)->update(['last_number'=>$end,'updated_at'=>now()]);
+            return $end;
+        });
+        return response()->json(['date'=>$date,'start'=>$end-$size+1,'end'=>$end]);
+    }
+    private function hasOfflineNumberColumn(): bool { static $has=null;return $has??=\Illuminate\Support\Facades\Schema::hasColumn('orders','offline_number'); }
 
     /** Sends a receipt to the online print channel (Pusher) - used when this device has no printer connected */
     public function orderPrint(Request $request,int $id): JsonResponse {

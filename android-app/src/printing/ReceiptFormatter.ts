@@ -28,7 +28,7 @@ import qrcode from 'qrcode-generator';
  */
 export type ReceiptInput={
   store?:{name?:string|null;address?:string|null;phone?:string|null;footer?:string|null};
-  order?:{number?:string|null;type?:string|null;date?:string|null;cashier?:string|null;table?:string|null;customer?:string|null;contact?:string|null;address?:string|null};
+  order?:{number?:string|null;ref?:string|null;type?:string|null;date?:string|null;cashier?:string|null;table?:string|null;customer?:string|null;contact?:string|null;address?:string|null};
   items?:{name:string;qty:number;price:number;total:number}[];
   totals?:{subtotal?:number|null;tax?:number|null;discount?:number|null;total:number}|null;
   payment?:{method?:string|null;amount?:number|null;change?:number|null}|null;
@@ -85,6 +85,7 @@ export function formatReceipt(data:ReceiptInput,charsPerLine=32):number[]{
   e.newLine().alignLeft();
   if(has(o.date))e.line('Date    : '+o.date);
   if(has(o.cashier))e.line('Cashier : '+o.cashier);
+  if(has(o.ref))e.line('Ref     : '+o.ref);
   if(has(o.table))e.line('Table   : '+o.table);
   e.separator('-');
   // Customer

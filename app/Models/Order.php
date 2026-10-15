@@ -8,6 +8,7 @@ class Order extends Model
 {
     protected $fillable = [
         'public_token',
+        'offline_number',
         'user_id',
         'queue_number_id',
         'order_type',

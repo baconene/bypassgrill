@@ -127,6 +127,7 @@ class PrintJobService
             ],
             'order' => [
                 'number'   => (string) $order->id,
+                'ref'      => $order->getAttribute('offline_number'),
                 'type'     => $this->formatOrderType($order->order_type),
                 'table'    => $order->table_number,
                 'date'     => $order->created_at?->setTimezone('Asia/Manila')->format('M d, Y h:i A'),
