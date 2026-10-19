@@ -8,9 +8,10 @@ import {
     DollarSign, Plus, X, Search, ChevronLeft, ChevronRight, ChevronDown,
     ShoppingBag, ClipboardList, Package, Trash2, Pencil, CalendarDays,
     ArrowUp, ArrowDown, ChevronsUpDown, CalendarRange, Flame, Printer,
-    Receipt, Scale, Timer,
+    Receipt, Scale, Timer, Maximize2,
 } from 'lucide-vue-next'
 import AnalyticsTab from '@/pages/reports/AnalyticsTab.vue'
+import ProductSalesDetail from '@/pages/reports/ProductSalesDetail.vue'
 import ServingTimeTab from '@/pages/reports/ServingTimeTab.vue'
 
 defineOptions({
@@ -719,6 +720,13 @@ const fetchProductChart = async (productId: number) => {
     }
 }
 
+// Full-screen detail for one product (numbers, averages, chart by day/week/month)
+const detailProduct = ref<ProductSale | null>(null)
+const openProductDetail = (item: ProductSale) => {
+    fetchProductChart(item.product_id)
+    detailProduct.value = item
+}
+
 const toggleProduct = (id: number) => {
     expandedProducts.value = { ...expandedProducts.value, [id]: !expandedProducts.value[id] }
     if (expandedProducts.value[id]) fetchProductChart(id)
@@ -776,6 +784,7 @@ const onProdChartHover = (e: MouseEvent, productId: number) => {
 }
 
 watch([prodDateFrom, prodDateTo], () => {
+    detailProduct.value = null
     productDailyData.value = {}
     expandedProducts.value = {}
     productLineData.value = {}
@@ -3024,6 +3033,12 @@ onMounted(async () => {
 
         <!-- ── Product Sales ──────────────────────────────────────────────────── -->
         <template v-if="tab === 'products'">
+            <ProductSalesDetail v-if="detailProduct"
+                :product-name="detailProduct.product_name"
+                :from="prodDateFrom" :to="prodDateTo"
+                :points="productDailyData[detailProduct.product_id]?.points ?? []"
+                :loading="productDailyData[detailProduct.product_id]?.loading"
+                @close="detailProduct = null" />
             <div class="rounded-xl border bg-card shadow-sm overflow-hidden">
                 <div class="p-4 border-b">
                     <h2 class="font-bold text-sm">Product Sales — {{ prodDateFrom }} to {{ prodDateTo }}</h2>
@@ -3068,13 +3083,18 @@ onMounted(async () => {
                         <div v-if="expandedProducts[item.product_id]" class="px-4 pb-4 bg-muted/20">
                             <div v-if="productDailyData[item.product_id]?.loading" class="py-4 text-center text-xs text-muted-foreground">Loading…</div>
                             <template v-else-if="productDailyData[item.product_id]?.points?.length">
+                                <div class="flex justify-end mb-2">
+                                    <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1 text-xs font-semibold hover:bg-muted transition" @click.stop="openProductDetail(item)">
+                                        <Maximize2 class="h-3.5 w-3.5" /> Full screen · numbers &amp; averages
+                                    </button>
+                                </div>
                                 <div class="flex justify-between text-[10px] text-muted-foreground mb-1">
                                     <span>{{ productDailyData[item.product_id].points[0]?.date }}</span>
                                     <span>{{ productDailyData[item.product_id].points.at(-1)?.date }}</span>
                                 </div>
                                 <div class="relative pt-4" @mouseleave="prodChartTooltip = null">
                                     <div class="absolute top-0 right-0 text-[9px] text-muted-foreground tabular-nums leading-none">{{ fmtShort(productLineData[item.product_id]?.max ?? 0) }}</div>
-                                    <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500" preserveAspectRatio="none" style="cursor:crosshair"
+                                    <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500" preserveAspectRatio="none" style="cursor:zoom-in" @click="openProductDetail(item)"
                                          @mousemove="onProdChartHover($event, item.product_id)">
                                         <defs>
                                             <linearGradient :id="`pg-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
@@ -3147,13 +3167,18 @@ onMounted(async () => {
                                     <td colspan="7" class="px-6 py-3">
                                         <div v-if="productDailyData[item.product_id]?.loading" class="py-2 text-xs text-muted-foreground text-center">Loading…</div>
                                         <template v-else-if="productDailyData[item.product_id]?.points?.length">
+                                            <div class="flex justify-end mb-2">
+                                                <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1 text-xs font-semibold hover:bg-muted transition" @click.stop="openProductDetail(item)">
+                                                    <Maximize2 class="h-3.5 w-3.5" /> Full screen · numbers &amp; averages
+                                                </button>
+                                            </div>
                                             <div class="flex justify-between text-[10px] text-muted-foreground mb-1">
                                                 <span>{{ productDailyData[item.product_id].points[0]?.date }}</span>
                                                 <span>{{ productDailyData[item.product_id].points.at(-1)?.date }}</span>
                                             </div>
                                             <div class="relative pt-4" @mouseleave="prodChartTooltip = null">
                                                 <div class="absolute top-0 right-0 text-[9px] text-muted-foreground tabular-nums leading-none">{{ fmtShort(productLineData[item.product_id]?.max ?? 0) }}</div>
-                                                <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500" preserveAspectRatio="none" style="cursor:crosshair"
+                                                <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500" preserveAspectRatio="none" style="cursor:zoom-in" @click="openProductDetail(item)"
                                                      @mousemove="onProdChartHover($event, item.product_id)">
                                                     <defs>
                                                         <linearGradient :id="`pgd-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
