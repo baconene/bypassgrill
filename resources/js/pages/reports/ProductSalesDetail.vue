@@ -208,7 +208,7 @@ const wrap = ref<HTMLElement | null>(null);
 const width = ref(360);
 let ro: ResizeObserver | null = null;
 const H = 280,
-    padL = 44,
+    padL = 52,
     padR = 12,
     padT = 14,
     padB = 28;
@@ -294,24 +294,44 @@ const onKey = (e: KeyboardEvent) => {
     }
 };
 let prevOverflow = '';
+// Focus moves into the view, the page behind is made inert, and focus returns on close
+const closeBtn = ref<HTMLButtonElement | null>(null);
+let returnFocus: HTMLElement | null = null;
+const appRoot = () => document.getElementById('app');
+// The chart container only exists once data has loaded, so observe it whenever it appears
+watch(wrap, (el, old) => {
+    if (old) {
+        ro?.disconnect();
+    }
+
+    if (!el) {
+        return;
+    }
+
+    width.value = el.clientWidth;
+    ro = new ResizeObserver(([entry]) => {
+        width.value = Math.floor(entry.contentRect.width);
+    });
+    ro.observe(el);
+    scrollToLatest();
+});
 onMounted(() => {
     prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKey);
-
-    if (wrap.value) {
-        width.value = wrap.value.clientWidth;
-        ro = new ResizeObserver(([entry]) => {
-            width.value = Math.floor(entry.contentRect.width);
-        });
-        ro.observe(wrap.value);
-        scrollToLatest();
-    }
+    returnFocus = document.activeElement as HTMLElement | null;
+    appRoot()?.setAttribute('inert', '');
+    nextTick(() => closeBtn.value?.focus());
 });
 onBeforeUnmount(() => {
     document.body.style.overflow = prevOverflow;
     window.removeEventListener('keydown', onKey);
     ro?.disconnect();
+    appRoot()?.removeAttribute('inert');
+
+    if (returnFocus?.isConnected) {
+        returnFocus.focus();
+    }
 });
 </script>
 
@@ -343,8 +363,9 @@ onBeforeUnmount(() => {
                         </p>
                     </div>
                     <button
-                        class="shrink-0 rounded-full p-2 text-muted-foreground transition hover:bg-muted"
-                        aria-label="Close"
+                        ref="closeBtn"
+                        class="shrink-0 rounded-full p-3 text-muted-foreground transition hover:bg-muted"
+                        aria-label="Close full screen"
                         @click="emit('close')"
                     >
                         <X class="h-5 w-5" />
@@ -355,6 +376,7 @@ onBeforeUnmount(() => {
             <div class="mx-auto max-w-5xl space-y-4 px-4 py-4">
                 <div
                     v-if="loading"
+                    role="status"
                     class="py-16 text-center text-sm text-muted-foreground"
                 >
                     Loading…
@@ -383,7 +405,7 @@ onBeforeUnmount(() => {
                                 Sales
                             </p>
                             <p
-                                class="text-lg font-bold text-green-600 tabular-nums"
+                                class="text-lg font-bold text-green-700 tabular-nums"
                             >
                                 {{ peso(totals.sales) }}
                             </p>
@@ -459,7 +481,7 @@ onBeforeUnmount(() => {
                                 :key="m"
                                 :aria-pressed="metric === m"
                                 :class="[
-                                    'rounded-md px-3 py-1.5 text-xs font-semibold transition',
+                                    'min-h-11 rounded-md px-3 py-2 text-xs font-semibold transition',
                                     metric === m
                                         ? 'bg-primary text-primary-foreground'
                                         : 'text-muted-foreground hover:bg-muted',
@@ -483,7 +505,7 @@ onBeforeUnmount(() => {
                                 :key="g"
                                 :aria-pressed="grouping === g"
                                 :class="[
-                                    'rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition',
+                                    'min-h-11 rounded-md px-3 py-2 text-xs font-semibold capitalize transition',
                                     grouping === g
                                         ? 'bg-primary text-primary-foreground'
                                         : 'text-muted-foreground hover:bg-muted',
@@ -553,7 +575,7 @@ onBeforeUnmount(() => {
                                             :y="y(t) + 3"
                                             text-anchor="end"
                                             class="fill-muted-foreground"
-                                            font-size="10"
+                                            font-size="12"
                                         >
                                             {{ fmtAxis(t) }}
                                         </text>
@@ -590,7 +612,7 @@ onBeforeUnmount(() => {
                                         :y="H - 8"
                                         text-anchor="middle"
                                         class="fill-muted-foreground"
-                                        font-size="10"
+                                        font-size="12"
                                     >
                                         {{ bar.b.short }}
                                     </text>
@@ -616,7 +638,7 @@ onBeforeUnmount(() => {
                                         {{ num(activeBar.b.qty, 0) }} sold
                                     </div>
                                     <div
-                                        class="font-semibold text-green-600 tabular-nums"
+                                        class="font-semibold text-green-700 tabular-nums"
                                     >
                                         {{ peso(activeBar.b.sales) }}
                                     </div>
@@ -666,7 +688,7 @@ onBeforeUnmount(() => {
                                     :y="y(t) + 3"
                                     text-anchor="end"
                                     class="fill-muted-foreground"
-                                    font-size="10"
+                                    font-size="12"
                                 >
                                     {{ fmtAxis(t) }}
                                 </text>
@@ -746,7 +768,7 @@ onBeforeUnmount(() => {
                                             :class="[
                                                 'px-3 py-2 text-right tabular-nums',
                                                 value(b) >= average
-                                                    ? 'text-green-600'
+                                                    ? 'text-green-700'
                                                     : 'text-muted-foreground',
                                             ]"
                                         >
@@ -795,7 +817,7 @@ onBeforeUnmount(() => {
     --card-foreground: #24231e;
     --popover: #fffcf6;
     --popover-foreground: #24231e;
-    --primary: #ef5b2a;
+    --primary: #c3441c;
     --primary-foreground: #fff;
     --muted: #efeadf;
     --muted-foreground: #68665f;
@@ -805,5 +827,9 @@ onBeforeUnmount(() => {
     color: #24231e;
     color-scheme: light;
     font-family: Arial, Helvetica, sans-serif;
+}
+.psd-theme :focus-visible {
+    outline: 2px solid #c3441c;
+    outline-offset: 2px;
 }
 </style>

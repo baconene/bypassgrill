@@ -124,7 +124,7 @@ const ftTypeLabel: Record<string, string> = {
     payout_share:      'Profit Distribution Payout',
 }
 const ftTypeColor: Record<string, string> = {
-    payment:           'text-green-600',
+    payment:           'text-green-700',
     income_adjustment: 'text-teal-600',
     expense:           'text-red-500',
     payroll:           'text-purple-600',
@@ -725,6 +725,13 @@ const detailProduct = ref<ProductSale | null>(null)
 const openProductDetail = (item: ProductSale) => {
     fetchProductChart(item.product_id)
     detailProduct.value = item
+}
+
+const productChartLabel = (item: ProductSale) => {
+    const pts = productDailyData.value[item.product_id]?.points ?? []
+    const best = pts.reduce<{ date: string; qty: number; sales: number } | null>((b, p) => (!b || p.sales > b.sales ? p : b), null)
+
+    return `${item.product_name}: daily sales ${prodDateFrom.value} to ${prodDateTo.value}` + (best && best.sales > 0 ? `, peak ${fmt(best.sales)} on ${best.date}` : '') + '. Open full screen for every day.'
 }
 
 const toggleProduct = (id: number) => {
@@ -1401,12 +1408,12 @@ onMounted(async () => {
 
                 <!-- Orders filters -->
                 <template v-if="tab === 'orders'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="ordDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="ordDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Order Status</label>
-                        <select v-model="ordStatus" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <div><label for="rpt-ordDateFrom" class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input id="rpt-ordDateFrom" v-model="ordDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label for="rpt-ordDateTo" class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input id="rpt-ordDateTo" v-model="ordDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label for="rpt-ordStatus" class="text-xs font-medium text-muted-foreground block mb-1">Order Status</label>
+                        <select id="rpt-ordStatus" v-model="ordStatus" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All Statuses</option>
                             <option value="pending">Pending</option>
                             <option value="preparing">Preparing</option>
@@ -1414,24 +1421,24 @@ onMounted(async () => {
                             <option value="completed">Completed</option>
                             <option value="cancelled">Cancelled</option>
                         </select></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Payment</label>
-                        <select v-model="ordPayment" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <div><label for="rpt-ordPayment" class="text-xs font-medium text-muted-foreground block mb-1">Payment</label>
+                        <select id="rpt-ordPayment" v-model="ordPayment" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All</option>
                             <option value="paid">Paid</option>
                             <option value="pending">Unpaid</option>
                             <option value="refunded">Refunded</option>
                             <option value="voided">Voided</option>
                         </select></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Search</label>
+                    <div><label for="rpt-ordSearch" class="text-xs font-medium text-muted-foreground block mb-1">Search</label>
                         <div class="relative">
                             <Search class="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                            <input v-model="ordSearch" type="text" placeholder="Order #, table, notes…"
+                            <input id="rpt-ordSearch" v-model="ordSearch" type="text" placeholder="Order #, table, notes…"
                                 class="rounded-lg border bg-background pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-48"
                                 @keydown.enter="generateReport" />
                         </div></div>
                     <div class="relative">
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Products</label>
-                        <button @click="ordProductDropdown = !ordProductDropdown"
+                        <span class="text-xs font-medium text-muted-foreground block mb-1">Products</span>
+                        <button :aria-expanded="ordProductDropdown" @click="ordProductDropdown = !ordProductDropdown"
                             class="rounded-lg border bg-background px-3 py-2 text-sm flex items-center gap-2 min-w-[150px] h-[38px]">
                             <Package class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                             <span v-if="ordProductIds.length === 0" class="text-muted-foreground">All Products</span>
@@ -1458,12 +1465,12 @@ onMounted(async () => {
 
                 <!-- Inventory filters -->
                 <template v-if="tab === 'inventory'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="invDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="invDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Transaction Type</label>
-                        <select v-model="invType" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <div><label for="rpt-invDateFrom" class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input id="rpt-invDateFrom" v-model="invDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label for="rpt-invDateTo" class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input id="rpt-invDateTo" v-model="invDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label for="rpt-invType" class="text-xs font-medium text-muted-foreground block mb-1">Transaction Type</label>
+                        <select id="rpt-invType" v-model="invType" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All Types</option>
                             <option value="stock_in">Stock In</option>
                             <option value="stock_out">Stock Out</option>
@@ -1472,8 +1479,8 @@ onMounted(async () => {
                             <option value="usage">Usage</option>
                             <option value="purchase">Purchase</option>
                         </select></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Ingredient</label>
-                        <select v-model="invIngredientId" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <div><label for="rpt-invIngredientId" class="text-xs font-medium text-muted-foreground block mb-1">Ingredient</label>
+                        <select id="rpt-invIngredientId" v-model="invIngredientId" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All Ingredients</option>
                             <option v-for="ing in ingredients" :key="ing.id" :value="ing.id">{{ ing.name }}</option>
                         </select></div>
@@ -1481,16 +1488,16 @@ onMounted(async () => {
 
                 <!-- Daily date -->
                 <div v-if="tab === 'daily'">
-                    <label class="text-xs font-medium text-muted-foreground block mb-1">Date</label>
-                    <input v-model="selectedDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                    <label for="rpt-selectedDate" class="text-xs font-medium text-muted-foreground block mb-1">Date</label>
+                    <input id="rpt-selectedDate" v-model="selectedDate" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                 </div>
 
                 <!-- Monthly pickers -->
                 <template v-if="tab === 'monthly'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Year</label>
-                        <input v-model.number="selectedYear" type="number" min="2020" class="w-24 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Month</label>
-                        <select v-model.number="selectedMonth" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <div><label for="rpt-selectedYear" class="text-xs font-medium text-muted-foreground block mb-1">Year</label>
+                        <input id="rpt-selectedYear" v-model.number="selectedYear" type="number" min="2020" class="w-24 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label for="rpt-selectedMonth" class="text-xs font-medium text-muted-foreground block mb-1">Month</label>
+                        <select id="rpt-selectedMonth" v-model.number="selectedMonth" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option v-for="m in 12" :key="m" :value="m">{{ monthName(m) }}</option>
                         </select></div>
                 </template>
@@ -1505,10 +1512,10 @@ onMounted(async () => {
                         </button>
                     </div>
                     <div class="flex gap-2 w-full sm:contents">
-                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                            <input v-model="prodDateFrom" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                            <input v-model="prodDateTo" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                        <div class="flex-1 sm:flex-none"><label for="rpt-prodDateFrom" class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                            <input id="rpt-prodDateFrom" v-model="prodDateFrom" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                        <div class="flex-1 sm:flex-none"><label for="rpt-prodDateTo" class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                            <input id="rpt-prodDateTo" v-model="prodDateTo" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                     </div>
                 </template>
 
@@ -1527,8 +1534,8 @@ onMounted(async () => {
 
                 <!-- Bills forecast months -->
                 <template v-if="tab === 'bills'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">Forecast Period</label>
-                        <select v-model.number="forecastMonths" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <div><label for="rpt-forecastMonths" class="text-xs font-medium text-muted-foreground block mb-1">Forecast Period</label>
+                        <select id="rpt-forecastMonths" v-model.number="forecastMonths" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option :value="1">1 month</option>
                             <option :value="2">2 months</option>
                             <option :value="3">3 months</option>
@@ -1540,22 +1547,22 @@ onMounted(async () => {
 
                 <!-- Heatmap date range -->
                 <template v-if="tab === 'heatmap'">
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                        <input v-model="hmDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                    <div><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                        <input v-model="hmDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label for="rpt-hmDateFrom" class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                        <input id="rpt-hmDateFrom" v-model="hmDateFrom" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                    <div><label for="rpt-hmDateTo" class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                        <input id="rpt-hmDateTo" v-model="hmDateTo" type="date" class="rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                 </template>
 
                 <!-- Financial date range -->
                 <template v-if="tab === 'financial'">
                     <div class="flex gap-2 w-full sm:contents">
-                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">From</label>
-                            <input v-model="ftStartDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
-                        <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">To</label>
-                            <input v-model="ftEndDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                        <div class="flex-1 sm:flex-none"><label for="rpt-ftStartDate" class="text-xs font-medium text-muted-foreground block mb-1">From</label>
+                            <input id="rpt-ftStartDate" v-model="ftStartDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
+                        <div class="flex-1 sm:flex-none"><label for="rpt-ftEndDate" class="text-xs font-medium text-muted-foreground block mb-1">To</label>
+                            <input id="rpt-ftEndDate" v-model="ftEndDate" type="date" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" /></div>
                     </div>
-                    <div class="flex-1 sm:flex-none"><label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
-                        <select v-model="ftTypeFilter" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                    <div class="flex-1 sm:flex-none"><label for="rpt-ftTypeFilter" class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                        <select id="rpt-ftTypeFilter" v-model="ftTypeFilter" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                             <option value="">All Types</option>
                             <option value="order">Orders</option>
                             <option value="payment">Payments</option>
@@ -1581,7 +1588,7 @@ onMounted(async () => {
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1">Paid Orders</p>
-                    <p class="text-3xl font-black text-green-600">{{ ordersSummary.paid_count }}</p>
+                    <p class="text-3xl font-black text-green-700">{{ ordersSummary.paid_count }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1">Unpaid Orders</p>
@@ -1589,7 +1596,7 @@ onMounted(async () => {
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Total Revenue</p>
-                    <p class="text-xl font-black text-green-600">{{ fmt(ordersSummary.paid_revenue) }}</p>
+                    <p class="text-xl font-black text-green-700">{{ fmt(ordersSummary.paid_revenue) }}</p>
                 </div>
             </div>
 
@@ -1844,7 +1851,7 @@ onMounted(async () => {
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1">Stock In (page)</p>
-                    <p class="text-3xl font-black text-green-600">{{ invTransactions.filter(t => t.type === 'stock_in' || t.type === 'purchase').length }}</p>
+                    <p class="text-3xl font-black text-green-700">{{ invTransactions.filter(t => t.type === 'stock_in' || t.type === 'purchase').length }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1">Stock Out / Usage (page)</p>
@@ -1902,8 +1909,8 @@ onMounted(async () => {
                             </div>
                             <div class="p-4 space-y-3">
                                 <div>
-                                    <label class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
-                                    <select v-model="adjType" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                                    <label for="rpt-adjType" class="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                                    <select id="rpt-adjType" v-model="adjType" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                                         <option value="stock_in">Stock In (Add)</option>
                                         <option value="stock_out">Stock Out (Remove)</option>
                                         <option value="adjustment">Manual Adjustment (Set to)</option>
@@ -1912,15 +1919,15 @@ onMounted(async () => {
                                     </select>
                                 </div>
                                 <div>
-                                    <label class="text-xs font-medium text-muted-foreground block mb-1">
+                                    <label for="rpt-adjQty" class="text-xs font-medium text-muted-foreground block mb-1">
                                         {{ adjType === 'adjustment' ? 'New Quantity' : 'Quantity' }}
                                     </label>
-                                    <input v-model.number="adjQty" type="number" min="0" step="0.01" placeholder="0"
+                                    <input id="rpt-adjQty" v-model.number="adjQty" type="number" min="0" step="0.01" placeholder="0"
                                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                                 </div>
                                 <div>
-                                    <label class="text-xs font-medium text-muted-foreground block mb-1">Notes (optional)</label>
-                                    <input v-model="adjNotes" type="text" placeholder="Reason for adjustment…"
+                                    <label for="rpt-adjNotes" class="text-xs font-medium text-muted-foreground block mb-1">Notes (optional)</label>
+                                    <input id="rpt-adjNotes" v-model="adjNotes" type="text" placeholder="Reason for adjustment…"
                                         class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                                 </div>
                             </div>
@@ -1953,7 +1960,7 @@ onMounted(async () => {
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Payments</p>
                     <p class="text-2xl font-black">{{ ftSummary.payments.count }}</p>
-                    <p class="text-sm font-semibold text-green-600 mt-0.5">{{ fmt(ftSummary.payments.total) }}</p>
+                    <p class="text-sm font-semibold text-green-700 mt-0.5">{{ fmt(ftSummary.payments.total) }}</p>
                 </div>
                 <div class="rounded-xl border bg-card p-4 shadow-sm">
                     <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingDown class="h-3 w-3" /> Expenses</p>
@@ -1985,7 +1992,7 @@ onMounted(async () => {
                             <p class="text-sm font-semibold">{{ row.tender }}</p>
                             <p class="text-xs text-muted-foreground">{{ row.count }} transaction{{ row.count !== 1 ? 's' : '' }}</p>
                         </div>
-                        <p class="text-base font-bold text-green-600">{{ fmt(row.total) }}</p>
+                        <p class="text-base font-bold text-green-700">{{ fmt(row.total) }}</p>
                     </div>
                 </div>
             </div>
@@ -2027,25 +2034,25 @@ onMounted(async () => {
                 </div>
                 <div class="grid sm:grid-cols-4 gap-3">
                     <div class="sm:col-span-2">
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Description *</label>
-                        <input v-model="entryForm.description" type="text"
+                        <label for="rpt-entryForm-description" class="text-xs font-medium text-muted-foreground block mb-1">Description *</label>
+                        <input id="rpt-entryForm-description" v-model="entryForm.description" type="text"
                             :placeholder="entryForm.type === 'expense' ? 'e.g. Charcoal supply, LPG refill' : 'e.g. Supplier rebate, cash correction'"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
-                        <input v-model="entryForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
+                        <label for="rpt-entryForm-amount" class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
+                        <input id="rpt-entryForm-amount" v-model="entryForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date &amp; Time (optional)</label>
-                        <input v-model="entryForm.transacted_at" type="datetime-local"
+                        <label for="rpt-entryForm-transacted_at" class="text-xs font-medium text-muted-foreground block mb-1">Date &amp; Time (optional)</label>
+                        <input id="rpt-entryForm-transacted_at" v-model="entryForm.transacted_at" type="datetime-local"
                             min="2000-01-01T00:00" max="2099-12-31T23:59"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div class="sm:col-span-3">
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Notes (optional)</label>
-                        <input v-model="entryForm.notes" type="text" placeholder="Additional details"
+                        <label for="rpt-entryForm-notes" class="text-xs font-medium text-muted-foreground block mb-1">Notes (optional)</label>
+                        <input id="rpt-entryForm-notes" v-model="entryForm.notes" type="text" placeholder="Additional details"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div class="flex items-end">
@@ -2075,24 +2082,24 @@ onMounted(async () => {
                 </div>
                 <div class="grid sm:grid-cols-4 gap-3">
                     <div class="sm:col-span-2">
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Description *</label>
-                        <input v-model="ftEditForm.description" type="text"
+                        <label for="rpt-ftEditForm-description" class="text-xs font-medium text-muted-foreground block mb-1">Description *</label>
+                        <input id="rpt-ftEditForm-description" v-model="ftEditForm.description" type="text"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
-                        <input v-model="ftEditForm.amount" type="number" min="0.01" step="0.01"
+                        <label for="rpt-ftEditForm-amount" class="text-xs font-medium text-muted-foreground block mb-1">Amount (₱) *</label>
+                        <input id="rpt-ftEditForm-amount" v-model="ftEditForm.amount" type="number" min="0.01" step="0.01"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div>
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Date &amp; Time</label>
-                        <input v-model="ftEditForm.transacted_at" type="datetime-local"
+                        <label for="rpt-ftEditForm-transacted_at" class="text-xs font-medium text-muted-foreground block mb-1">Date &amp; Time</label>
+                        <input id="rpt-ftEditForm-transacted_at" v-model="ftEditForm.transacted_at" type="datetime-local"
                             min="2000-01-01T00:00" max="2099-12-31T23:59"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div class="sm:col-span-3">
-                        <label class="text-xs font-medium text-muted-foreground block mb-1">Notes (optional)</label>
-                        <input v-model="ftEditForm.notes" type="text" placeholder="Additional details"
+                        <label for="rpt-ftEditForm-notes" class="text-xs font-medium text-muted-foreground block mb-1">Notes (optional)</label>
+                        <input id="rpt-ftEditForm-notes" v-model="ftEditForm.notes" type="text" placeholder="Additional details"
                             class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                     </div>
                     <div class="flex items-end">
@@ -2125,7 +2132,7 @@ onMounted(async () => {
                                 </div>
                             </div>
                             <div class="flex flex-col items-end gap-1 shrink-0">
-                                <span class="font-bold tabular-nums text-sm" :class="isCredit(tx.type) ? 'text-green-600' : 'text-red-600'">
+                                <span class="font-bold tabular-nums text-sm" :class="isCredit(tx.type) ? 'text-green-700' : 'text-red-600'">
                                     {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
                                 </span>
                                 <span class="text-xs tabular-nums" :class="(tx.financial_balance ?? 0) >= 0 ? 'text-muted-foreground' : 'text-red-600'">
@@ -2170,7 +2177,7 @@ onMounted(async () => {
                                 <td class="px-4 py-2"><span :class="['rounded-full px-2 py-0.5 text-xs font-semibold', typeBadgeClass(tx.type)]">{{ typeLabel(tx.type) }}</span></td>
                                 <td class="px-4 py-2 max-w-xs truncate">{{ tx.description }}</td>
                                 <td class="px-4 py-2 text-muted-foreground">{{ tx.tender?.name ?? '—' }}</td>
-                                <td class="px-4 py-2 text-right font-bold" :class="isCredit(tx.type) ? 'text-green-600' : 'text-red-600'">
+                                <td class="px-4 py-2 text-right font-bold" :class="isCredit(tx.type) ? 'text-green-700' : 'text-red-600'">
                                     {{ isCredit(tx.type) ? '+' : '-' }}{{ fmt(tx.amount) }}
                                 </td>
                                 <td class="px-4 py-2 text-right font-semibold" :class="(tx.financial_balance ?? 0) >= 0 ? 'text-foreground' : 'text-red-600'">
@@ -2467,22 +2474,22 @@ onMounted(async () => {
 
                     <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Name *</label>
-                            <input v-model="billForm.name" type="text" placeholder="e.g. Shopee Subscription"
+                            <label for="rpt-billForm-name" class="text-xs font-medium text-muted-foreground block mb-1">Name *</label>
+                            <input id="rpt-billForm-name" v-model="billForm.name" type="text" placeholder="e.g. Shopee Subscription"
                                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                         </div>
                         <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">
+                            <label for="rpt-billForm-amount" class="text-xs font-medium text-muted-foreground block mb-1">
                                 {{ billForm.is_installment ? 'Total Amount (₱) *' : 'Amount (₱) *' }}
                             </label>
-                            <input v-model="billForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
+                            <input id="rpt-billForm-amount" v-model="billForm.amount" type="number" min="0.01" step="0.01" placeholder="0.00"
                                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                         </div>
                         <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">
+                            <label for="rpt-billForm-frequency" class="text-xs font-medium text-muted-foreground block mb-1">
                                 {{ billForm.is_installment ? 'Interval Between Payments *' : 'Frequency *' }}
                             </label>
-                            <select v-model="billForm.frequency" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+                            <select id="rpt-billForm-frequency" v-model="billForm.frequency" class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
                                 <option v-if="!billForm.is_installment" value="one_time">One Time</option>
                                 <option value="daily">Daily</option>
                                 <option value="weekly">Weekly</option>
@@ -2495,23 +2502,23 @@ onMounted(async () => {
                         </div>
                         <!-- Installment count: only for new payment-plan bills -->
                         <div v-if="billForm.is_installment && !editingBill">
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Number of Installments *</label>
-                            <input v-model="billForm.installment_count" type="number" min="2" max="360" placeholder="e.g. 3"
+                            <label for="rpt-billForm-installment_count" class="text-xs font-medium text-muted-foreground block mb-1">Number of Installments *</label>
+                            <input id="rpt-billForm-installment_count" v-model="billForm.installment_count" type="number" min="2" max="360" placeholder="e.g. 3"
                                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                             <p v-if="billForm.amount && billForm.installment_count" class="text-xs text-muted-foreground mt-1">
                                 ≈ {{ fmt(parseFloat(billForm.amount || '0') / parseInt(billForm.installment_count || '1')) }} / installment
                             </p>
                         </div>
                         <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">
+                            <label for="rpt-billForm-due_date" class="text-xs font-medium text-muted-foreground block mb-1">
                                 {{ billForm.is_installment ? 'First Payment Date *' : 'Next Due Date *' }}
                             </label>
-                            <input v-model="billForm.due_date" type="date"
+                            <input id="rpt-billForm-due_date" v-model="billForm.due_date" type="date"
                                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                         </div>
                         <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Category</label>
-                            <input v-model="billForm.category" type="text" placeholder="e.g. Subscription, Utilities"
+                            <label for="rpt-billForm-category" class="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+                            <input id="rpt-billForm-category" v-model="billForm.category" type="text" placeholder="e.g. Subscription, Utilities"
                                 list="bill-categories"
                                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                             <datalist id="bill-categories">
@@ -2521,8 +2528,8 @@ onMounted(async () => {
                             </datalist>
                         </div>
                         <div>
-                            <label class="text-xs font-medium text-muted-foreground block mb-1">Notes</label>
-                            <input v-model="billForm.description" type="text" placeholder="Optional details"
+                            <label for="rpt-billForm-description" class="text-xs font-medium text-muted-foreground block mb-1">Notes</label>
+                            <input id="rpt-billForm-description" v-model="billForm.description" type="text" placeholder="Optional details"
                                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
                         </div>
                     </div>
@@ -2670,7 +2677,7 @@ onMounted(async () => {
                     <div v-if="chartData.length > 0" class="grid grid-cols-3 divide-x border-b text-center">
                         <div class="px-3 py-2.5">
                             <p class="text-xs text-muted-foreground">Cash in</p>
-                            <p class="text-sm font-bold text-green-600">{{ fmt(chartTotals.income) }}</p>
+                            <p class="text-sm font-bold text-green-700">{{ fmt(chartTotals.income) }}</p>
                         </div>
                         <div class="px-3 py-2.5">
                             <p class="text-xs text-muted-foreground">Cash out</p>
@@ -2678,7 +2685,7 @@ onMounted(async () => {
                         </div>
                         <div class="px-3 py-2.5">
                             <p class="text-xs text-muted-foreground">Net cash</p>
-                            <p class="text-sm font-bold" :class="chartTotals.net >= 0 ? 'text-green-600' : 'text-red-500'">{{ fmt(chartTotals.net) }}</p>
+                            <p class="text-sm font-bold" :class="chartTotals.net >= 0 ? 'text-green-700' : 'text-red-500'">{{ fmt(chartTotals.net) }}</p>
                         </div>
                     </div>
                     <div class="px-2 pt-3 pb-2">
@@ -2733,7 +2740,7 @@ onMounted(async () => {
                     </div>
                     <div class="rounded-lg bg-green-50 p-4">
                         <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue</p>
-                        <p class="text-2xl font-black text-green-600">{{ fmt(dailyReport.total_sales) }}</p>
+                        <p class="text-2xl font-black text-green-700">{{ fmt(dailyReport.total_sales) }}</p>
                     </div>
                     <div class="rounded-lg bg-yellow-50 p-4">
                         <p class="text-xs text-muted-foreground mb-1">Discounts</p>
@@ -2777,9 +2784,9 @@ onMounted(async () => {
                                     <span class="text-[11px] text-muted-foreground">{{ row.count }} txns</span>
                                 </div>
                                 <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
-                                    <span class="text-green-600">In: +{{ fmt(row.total_in) }}</span>
+                                    <span class="text-green-700">In: +{{ fmt(row.total_in) }}</span>
                                     <span class="text-red-500">Out: -{{ fmt(row.total_out) }}</span>
-                                    <span :class="row.net >= 0 ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold'">
+                                    <span :class="row.net >= 0 ? 'text-green-700 font-semibold' : 'text-red-500 font-semibold'">
                                         Net: {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
                                     </span>
                                 </div>
@@ -2791,9 +2798,9 @@ onMounted(async () => {
                                     <span class="text-[11px] text-muted-foreground">{{ ftBreakdown.by_tender.reduce((s,r) => s+r.count,0) }} txns</span>
                                 </div>
                                 <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-bold">
-                                    <span class="text-green-600">In: +{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</span>
+                                    <span class="text-green-700">In: +{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</span>
                                     <span class="text-red-500">Out: -{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_out,0)) }}</span>
-                                    <span :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-600' : 'text-red-500'">
+                                    <span :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-700' : 'text-red-500'">
                                         Net: {{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.net,0)) }}
                                     </span>
                                 </div>
@@ -2814,9 +2821,9 @@ onMounted(async () => {
                                 <tbody class="divide-y">
                                     <tr v-for="row in ftBreakdown.by_tender" :key="row.tender" class="hover:bg-muted/20">
                                         <td class="py-2 font-medium">{{ row.tender }}</td>
-                                        <td class="py-2 text-right tabular-nums text-green-600">+{{ fmt(row.total_in) }}</td>
+                                        <td class="py-2 text-right tabular-nums text-green-700">+{{ fmt(row.total_in) }}</td>
                                         <td class="py-2 text-right tabular-nums text-red-500">-{{ fmt(row.total_out) }}</td>
-                                        <td class="py-2 text-right tabular-nums font-semibold" :class="row.net >= 0 ? 'text-green-600' : 'text-red-500'">
+                                        <td class="py-2 text-right tabular-nums font-semibold" :class="row.net >= 0 ? 'text-green-700' : 'text-red-500'">
                                             {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
                                         </td>
                                         <td class="py-2 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
@@ -2825,9 +2832,9 @@ onMounted(async () => {
                                 <tfoot v-if="ftBreakdown.by_tender.length" class="border-t font-bold">
                                     <tr>
                                         <td class="pt-2">Total</td>
-                                        <td class="pt-2 text-right tabular-nums text-green-600">+{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</td>
+                                        <td class="pt-2 text-right tabular-nums text-green-700">+{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</td>
                                         <td class="pt-2 text-right tabular-nums text-red-500">-{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_out,0)) }}</td>
-                                        <td class="pt-2 text-right tabular-nums" :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-600' : 'text-red-500'">
+                                        <td class="pt-2 text-right tabular-nums" :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-700' : 'text-red-500'">
                                             {{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.net,0)) }}
                                         </td>
                                         <td class="pt-2 text-right tabular-nums text-muted-foreground">{{ ftBreakdown.by_tender.reduce((s,r) => s+r.count,0) }}</td>
@@ -2859,7 +2866,7 @@ onMounted(async () => {
                     <div v-if="monthChartData.length > 0" class="grid grid-cols-3 divide-x border-b text-center">
                         <div class="px-3 py-2.5">
                             <p class="text-xs text-muted-foreground">Cash in</p>
-                            <p class="text-sm font-bold text-green-600">{{ fmt(monthChartTotals.income) }}</p>
+                            <p class="text-sm font-bold text-green-700">{{ fmt(monthChartTotals.income) }}</p>
                         </div>
                         <div class="px-3 py-2.5">
                             <p class="text-xs text-muted-foreground">Cash out</p>
@@ -2867,7 +2874,7 @@ onMounted(async () => {
                         </div>
                         <div class="px-3 py-2.5">
                             <p class="text-xs text-muted-foreground">Net cash</p>
-                            <p class="text-sm font-bold" :class="monthChartTotals.net >= 0 ? 'text-green-600' : 'text-red-500'">{{ fmt(monthChartTotals.net) }}</p>
+                            <p class="text-sm font-bold" :class="monthChartTotals.net >= 0 ? 'text-green-700' : 'text-red-500'">{{ fmt(monthChartTotals.net) }}</p>
                         </div>
                     </div>
                     <div class="px-2 pt-3 pb-2">
@@ -2924,7 +2931,7 @@ onMounted(async () => {
                     </div>
                     <div class="rounded-lg bg-green-50 p-4">
                         <p class="text-xs text-muted-foreground mb-1 flex items-center gap-1"><TrendingUp class="h-3 w-3" /> Revenue</p>
-                        <p class="text-2xl font-black text-green-600">{{ fmt(monthlyReport.total_sales) }}</p>
+                        <p class="text-2xl font-black text-green-700">{{ fmt(monthlyReport.total_sales) }}</p>
                     </div>
                     <div class="rounded-lg bg-yellow-50 p-4">
                         <p class="text-xs text-muted-foreground mb-1">Discounts</p>
@@ -2968,9 +2975,9 @@ onMounted(async () => {
                                     <span class="text-[11px] text-muted-foreground">{{ row.count }} txns</span>
                                 </div>
                                 <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
-                                    <span class="text-green-600">In: +{{ fmt(row.total_in) }}</span>
+                                    <span class="text-green-700">In: +{{ fmt(row.total_in) }}</span>
                                     <span class="text-red-500">Out: -{{ fmt(row.total_out) }}</span>
-                                    <span :class="row.net >= 0 ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold'">
+                                    <span :class="row.net >= 0 ? 'text-green-700 font-semibold' : 'text-red-500 font-semibold'">
                                         Net: {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
                                     </span>
                                 </div>
@@ -2981,9 +2988,9 @@ onMounted(async () => {
                                     <span class="text-[11px] text-muted-foreground">{{ ftBreakdown.by_tender.reduce((s,r) => s+r.count,0) }} txns</span>
                                 </div>
                                 <div class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-bold">
-                                    <span class="text-green-600">In: +{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</span>
+                                    <span class="text-green-700">In: +{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</span>
                                     <span class="text-red-500">Out: -{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_out,0)) }}</span>
-                                    <span :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-600' : 'text-red-500'">
+                                    <span :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-700' : 'text-red-500'">
                                         Net: {{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.net,0)) }}
                                     </span>
                                 </div>
@@ -3004,9 +3011,9 @@ onMounted(async () => {
                                 <tbody class="divide-y">
                                     <tr v-for="row in ftBreakdown.by_tender" :key="row.tender" class="hover:bg-muted/20">
                                         <td class="py-2 font-medium">{{ row.tender }}</td>
-                                        <td class="py-2 text-right tabular-nums text-green-600">+{{ fmt(row.total_in) }}</td>
+                                        <td class="py-2 text-right tabular-nums text-green-700">+{{ fmt(row.total_in) }}</td>
                                         <td class="py-2 text-right tabular-nums text-red-500">-{{ fmt(row.total_out) }}</td>
-                                        <td class="py-2 text-right tabular-nums font-semibold" :class="row.net >= 0 ? 'text-green-600' : 'text-red-500'">
+                                        <td class="py-2 text-right tabular-nums font-semibold" :class="row.net >= 0 ? 'text-green-700' : 'text-red-500'">
                                             {{ row.net >= 0 ? '+' : '' }}{{ fmt(row.net) }}
                                         </td>
                                         <td class="py-2 text-right tabular-nums text-muted-foreground">{{ row.count }}</td>
@@ -3015,9 +3022,9 @@ onMounted(async () => {
                                 <tfoot v-if="ftBreakdown.by_tender.length" class="border-t font-bold">
                                     <tr>
                                         <td class="pt-2">Total</td>
-                                        <td class="pt-2 text-right tabular-nums text-green-600">+{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</td>
+                                        <td class="pt-2 text-right tabular-nums text-green-700">+{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_in,0)) }}</td>
                                         <td class="pt-2 text-right tabular-nums text-red-500">-{{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.total_out,0)) }}</td>
-                                        <td class="pt-2 text-right tabular-nums" :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-600' : 'text-red-500'">
+                                        <td class="pt-2 text-right tabular-nums" :class="ftBreakdown.by_tender.reduce((s,r)=>s+r.net,0) >= 0 ? 'text-green-700' : 'text-red-500'">
                                             {{ fmt(ftBreakdown.by_tender.reduce((s,r) => s+r.net,0)) }}
                                         </td>
                                         <td class="pt-2 text-right tabular-nums text-muted-foreground">{{ ftBreakdown.by_tender.reduce((s,r) => s+r.count,0) }}</td>
@@ -3047,7 +3054,7 @@ onMounted(async () => {
                 <!-- Mobile cards -->
                 <div class="md:hidden divide-y">
                     <div v-for="(item, i) in topProducts" :key="item.product_id" class="transition-colors">
-                        <button class="w-full px-4 py-3 hover:bg-muted/20 text-left" @click="toggleProduct(item.product_id)">
+                        <button class="w-full px-4 py-3 hover:bg-muted/20 text-left" :aria-expanded="!!expandedProducts[item.product_id]" :aria-controls="`prod-chart-${item.product_id}`" @click="toggleProduct(item.product_id)">
                             <div class="flex items-start gap-3">
                                 <!-- Rank badge -->
                                 <div :class="['shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-black',
@@ -3063,14 +3070,14 @@ onMounted(async () => {
                                         <p class="font-semibold text-sm truncate">{{ item.product_name }}</p>
                                         <div class="flex items-center gap-1.5 shrink-0">
                                             <span class="text-xs bg-muted rounded-full px-2 py-0.5 font-medium tabular-nums">×{{ item.total_quantity }}</span>
-                                            <span class="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5 font-semibold tabular-nums">
+                                            <span class="text-xs bg-primary/10 text-[#a8391a] rounded-full px-2 py-0.5 font-semibold tabular-nums">
                                                 {{ totalProductSales > 0 ? ((Number(item.total_sales) / totalProductSales) * 100).toFixed(1) : '0.0' }}%
                                             </span>
                                             <ChevronDown :class="['h-3.5 w-3.5 text-muted-foreground transition-transform', expandedProducts[item.product_id] ? 'rotate-180' : '']" />
                                         </div>
                                     </div>
                                     <div class="flex items-center gap-3">
-                                        <p class="text-sm font-bold text-green-600 tabular-nums shrink-0">{{ fmt(item.total_sales) }}</p>
+                                        <p class="text-sm font-bold text-green-700 tabular-nums shrink-0">{{ fmt(item.total_sales) }}</p>
                                         <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                                             <div class="h-full bg-primary rounded-full transition-all duration-500"
                                                 :style="{ width: topProducts[0]?.total_sales ? ((Number(item.total_sales) / Number(topProducts[0].total_sales)) * 100) + '%' : '0%' }" />
@@ -3080,11 +3087,11 @@ onMounted(async () => {
                             </div>
                         </button>
                         <!-- Collapsible chart -->
-                        <div v-if="expandedProducts[item.product_id]" class="px-4 pb-4 bg-muted/20">
-                            <div v-if="productDailyData[item.product_id]?.loading" class="py-4 text-center text-xs text-muted-foreground">Loading…</div>
+                        <div v-if="expandedProducts[item.product_id]" :id="`prod-chart-${item.product_id}`" class="px-4 pb-4 bg-muted/20">
+                            <div role="status" v-if="productDailyData[item.product_id]?.loading" class="py-4 text-center text-xs text-muted-foreground">Loading…</div>
                             <template v-else-if="productDailyData[item.product_id]?.points?.length">
                                 <div class="flex justify-end mb-2">
-                                    <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1 text-xs font-semibold hover:bg-muted transition" @click.stop="openProductDetail(item)">
+                                    <button type="button" class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-xs font-semibold hover:bg-muted transition" @click.stop="openProductDetail(item)">
                                         <Maximize2 class="h-3.5 w-3.5" /> Full screen · numbers &amp; averages
                                     </button>
                                 </div>
@@ -3094,7 +3101,7 @@ onMounted(async () => {
                                 </div>
                                 <div class="relative pt-4" @mouseleave="prodChartTooltip = null">
                                     <div class="absolute top-0 right-0 text-[9px] text-muted-foreground tabular-nums leading-none">{{ fmtShort(productLineData[item.product_id]?.max ?? 0) }}</div>
-                                    <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500" preserveAspectRatio="none" style="cursor:zoom-in" @click="openProductDetail(item)"
+                                    <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-700" preserveAspectRatio="none" style="cursor:zoom-in" role="img" :aria-label="productChartLabel(item)" @click="openProductDetail(item)"
                                          @mousemove="onProdChartHover($event, item.product_id)">
                                         <defs>
                                             <linearGradient :id="`pg-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
@@ -3146,9 +3153,11 @@ onMounted(async () => {
                             <template v-for="(item, i) in topProducts" :key="item.product_id">
                                 <tr class="border-t hover:bg-muted/20 cursor-pointer" @click="toggleProduct(item.product_id)">
                                     <td class="px-4 py-2 text-muted-foreground font-medium">{{ i + 1 }}</td>
-                                    <td class="px-4 py-2 font-medium">{{ item.product_name }}</td>
+                                    <td class="px-4 py-2 font-medium">
+                                        <button type="button" class="text-left font-medium hover:underline" :aria-expanded="!!expandedProducts[item.product_id]" :aria-controls="`prod-chart-d-${item.product_id}`" @click.stop="toggleProduct(item.product_id)">{{ item.product_name }}</button>
+                                    </td>
                                     <td class="px-4 py-2 text-right tabular-nums">{{ item.total_quantity }}</td>
-                                    <td class="px-4 py-2 text-right font-bold text-green-600 tabular-nums">{{ fmt(item.total_sales) }}</td>
+                                    <td class="px-4 py-2 text-right font-bold text-green-700 tabular-nums">{{ fmt(item.total_sales) }}</td>
                                     <td class="px-4 py-2 text-right tabular-nums text-muted-foreground">
                                         {{ totalProductSales > 0 ? ((Number(item.total_sales) / totalProductSales) * 100).toFixed(1) : '0.0' }}%
                                     </td>
@@ -3163,12 +3172,12 @@ onMounted(async () => {
                                     </td>
                                 </tr>
                                 <!-- Collapsible chart row -->
-                                <tr v-if="expandedProducts[item.product_id]" class="border-t bg-muted/20">
+                                <tr v-if="expandedProducts[item.product_id]" :id="`prod-chart-d-${item.product_id}`" class="border-t bg-muted/20">
                                     <td colspan="7" class="px-6 py-3">
-                                        <div v-if="productDailyData[item.product_id]?.loading" class="py-2 text-xs text-muted-foreground text-center">Loading…</div>
+                                        <div role="status" v-if="productDailyData[item.product_id]?.loading" class="py-2 text-xs text-muted-foreground text-center">Loading…</div>
                                         <template v-else-if="productDailyData[item.product_id]?.points?.length">
                                             <div class="flex justify-end mb-2">
-                                                <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border bg-card px-2.5 py-1 text-xs font-semibold hover:bg-muted transition" @click.stop="openProductDetail(item)">
+                                                <button type="button" class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border bg-card px-3 py-2 text-xs font-semibold hover:bg-muted transition" @click.stop="openProductDetail(item)">
                                                     <Maximize2 class="h-3.5 w-3.5" /> Full screen · numbers &amp; averages
                                                 </button>
                                             </div>
@@ -3178,7 +3187,7 @@ onMounted(async () => {
                                             </div>
                                             <div class="relative pt-4" @mouseleave="prodChartTooltip = null">
                                                 <div class="absolute top-0 right-0 text-[9px] text-muted-foreground tabular-nums leading-none">{{ fmtShort(productLineData[item.product_id]?.max ?? 0) }}</div>
-                                                <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-500" preserveAspectRatio="none" style="cursor:zoom-in" @click="openProductDetail(item)"
+                                                <svg viewBox="0 0 400 80" class="w-full h-20 text-emerald-700" preserveAspectRatio="none" style="cursor:zoom-in" role="img" :aria-label="productChartLabel(item)" @click="openProductDetail(item)"
                                                      @mousemove="onProdChartHover($event, item.product_id)">
                                                     <defs>
                                                         <linearGradient :id="`pgd-${item.product_id}`" x1="0" y1="0" x2="0" y2="1">
@@ -3229,7 +3238,7 @@ onMounted(async () => {
     --card-foreground: #24231e;
     --popover: #fffcf6;
     --popover-foreground: #24231e;
-    --primary: #ef5b2a;
+    --primary: #c3441c; /* #ef5b2a was 3.39:1 with white text; #c3441c is 5.04:1 */
     --primary-foreground: #fff;
     --secondary: #efeadf;
     --secondary-foreground: #24231e;
