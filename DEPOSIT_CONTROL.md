@@ -61,3 +61,23 @@ php artisan test --filter=DepositControlTest
 ```
 
 Tests cover separate shift/overall variances, decimal arithmetic, frozen snapshots, required counts, ownership, overnight shifts, and cleanup repeatability. The existing migration `2026_06_28_000001_add_product_sales_pct_to_incentive_rules.php` contains MySQL-specific SQL; the default SQLite feature-test setup needs that pre-existing compatibility issue resolved before all migrations can run.
+
+## Balancing the overall over/short
+
+When **Check 2 – Overall balance** is over or short after the counts are saved, the closing report shows **Balance the overall balance**. Balancing posts one ledger entry so the books match the counted money, but only after three admins approve it.
+
+1. **Ask to balance.** The cashier who ran the shift, or an admin, explains why it is over or short and selects **Ask to balance**. An admin's own request counts as the first approval.
+2. **Approve.** Other admins open the report and select **Approve** or **Reject…** (with a reason). The requester cannot approve their own request. The report lists every admin who approved and when, with empty slots for the approvals still needed. A request from an admin needs two other admins. A request from a cashier needs three admins.
+3. **Post.** Once three admins have approved, the requester chooses the tender (Cash, GCash, …) and selects **Post adjustment**.
+
+| Overall balance | Posted as | Effect |
+| --- | --- | --- |
+| Short | `expense` | Lowers the running balance by the shortage |
+| Over | `income_adjustment` | Raises the running balance by the overage |
+
+No new transaction type is used, so every total, report and profit calculation already includes the entry. The description reads `Deposit reconciliation – Shift #18 short ₱50.00`, and the notes record the requester, every approving admin and the reason. Posted entries cannot be edited or deleted from the financial ledger.
+
+Only the latest submitted shift can be balanced, and only before the next shift starts. The overall balance is cumulative, so once a new shift opens the same difference shows in that shift's Check 2. Any request still waiting is then marked **Lapsed** and can be raised again on the new shift. A rejected or cancelled request can also be raised again. Earlier requests stay listed under **Earlier requests** on the report.
+
+API (under `/api/v1/deposit-controls`, cashier or admin): `POST /{shift}/adjustments` `{reason}`, then `POST /adjustments/{id}/approve`, `/reject` `{reason}`, `/cancel` and `/post` `{payment_tender_id}`. Run `php artisan migrate` to create the `deposit_adjustments` and `deposit_adjustment_approvals` tables. Tests: `tests/Feature/DepositAdjustmentTest.php`.
+

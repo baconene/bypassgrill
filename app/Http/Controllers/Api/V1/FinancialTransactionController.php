@@ -356,6 +356,8 @@ class FinancialTransactionController extends Controller {
             abort(422, 'Order records cannot be edited.');
         }
 
+        $this->guardDepositAdjustment($financialTransaction);
+
         $data = $request->validate([
             'type'              => 'sometimes|in:expense,income_adjustment,asset_deduction,payroll,payout_share',
             'amount'            => 'sometimes|numeric|min:0.01',
@@ -379,6 +381,8 @@ class FinancialTransactionController extends Controller {
             abort(422, 'Only manually created entries can be deleted.');
         }
 
+        $this->guardDepositAdjustment($financialTransaction);
+
         // Order and payment entries belong to an order: remove the order with all its entries
         $order = in_array($financialTransaction->type, ['order', 'payment']) ? $financialTransaction->order : null;
 
@@ -389,6 +393,15 @@ class FinancialTransactionController extends Controller {
         }
 
         return response()->json(null, 204);
+    }
+
+    /** Approved deposit-control adjustments are locked: changing one would undo three admins' approval. */
+    private function guardDepositAdjustment(FinancialTransaction $financialTransaction): void {
+        abort_if(
+            \App\Models\DepositAdjustment::where('financial_transaction_id', $financialTransaction->id)->exists(),
+            422,
+            'This entry is an approved deposit-control adjustment and cannot be edited or deleted here.'
+        );
     }
 
     private function checkReports(): void {

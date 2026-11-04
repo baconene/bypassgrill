@@ -77,6 +77,11 @@ Route::prefix('v1')->group(function () {
                 Route::post('/{depositControl}/close', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'close']);
                 Route::post('/{depositControl}/reconcile', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'reconcile']);
                 Route::post('/{depositControl}/reopen', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'reopen']);
+                Route::post('/{depositControl}/adjustments', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'store']);
+                Route::post('/adjustments/{depositAdjustment}/approve', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'approve']);
+                Route::post('/adjustments/{depositAdjustment}/reject', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'reject']);
+                Route::post('/adjustments/{depositAdjustment}/cancel', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'cancel']);
+                Route::post('/adjustments/{depositAdjustment}/post', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'post']);
                 Route::delete('/{depositControl}', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'destroy']);
             });
         });

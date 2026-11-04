@@ -16,6 +16,8 @@ import {
     Wallet,
 } from 'lucide-vue-next';
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import DepositAdjustmentPanel from '@/pages/deposit/DepositAdjustmentPanel.vue';
+import type { Adjustment } from '@/pages/deposit/DepositAdjustmentPanel.vue';
 import type { Auth } from '@/types/auth';
 import api from '@/utils/api';
 
@@ -68,6 +70,7 @@ interface Shift {
     opening_snapshot: Snapshot;
     closing_snapshot: Snapshot | null;
     reconciliation: Reconciliation | null;
+    adjustments?: Adjustment[];
 }
 type Tone = 'pending' | 'balanced' | 'short' | 'over';
 
@@ -82,6 +85,8 @@ const history = ref<Shift[]>([]);
 const historyPage = ref(1);
 const lastPage = ref(1);
 const loaded = ref(false);
+const adjustableShiftId = ref<number | null>(null);
+const requiredApprovals = ref(3);
 const busy = ref(false);
 const error = ref('');
 const confirmClose = ref(false);
@@ -102,6 +107,15 @@ const canStart = computed(() =>
 );
 const depositSuperUser = computed(() => page.props.auth.user.email?.toLowerCase() === 'john.adrian.bacon2@gmail.com');
 const isOwner = computed(() => active.value?.user_id === page.props.auth.user.id || depositSuperUser.value);
+const adjustmentUser = computed(() => ({
+    id: page.props.auth.user.id,
+    isAdmin: page.props.auth.roles.includes('admin'),
+    isSuperUser: depositSuperUser.value,
+}));
+const canRequestAdjustment = (shift: Shift) =>
+    shift.user_id === page.props.auth.user.id || adjustmentUser.value.isAdmin || depositSuperUser.value;
+const showAdjustment = (shift: Shift) =>
+    !!shift.reconciliation && (shift.reconciliation.overall_variance !== 0 || !!shift.adjustments?.length);
 const reports = computed(() =>
     props.historyView
         ? history.value.filter((shift) => shift.id === selectedId.value)
@@ -302,6 +316,13 @@ async function load(targetPage = historyPage.value) {
     history.value = data.history.data;
     historyPage.value = data.history.current_page;
     lastPage.value = data.history.last_page;
+    adjustableShiftId.value = data.adjustable_shift_id ?? null;
+    requiredApprovals.value = data.required_approvals ?? 3;
+
+    // Keep the just-submitted report in sync with the server (its adjustment status changes)
+    if (completed.value) {
+        completed.value = history.value.find((shift) => shift.id === completed.value!.id) ?? completed.value;
+    }
 
     if (!history.value.some((shift) => shift.id === selectedId.value)) {
         selectedId.value = null;
@@ -1129,6 +1150,18 @@ onUnmounted(() => clearInterval(clock));
                     </p>
                 </article>
             </div>
+
+            <DepositAdjustmentPanel
+                v-if="showAdjustment(shift)"
+                :shift-id="shift.id"
+                :variance="shift.reconciliation!.overall_variance"
+                :adjustments="shift.adjustments ?? []"
+                :adjustable="shift.id === adjustableShiftId"
+                :required-approvals="requiredApprovals"
+                :user="adjustmentUser"
+                :can-request="canRequestAdjustment(shift)"
+                @changed="refresh()"
+            />
 
             <form
                 v-if="

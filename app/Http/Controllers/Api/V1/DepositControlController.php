@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\DepositAdjustment;
 use App\Models\DepositControl;
 use App\Models\User;
+use App\Services\DepositAdjustmentService;
 use App\Services\DepositReconciliation;
 use App\Services\DepositSnapshot;
 use Illuminate\Http\Request;
@@ -14,9 +16,14 @@ class DepositControlController extends Controller
 {
     public function index()
     {
+        $with = ['user:id,name', 'adjustments' => fn ($q) => $q->with(DepositAdjustmentService::relations())];
+
         return response()->json([
-            'active' => DepositControl::with('user:id,name')->where('active_slot', 1)->first(),
-            'history' => DepositControl::with('user:id,name')->whereNotNull('submitted_at')->latest('id')->paginate(20),
+            'active' => DepositControl::with($with)->where('active_slot', 1)->first(),
+            'history' => DepositControl::with($with)->whereNotNull('submitted_at')->latest('id')->paginate(20),
+            // Only this shift's overall over/short can still be balanced (see DepositAdjustmentService)
+            'adjustable_shift_id' => DepositAdjustmentService::adjustableShiftId(),
+            'required_approvals' => DepositAdjustment::REQUIRED_APPROVALS,
         ]);
     }
 
@@ -30,6 +37,8 @@ class DepositControlController extends Controller
             // Serialize starts, including the empty-table case; unique active_slot is a backstop.
             User::orderBy('id')->lockForUpdate()->firstOrFail();
             abort_if(DepositControl::where('active_slot', 1)->exists(), 409, 'A shift is already active. Complete its counts first.');
+            // The previous shift's over/short now carries into this shift's overall balance
+            app(DepositAdjustmentService::class)->supersedeOpenRequests();
             $at = now();
             $snapshot = array_merge($snapshots->capture($at), ['opening_cash' => (float) $data['opening_cash']]);
 
