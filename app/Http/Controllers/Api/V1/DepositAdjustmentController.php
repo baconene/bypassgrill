@@ -32,6 +32,16 @@ class DepositAdjustmentController extends Controller
         return response()->json($this->adjustments->reject($depositAdjustment, $request->user(), $data['reason']));
     }
 
+    public function reopen(Request $request, DepositAdjustment $depositAdjustment): JsonResponse
+    {
+        return response()->json($this->adjustments->reopen($depositAdjustment, $request->user()));
+    }
+
+    public function keep(Request $request, DepositAdjustment $depositAdjustment): JsonResponse
+    {
+        return response()->json($this->adjustments->keepRejected($depositAdjustment, $request->user()));
+    }
+
     public function cancel(Request $request, DepositAdjustment $depositAdjustment): JsonResponse
     {
         return response()->json($this->adjustments->cancel($depositAdjustment, $request->user()));

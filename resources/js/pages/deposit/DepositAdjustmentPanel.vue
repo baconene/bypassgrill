@@ -25,12 +25,16 @@ export interface Adjustment {
         | 'approved'
         | 'posted'
         | 'rejected'
+        | 'closed'
         | 'cancelled'
         | 'superseded';
     created_at: string;
     approved_at: string | null;
     rejected_at: string | null;
     rejection_reason: string | null;
+    rejection_history:
+        | { name: string | null; reason: string; at: string }[]
+        | null;
     posted_at: string | null;
     requested_by: number;
     requester: Person | null;
@@ -77,7 +81,7 @@ const label = computed(() => (short.value ? 'short' : 'over'));
 const current = computed(
     () =>
         props.adjustments.find((a) =>
-            ['pending', 'approved', 'posted'].includes(a.status),
+            ['pending', 'approved', 'rejected', 'posted'].includes(a.status),
         ) ?? null,
 );
 const past = computed(() =>
@@ -154,6 +158,10 @@ const reject = () =>
 const cancel = () =>
     window.confirm('Cancel this adjustment request?') &&
     call(`${base}/adjustments/${current.value!.id}/cancel`);
+const reopen = () => call(`${base}/adjustments/${current.value!.id}/reopen`);
+const keepRejected = () =>
+    window.confirm('Keep this request rejected? The books stay as they are.') &&
+    call(`${base}/adjustments/${current.value!.id}/keep`);
 const post = () =>
     call(`${base}/adjustments/${current.value!.id}/post`, {
         payment_tender_id: tenderId.value,
@@ -163,7 +171,8 @@ const statusText: Record<Adjustment['status'], string> = {
     pending: 'Waiting for approvals',
     approved: 'Approved – choose a tender',
     posted: 'Posted',
-    rejected: 'Rejected',
+    rejected: 'Rejected – waiting for the requester',
+    closed: 'Rejected (kept)',
     cancelled: 'Cancelled',
     superseded: 'Lapsed – next shift started',
 };
@@ -192,7 +201,11 @@ const statusText: Record<Adjustment['status'], string> = {
                 v-if="current"
                 class="pill"
                 :class="`pill-${current.status}`"
-                >{{ statusText[current.status] }}</span
+                >{{
+                    current.status === 'rejected' && isRequester
+                        ? 'Rejected – your decision'
+                        : statusText[current.status]
+                }}</span
             >
         </header>
 
@@ -277,6 +290,63 @@ const statusText: Record<Adjustment['status'], string> = {
                     <span class="muted">Waiting for an admin</span>
                 </li>
             </ol>
+
+            <!-- Every rejection so far, newest last -->
+            <ul
+                v-if="current.rejection_history?.length"
+                class="rejections"
+                aria-label="Rejections"
+            >
+                <li v-for="(r, i) in current.rejection_history" :key="i">
+                    <XCircle :size="16" aria-hidden="true" />
+                    <span>
+                        <strong>{{ r.name ?? 'An admin' }}</strong> rejected ·
+                        {{ when(r.at) }} <br /><span class="muted"
+                            >“{{ r.reason }}”</span
+                        >
+                    </span>
+                </li>
+            </ul>
+
+            <!-- After a rejection the requester decides -->
+            <div
+                v-if="current.status === 'rejected' && isRequester"
+                class="adj-decide"
+            >
+                <p>
+                    <strong>{{ current.rejecter?.name ?? 'An admin' }}</strong>
+                    rejected this request. Ask for another approval to keep the
+                    {{ current.approvals.length }}
+                    {{
+                        current.approvals.length === 1
+                            ? 'approval'
+                            : 'approvals'
+                    }}
+                    already given ({{ remaining }} more needed), or keep it
+                    rejected.
+                </p>
+                <div class="adj-actions">
+                    <button
+                        class="primary-action"
+                        :disabled="busy"
+                        @click="reopen"
+                    >
+                        Request another approval
+                    </button>
+                    <button
+                        class="ghost-action"
+                        :disabled="busy"
+                        @click="keepRejected"
+                    >
+                        Keep rejected
+                    </button>
+                </div>
+            </div>
+            <p v-else-if="current.status === 'rejected'" class="muted">
+                Rejected by {{ current.rejecter?.name ?? 'an admin' }}. Waiting
+                for {{ current.requester?.name ?? 'the requester' }} to ask for
+                another approval or keep it rejected.
+            </p>
 
             <!-- Admin actions -->
             <div
@@ -376,8 +446,9 @@ const statusText: Record<Adjustment['status'], string> = {
 
             <button
                 v-if="
-                    ['pending', 'approved'].includes(current.status) &&
-                    isRequester
+                    ['pending', 'approved', 'rejected'].includes(
+                        current.status,
+                    ) && isRequester
                 "
                 class="text-button"
                 :disabled="busy"
@@ -396,9 +467,12 @@ const statusText: Record<Adjustment['status'], string> = {
                     <span>
                         <strong>{{ statusText[a.status] }}</strong> · requested
                         by {{ a.requester?.name }} {{ when(a.created_at) }}
-                        <template v-if="a.status === 'rejected'">
-                            · rejected by {{ a.rejecter?.name }}: “{{
-                                a.rejection_reason
+                        <template
+                            v-for="(r, i) in a.rejection_history ?? []"
+                            :key="i"
+                        >
+                            · rejected by {{ r.name ?? 'an admin' }}: “{{
+                                r.reason
                             }}”</template
                         >
                         <template v-if="a.approvals.length">
@@ -526,6 +600,37 @@ button:focus-visible {
     border-style: dashed;
     color: #68665f;
 }
+.rejections {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.rejections li {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 13px;
+    padding: 8px 10px;
+    border: 1px solid #f0d3cf;
+    border-radius: 4px;
+    background: #fbefed;
+    color: #9c3028;
+}
+.rejections li strong {
+    color: #24231e;
+}
+.adj-decide {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid #ded7cb;
+    border-radius: 4px;
+    background: #fffcf6;
+    font-size: 13px;
+    line-height: 1.5;
+}
 .adj-actions {
     display: flex;
     flex-wrap: wrap;
@@ -594,6 +699,10 @@ button:disabled {
 .pill-approved {
     background: #f7eccf;
     color: #7b5815;
+}
+.pill-rejected {
+    background: #f7e1df;
+    color: #9c3028;
 }
 .pill-posted {
     background: #e4edde;

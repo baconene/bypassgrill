@@ -125,7 +125,41 @@ class DepositAdjustmentTest extends TestCase
         $this->assertEquals(1020, $this->balance());
     }
 
-    public function test_rejected_requests_can_be_raised_again_and_a_new_shift_supersedes_open_requests(): void
+    public function test_after_a_rejection_the_requester_asks_for_another_approval_keeping_the_approvals_given(): void
+    {
+        $cashier = $this->user('cashier', 'Cashier Ana');
+        $ben = $this->user('admin', 'Admin Ben');
+        $joe = $this->user('admin', 'Admin Joe');
+        $tess = $this->user('admin', 'Test Admin 1');
+        $shift = $this->submittedShift($cashier, 2351.44);
+
+        // Ben asks (approval 1), Joe approves (2), Tess rejects
+        $id = $this->actingAs($ben)->postJson("/api/v1/deposit-controls/{$shift->id}/adjustments", ['reason' => 'Unrecorded cash sales'])->assertCreated()->json('id');
+        $this->actingAs($joe)->postJson("/api/v1/deposit-controls/adjustments/{$id}/approve")->assertOk();
+        $this->actingAs($joe)->postJson("/api/v1/deposit-controls/adjustments/{$id}/reject", ['reason' => 'Changed my mind'])->assertConflict();
+        $this->actingAs($tess)->postJson("/api/v1/deposit-controls/adjustments/{$id}/reject", ['reason' => 'Check the receipts'])
+            ->assertOk()->assertJsonPath('status', 'rejected')->assertJsonPath('rejecter.name', 'Test Admin 1')
+            ->assertJsonPath('rejection_history.0.name', 'Test Admin 1')->assertJsonCount(2, 'approvals');
+
+        // While rejected: nobody can approve, only the requester decides, and no second request can be raised
+        $this->actingAs($tess)->postJson("/api/v1/deposit-controls/adjustments/{$id}/approve")->assertConflict();
+        $this->actingAs($joe)->postJson("/api/v1/deposit-controls/adjustments/{$id}/reopen")->assertForbidden();
+        $this->actingAs($ben)->postJson("/api/v1/deposit-controls/{$shift->id}/adjustments", ['reason' => 'Duplicate'])->assertConflict();
+
+        // Ask for another approval: Ben and Joe's approvals are kept, so one more is enough
+        $this->actingAs($ben)->postJson("/api/v1/deposit-controls/adjustments/{$id}/reopen")
+            ->assertOk()->assertJsonPath('status', 'pending')->assertJsonCount(2, 'approvals')
+            ->assertJsonPath('rejecter', null)->assertJsonCount(1, 'rejection_history');
+        // The admin who rejected may change their mind
+        $this->actingAs($tess)->postJson("/api/v1/deposit-controls/adjustments/{$id}/approve")
+            ->assertOk()->assertJsonPath('status', 'approved')->assertJsonCount(3, 'approvals')
+            ->assertJsonPath('approvals.2.user.name', 'Test Admin 1');
+        $this->actingAs($ben)->postJson("/api/v1/deposit-controls/adjustments/{$id}/post", ['payment_tender_id' => $this->cash->id])
+            ->assertOk()->assertJsonPath('status', 'posted');
+        $this->assertEqualsWithDelta(3351.44, $this->balance(), 0.001);
+    }
+
+    public function test_keeping_a_rejection_closes_it_and_a_new_shift_supersedes_open_requests(): void
     {
         $cashier = $this->user('cashier', 'Cashier Ana');
         $admin = $this->user('admin', 'Admin Ben');
@@ -136,9 +170,15 @@ class DepositAdjustmentTest extends TestCase
         $id = $this->postJson("/api/v1/deposit-controls/{$shift->id}/adjustments", ['reason' => 'Short ten'])->assertCreated()->json('id');
         $this->postJson("/api/v1/deposit-controls/{$shift->id}/adjustments", ['reason' => 'Duplicate'])->assertConflict();
         $this->actingAs($admin)->postJson("/api/v1/deposit-controls/adjustments/{$id}/reject", ['reason' => 'Recount first'])
-            ->assertOk()->assertJsonPath('status', 'rejected')->assertJsonPath('rejecter.name', 'Admin Ben');
+            ->assertOk()->assertJsonPath('status', 'rejected');
 
-        $again = $this->actingAs($cashier)->postJson("/api/v1/deposit-controls/{$shift->id}/adjustments", ['reason' => 'Recounted, still short'])->assertCreated()->json('id');
+        // Keep it rejected: closed for good, and the books are untouched
+        $this->actingAs($cashier)->postJson("/api/v1/deposit-controls/adjustments/{$id}/keep")->assertOk()->assertJsonPath('status', 'closed');
+        $this->postJson("/api/v1/deposit-controls/adjustments/{$id}/reopen")->assertConflict();
+        $this->assertEquals(1000, $this->balance());
+
+        // A fresh request can be raised after keeping the rejection
+        $again = $this->postJson("/api/v1/deposit-controls/{$shift->id}/adjustments", ['reason' => 'Recounted, still short'])->assertCreated()->json('id');
         $this->actingAs($admin)->postJson("/api/v1/deposit-controls/adjustments/{$again}/approve")->assertOk();
 
         // Starting the next shift carries the difference forward, so the open request lapses

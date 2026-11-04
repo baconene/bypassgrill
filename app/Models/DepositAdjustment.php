@@ -10,7 +10,8 @@ class DepositAdjustment extends Model
 {
     public const REQUIRED_APPROVALS = 3;
 
-    public const OPEN_STATUSES = ['pending', 'approved'];
+    // 'rejected' stays open: the requester decides whether to ask for another approval or keep it rejected ('closed')
+    public const OPEN_STATUSES = ['pending', 'approved', 'rejected'];
 
     protected $guarded = ['id'];
 
@@ -21,6 +22,7 @@ class DepositAdjustment extends Model
             'approved_at' => 'datetime',
             'rejected_at' => 'datetime',
             'posted_at' => 'datetime',
+            'rejection_history' => 'array',
         ];
     }
 

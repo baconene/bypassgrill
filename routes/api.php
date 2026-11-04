@@ -81,6 +81,8 @@ Route::prefix('v1')->group(function () {
                 Route::post('/adjustments/{depositAdjustment}/approve', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'approve']);
                 Route::post('/adjustments/{depositAdjustment}/reject', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'reject']);
                 Route::post('/adjustments/{depositAdjustment}/cancel', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'cancel']);
+                Route::post('/adjustments/{depositAdjustment}/reopen', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'reopen']);
+                Route::post('/adjustments/{depositAdjustment}/keep', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'keep']);
                 Route::post('/adjustments/{depositAdjustment}/post', [\App\Http\Controllers\Api\V1\DepositAdjustmentController::class, 'post']);
                 Route::delete('/{depositControl}', [\App\Http\Controllers\Api\V1\DepositControlController::class, 'destroy']);
             });

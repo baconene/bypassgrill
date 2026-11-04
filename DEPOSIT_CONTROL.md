@@ -67,7 +67,8 @@ Tests cover separate shift/overall variances, decimal arithmetic, frozen snapsho
 When **Check 2 – Overall balance** is over or short after the counts are saved, the closing report shows **Balance the overall balance**. Balancing posts one ledger entry so the books match the counted money, but only after three admins approve it.
 
 1. **Ask to balance.** The cashier who ran the shift, or an admin, explains why it is over or short and selects **Ask to balance**. An admin's own request counts as the first approval.
-2. **Approve.** Other admins open the report and select **Approve** or **Reject…** (with a reason). The requester cannot approve their own request. The report lists every admin who approved and when, with empty slots for the approvals still needed. A request from an admin needs two other admins. A request from a cashier needs three admins.
+2. **Approve.** Other admins open the report and select **Approve** or **Reject…** (with a reason). The requester cannot approve their own request, and an admin who approved cannot then reject. The report lists every admin who approved and when, with empty slots for the approvals still needed, and every rejection with its reason. A request from an admin needs two other admins. A request from a cashier needs three admins.
+   - **After a rejection** the requester chooses. **Request another approval** reopens the same request and keeps the approvals already given, so only the missing ones are needed. Any admin may approve it, including the one who rejected it. **Keep rejected** closes it and the books stay as they are; a fresh request can then be raised.
 3. **Post.** Once three admins have approved, the requester chooses the tender (Cash, GCash, …) and selects **Post adjustment**.
 
 | Overall balance | Posted as | Effect |
@@ -77,7 +78,7 @@ When **Check 2 – Overall balance** is over or short after the counts are saved
 
 No new transaction type is used, so every total, report and profit calculation already includes the entry. The description reads `Deposit reconciliation – Shift #18 short ₱50.00`, and the notes record the requester, every approving admin and the reason. Posted entries cannot be edited or deleted from the financial ledger.
 
-Only the latest submitted shift can be balanced, and only before the next shift starts. The overall balance is cumulative, so once a new shift opens the same difference shows in that shift's Check 2. Any request still waiting is then marked **Lapsed** and can be raised again on the new shift. A rejected or cancelled request can also be raised again. Earlier requests stay listed under **Earlier requests** on the report.
+Only the latest submitted shift can be balanced, and only before the next shift starts. The overall balance is cumulative, so once a new shift opens the same difference shows in that shift's Check 2. Any request still open (waiting, approved or rejected) is then marked **Lapsed** and can be raised again on the new shift. After **Keep rejected** or **Cancel request**, a new request can be raised. Earlier requests stay listed under **Earlier requests** on the report.
 
-API (under `/api/v1/deposit-controls`, cashier or admin): `POST /{shift}/adjustments` `{reason}`, then `POST /adjustments/{id}/approve`, `/reject` `{reason}`, `/cancel` and `/post` `{payment_tender_id}`. Run `php artisan migrate` to create the `deposit_adjustments` and `deposit_adjustment_approvals` tables. Tests: `tests/Feature/DepositAdjustmentTest.php`.
+API (under `/api/v1/deposit-controls`, cashier or admin): `POST /{shift}/adjustments` `{reason}`, then `POST /adjustments/{id}/approve`, `/reject` `{reason}`, `/reopen` (request another approval), `/keep` (keep rejected), `/cancel` and `/post` `{payment_tender_id}`. Run `php artisan migrate` to create the `deposit_adjustments` and `deposit_adjustment_approvals` tables and the `rejection_history` column. Tests: `tests/Feature/DepositAdjustmentTest.php`.
 

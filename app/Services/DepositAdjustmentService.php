@@ -50,7 +50,7 @@ class DepositAdjustmentService
             abort_unless(self::adjustableShiftId() === $shift->id, 409, 'Only the latest shift can be balanced, before the next shift starts. Its difference now shows in the newer shift.');
             $variance = round((float) ($shift->reconciliation['overall_variance'] ?? 0), 2);
             abort_if($variance == 0.0, 409, 'The overall balance already matches. There is nothing to adjust.');
-            abort_if($shift->adjustments()->whereIn('status', [...DepositAdjustment::OPEN_STATUSES, 'posted'])->exists(), 409, 'This shift already has an adjustment in progress or posted.');
+            abort_if($shift->adjustments()->whereIn('status', [...DepositAdjustment::OPEN_STATUSES, 'posted'])->exists(), 409, 'This shift already has an adjustment in progress or posted. If it was rejected, ask for another approval or keep it rejected first.');
 
             $adjustment = $shift->adjustments()->create([
                 'requested_by' => $user->id,
@@ -74,6 +74,7 @@ class DepositAdjustmentService
             $adjustment = $this->lockOpen($adjustment);
             abort_unless(self::isAdmin($user), 403, 'Only admins can approve an adjustment.');
             abort_if($adjustment->requested_by === $user->id, 403, 'You raised this request, so your approval is already counted if you are an admin. Two other admins must approve it.');
+            abort_if($adjustment->status === 'rejected', 409, 'This request was rejected. The requester can ask for another approval.');
             abort_if($adjustment->status !== 'pending', 409, 'This adjustment already has all its approvals.');
             abort_if($adjustment->approvals()->where('user_id', $user->id)->exists(), 409, 'You have already approved this adjustment.');
 
@@ -93,7 +94,45 @@ class DepositAdjustmentService
             $adjustment = $this->lockOpen($adjustment);
             abort_unless(self::isAdmin($user), 403, 'Only admins can reject an adjustment.');
             abort_if($adjustment->requested_by === $user->id, 403, 'Cancel your own request instead of rejecting it.');
-            $adjustment->update(['status' => 'rejected', 'rejected_by' => $user->id, 'rejected_at' => now(), 'rejection_reason' => $reason]);
+            abort_unless($adjustment->status === 'pending', 409, 'Only a request that is waiting for approvals can be rejected.');
+            abort_if($adjustment->approvals()->where('user_id', $user->id)->exists(), 409, 'You have already approved this adjustment.');
+
+            $history = $adjustment->rejection_history ?? [];
+            $history[] = ['user_id' => $user->id, 'name' => $user->name, 'reason' => $reason, 'at' => now()->toIso8601String()];
+            $adjustment->update([
+                'status' => 'rejected', 'rejected_by' => $user->id, 'rejected_at' => now(),
+                'rejection_reason' => $reason, 'rejection_history' => $history,
+            ]);
+
+            return $this->fresh($adjustment);
+        });
+    }
+
+    /** After a rejection the requester asks for another approval: the approvals already given are kept. */
+    public function reopen(DepositAdjustment $adjustment, User $user): DepositAdjustment
+    {
+        return DB::transaction(function () use ($adjustment, $user) {
+            $adjustment = $this->lockOpen($adjustment);
+            $this->authorizeRequester($adjustment, $user);
+            abort_unless($adjustment->status === 'rejected', 409, 'Only a rejected request can be sent for another approval.');
+            $approved = $adjustment->approvals()->count() >= DepositAdjustment::REQUIRED_APPROVALS;
+            $adjustment->update([
+                'status' => $approved ? 'approved' : 'pending', 'approved_at' => $approved ? now() : null,
+                'rejected_by' => null, 'rejected_at' => null, 'rejection_reason' => null,
+            ]);
+
+            return $this->fresh($adjustment);
+        });
+    }
+
+    /** After a rejection the requester accepts it: the request is closed and the books stay as they are. */
+    public function keepRejected(DepositAdjustment $adjustment, User $user): DepositAdjustment
+    {
+        return DB::transaction(function () use ($adjustment, $user) {
+            $adjustment = $this->lockOpen($adjustment);
+            $this->authorizeRequester($adjustment, $user);
+            abort_unless($adjustment->status === 'rejected', 409, 'Only a rejected request can be kept rejected.');
+            $adjustment->update(['status' => 'closed']);
 
             return $this->fresh($adjustment);
         });
@@ -103,11 +142,16 @@ class DepositAdjustmentService
     {
         return DB::transaction(function () use ($adjustment, $user) {
             $adjustment = $this->lockOpen($adjustment);
-            abort_unless($adjustment->requested_by === $user->id || self::isSuperUser($user), 403, 'Only the person who raised this request can cancel it.');
+            $this->authorizeRequester($adjustment, $user);
             $adjustment->update(['status' => 'cancelled']);
 
             return $this->fresh($adjustment);
         });
+    }
+
+    private function authorizeRequester(DepositAdjustment $adjustment, User $user): void
+    {
+        abort_unless($adjustment->requested_by === $user->id || self::isSuperUser($user), 403, 'Only the person who raised this request can do that.');
     }
 
     /** The requester chooses the tender once three admins have approved, which posts the adjustment. */
