@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccountingSetting;
 use App\Models\Bill;
 use App\Models\BillInstallment;
 use App\Models\FinancialTransaction;
@@ -160,13 +161,14 @@ class BillController extends Controller
     public function summary(Request $request): JsonResponse
     {
         $this->checkAuth();
-        $today     = Carbon::today();
+        $today = Carbon::today();
+        [$periodStart, $periodEnd] = AccountingSetting::periodContaining($today);
         $startDate = $request->input('start_date')
             ? Carbon::parse($request->input('start_date'))->startOfDay()
-            : $today->copy()->startOfMonth();
-        $endDate   = $request->input('end_date')
-            ? Carbon::parse($request->input('end_date'))->endOfDay()
-            : $today->copy()->endOfMonth();
+            : $periodStart;
+        $endDate   = ($request->input('end_date')
+            ? Carbon::parse($request->input('end_date'))
+            : $periodEnd)->copy()->endOfDay();
 
         $bills    = Bill::with('installments')->where('is_active', true)->get();
         $totalDue = 0.0;

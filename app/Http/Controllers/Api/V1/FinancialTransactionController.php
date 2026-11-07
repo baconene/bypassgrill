@@ -1,6 +1,7 @@
 <?php
 namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
+use App\Models\AccountingSetting;
 use App\Models\FinancialTransaction;
 use App\Services\OrderService;
 use Carbon\Carbon;
@@ -198,6 +199,8 @@ class FinancialTransactionController extends Controller {
      * The selected period and the ones before it, back to back, with a balance carried forward:
      * each period's opening is the previous period's closing. A whole or month-to-date calendar
      * month steps by calendar months; any other range steps by its own length in days.
+     * With accounting=1 it steps by accounting periods instead, ending with the one that
+     * contains end_date.
      */
     public function periods(Request $request): JsonResponse {
         $this->checkReports();
@@ -211,13 +214,19 @@ class FinancialTransactionController extends Controller {
         $start = Carbon::parse($data['start_date'])->startOfDay();
         $end   = Carbon::parse($data['end_date'])->startOfDay();
 
-        $monthly = $start->day === 1 && $start->isSameMonth($end)
+        $accounting = $request->boolean('accounting');
+        $startDay   = AccountingSetting::startDay();
+        $monthly = ! $accounting && $start->day === 1 && $start->isSameMonth($end)
             && ($end->isSameDay($start->copy()->endOfMonth()) || $end->isToday());
         $days = (int) abs($start->diffInDays($end)) + 1;
 
         $ranges = [];
+        [$currentStart] = AccountingSetting::periodContaining($end, $startDay);
         for ($i = 0; $i < $count; $i++) {
-            if ($monthly) {
+            if ($accounting) {
+                $s = $currentStart->copy()->subMonthsNoOverflow($i);
+                $e = $s->copy()->addMonthNoOverflow()->subDay();
+            } elseif ($monthly) {
                 $s = $start->copy()->subMonthsNoOverflow($i);
                 $e = $i === 0 ? $end->copy() : $s->copy()->endOfMonth()->startOfDay();
             } else {
@@ -264,8 +273,9 @@ class FinancialTransactionController extends Controller {
         }
 
         return response()->json([
-            'granularity' => $monthly ? 'month' : ($days === 1 ? 'day' : ($days === 7 ? 'week' : 'period')),
+            'granularity' => $accounting ? 'accounting' : ($monthly ? 'month' : ($days === 1 ? 'day' : ($days === 7 ? 'week' : 'period'))),
             'period_days' => $days,
+            'period_start_day' => $startDay,
             'rows'        => $rows,
         ]);
     }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -23,6 +23,7 @@ const baseNavItems: NavItem[] = [
 
 const sidebarNavItems = computed<NavItem[]>(() => {
     const items = [...baseNavItems];
+
     if (isAdmin.value) {
         items.push({ title: 'Page Content', href: '/settings/page-content' });
         items.push({ title: 'Media', href: '/settings/media' });
@@ -35,8 +36,10 @@ const sidebarNavItems = computed<NavItem[]>(() => {
         items.push({ title: 'Date & Time', href: '/settings/clock' });
         items.push({ title: 'Kitchen', href: '/settings/kitchen' });
         items.push({ title: 'HRIS', href: '/settings/hris' });
+        items.push({ title: 'Accounting', href: '/settings/accounting' });
         items.push({ title: 'System', href: '/settings/system' });
     }
+
     return items;
 });
 

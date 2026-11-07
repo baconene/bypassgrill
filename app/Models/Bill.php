@@ -41,7 +41,7 @@ class Bill extends Model
 
         if ($due->isPast() && !$due->isToday()) return 'overdue';
         if ($due->isToday()) return 'due_today';
-        if ($due->diffInDays(Carbon::today()) <= 7) return 'upcoming';
+        if (Carbon::today()->diffInDays($due) <= 7) return 'upcoming';
         return 'scheduled';
     }
 

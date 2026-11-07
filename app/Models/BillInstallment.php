@@ -29,7 +29,7 @@ class BillInstallment extends Model
         $due = Carbon::parse($this->due_date);
         if ($due->isPast() && !$due->isToday()) return 'overdue';
         if ($due->isToday()) return 'due_today';
-        if ($due->diffInDays(Carbon::today()) <= 7) return 'upcoming';
+        if (Carbon::today()->diffInDays($due) <= 7) return 'upcoming';
         return 'scheduled';
     }
 }

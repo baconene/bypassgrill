@@ -82,7 +82,17 @@ interface BillsSummary {
     period: { start: string; end: string };
 }
 type Tab = 'overview' | 'ledger' | 'performance';
-type Preset = 'today' | 'yesterday' | '7d' | 'month' | 'lastMonth' | 'custom';
+type Preset =
+    | 'today'
+    | 'yesterday'
+    | '7d'
+    | 'period'
+    | 'lastPeriod'
+    | 'month'
+    | 'lastMonth'
+    | 'custom';
+
+const props = defineProps<{ accountingStartDay: number }>();
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 const page = usePage();
@@ -101,6 +111,17 @@ const addDays = (d: Date, n: number) => {
     return c;
 };
 const parseYmd = (s: string) => new Date(s + 'T00:00:00');
+// The accounting period holding d: opens on the configured day, closes the day before a month later.
+const accountingPeriodFor = (d: Date): [Date, Date] => {
+    const day = props.accountingStartDay || 21;
+    const offset = d.getDate() >= day ? 0 : -1;
+    const start = new Date(d.getFullYear(), d.getMonth() + offset, day);
+
+    return [
+        start,
+        new Date(start.getFullYear(), start.getMonth() + 1, day - 1),
+    ];
+};
 const today = ymd(new Date());
 const nowDatetimeLocal = () => {
     const d = new Date();
@@ -179,7 +200,7 @@ interface PeriodRow {
     is_current: boolean;
 }
 const periodHistory = ref<{
-    granularity: 'day' | 'week' | 'month' | 'period';
+    granularity: 'day' | 'week' | 'month' | 'period' | 'accounting';
     period_days: number;
     rows: PeriodRow[];
 } | null>(null);
@@ -195,6 +216,7 @@ const historyTitle = computed(() => {
         week: 'Week by week',
         month: 'Month by month',
         period: `${h.period_days}-day periods`,
+        accounting: 'Accounting periods',
     }[h.granularity];
 });
 const periodRowLabel = (row: PeriodRow) => {
@@ -219,6 +241,10 @@ const periodRowLabel = (row: PeriodRow) => {
             month: 'short',
             day: 'numeric',
         });
+    }
+
+    if (g === 'accounting') {
+        return `${fmtDay(row.start)} – ${parseYmd(row.end).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`;
     }
 
     return `${fmtDay(row.start)} – ${fmtDay(row.end)}`;
@@ -278,6 +304,12 @@ const fmtDatetime = (s: string) => {
 };
 const fmtDay = (s: string) =>
     parseYmd(s).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+const ordinal = (n: number) => {
+    const suffix = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+
+    return n + (suffix[(v - 20) % 10] || suffix[v] || suffix[0]);
+};
 
 const typeLabel = (t: string) =>
     ({
@@ -307,6 +339,8 @@ const presets: { key: Preset; label: string }[] = [
     { key: 'today', label: 'Today' },
     { key: 'yesterday', label: 'Yesterday' },
     { key: '7d', label: 'Last 7 days' },
+    { key: 'period', label: 'This period' },
+    { key: 'lastPeriod', label: 'Last period' },
     { key: 'month', label: 'This month' },
     { key: 'lastMonth', label: 'Last month' },
     { key: 'custom', label: 'Custom' },
@@ -319,10 +353,13 @@ const setPreset = (key: Preset) => {
     }
 
     const now = new Date();
+    const [periodStart] = accountingPeriodFor(now);
     const ranges: Record<Exclude<Preset, 'custom'>, [Date, Date]> = {
         today: [now, now],
         yesterday: [addDays(now, -1), addDays(now, -1)],
         '7d': [addDays(now, -6), now],
+        period: [periodStart, now],
+        lastPeriod: accountingPeriodFor(addDays(periodStart, -1)),
         month: [new Date(now.getFullYear(), now.getMonth(), 1), now],
         lastMonth: [
             new Date(now.getFullYear(), now.getMonth() - 1, 1),
@@ -366,6 +403,15 @@ const periodLabel = computed(() =>
           })
         : `${fmtDay(ftStartDate.value)} – ${parseYmd(ftEndDate.value).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}`,
 );
+
+const billsPeriod = computed(() =>
+    accountingPeriodFor(parseYmd(ftEndDate.value || today)),
+);
+const billsPeriodLabel = computed(() => {
+    const [s, e] = billsPeriod.value;
+
+    return `${fmtDay(ymd(s))} – ${fmtDay(ymd(e))}`;
+});
 
 // ── Computed ─────────────────────────────────────────────────────────────────────
 const periodIncome = computed(() => {
@@ -712,8 +758,8 @@ const loadFinancial = async (page = 1) => {
             api
                 .get('/api/v1/bills/summary', {
                     params: {
-                        start_date: ftStartDate.value || undefined,
-                        end_date: ftEndDate.value || undefined,
+                        start_date: ymd(billsPeriod.value[0]),
+                        end_date: ymd(billsPeriod.value[1]),
                     },
                 })
                 .catch(() => ({ data: null })),
@@ -752,6 +798,7 @@ const loadPerformance = async () => {
                     start_date: ftStartDate.value,
                     end_date: ftEndDate.value,
                     count: 6,
+                    accounting: 1,
                     include_asset_deductions: includeAssetDeductions.value,
                 },
             }),
@@ -1328,16 +1375,21 @@ onBeforeUnmount(() => {
             <section class="fin-panel fin-bills">
                 <div class="fin-panel-head">
                     <div>
-                        <p class="fin-kicker">PAYABLES</p>
+                        <p class="fin-kicker">PAYABLES · ACCOUNTING PERIOD</p>
                         <h2>Bills due</h2>
                     </div>
                 </div>
+                <p class="fin-bills-range">
+                    <CalendarDays :size="13" aria-hidden="true" />{{
+                        billsPeriodLabel
+                    }}
+                </p>
                 <p class="fin-bills-total">
                     {{ fmt(billsSummary?.total_due ?? 0) }}
                 </p>
                 <dl class="fin-list">
                     <div>
-                        <dt>Bills in this period</dt>
+                        <dt>Bills this accounting period</dt>
                         <dd>{{ billsSummary?.count ?? 0 }}</dd>
                     </div>
                     <div v-if="billsSummary?.overdue">
@@ -1817,8 +1869,13 @@ onBeforeUnmount(() => {
                             <h2>{{ historyTitle }}</h2>
                         </div>
                         <small
-                            >Each closing balance becomes the next opening
-                            balance</small
+                            >Runs {{ ordinal(accountingStartDay) }} →
+                            {{
+                                accountingStartDay === 1
+                                    ? 'month end'
+                                    : ordinal(accountingStartDay - 1)
+                            }}. Each closing balance becomes the next
+                            opening.</small
                         >
                     </div>
                     <div
@@ -1853,7 +1910,9 @@ onBeforeUnmount(() => {
                                                 row.count !== 1 ? 's' : ''
                                             }}{{
                                                 row.is_current
-                                                    ? ' · selected period'
+                                                    ? row.end >= today
+                                                        ? ' · current period, to date'
+                                                        : ' · holds the selected dates'
                                                     : ''
                                             }}</small
                                         >
@@ -3104,6 +3163,16 @@ onBeforeUnmount(() => {
 .fin-bills {
     background: #ebe8d3;
     border-color: #d8d3b4;
+}
+.fin-bills-range {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: -6px 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #68665f;
+    font-variant-numeric: tabular-nums;
 }
 .fin-bills-total {
     margin-bottom: 10px;

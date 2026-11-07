@@ -237,6 +237,68 @@ class FinancialReportsTest extends TestCase
         $this->assertEquals($summary['opening_balance'], $rows[2]['opening']);
     }
 
+    public function test_periods_step_by_accounting_period_from_the_21st_to_the_20th(): void
+    {
+        $this->entry('payment', 100, 'Last day of July period', '2026-08-20 22:00:00');
+        $this->entry('payment', 200, 'First day of August period', '2026-08-21 08:00:00');
+        $this->entry('expense', 50, 'End of August period', '2026-09-20 18:00:00');
+        $this->entry('payment', 75, 'Current period', '2026-09-21 09:00:00');
+
+        $res = $this->actingAs($this->admin)
+            ->getJson('/api/v1/financial-transactions/periods?start_date=2026-09-22&end_date=2026-09-22&count=3&accounting=1')
+            ->assertOk()->json();
+
+        $this->assertSame('accounting', $res['granularity']);
+        $this->assertSame(21, $res['period_start_day']);
+        $rows = $res['rows'];
+        $this->assertSame(['2026-07-21', '2026-08-20'], [$rows[0]['start'], $rows[0]['end']]);
+        $this->assertSame(['2026-08-21', '2026-09-20'], [$rows[1]['start'], $rows[1]['end']]);
+        $this->assertSame(['2026-09-21', '2026-10-20'], [$rows[2]['start'], $rows[2]['end']]);
+        $this->assertEquals(100, $rows[0]['net']);
+        $this->assertEquals(150, $rows[1]['net']);
+        $this->assertEquals(250, $rows[1]['closing']);
+        $this->assertEquals(325, $rows[2]['closing']);
+        $this->assertTrue($rows[2]['is_current']);
+    }
+
+    public function test_accounting_period_start_day_is_configurable(): void
+    {
+        $this->actingAs($this->admin)->get('/settings/accounting')->assertOk();
+        $this->actingAs($this->admin)->post('/settings/accounting', ['period_start_day' => 29])
+            ->assertSessionHasErrors('period_start_day');
+        $this->actingAs($this->admin)->post('/settings/accounting', ['period_start_day' => 1])
+            ->assertSessionHasNoErrors();
+
+        $res = $this->actingAs($this->admin)
+            ->getJson('/api/v1/financial-transactions/periods?start_date=2026-09-22&end_date=2026-09-22&count=2&accounting=1')
+            ->json();
+        $this->assertSame(['2026-08-01', '2026-08-31'], [$res['rows'][0]['start'], $res['rows'][0]['end']]);
+        $this->assertSame(['2026-09-01', '2026-09-30'], [$res['rows'][1]['start'], $res['rows'][1]['end']]);
+    }
+
+    public function test_bills_summary_defaults_to_the_current_accounting_period(): void
+    {
+        \App\Models\Bill::create(['name' => 'Rent', 'amount' => 1000, 'frequency' => 'monthly', 'due_date' => '2026-10-05', 'is_active' => true]);
+        \App\Models\Bill::create(['name' => 'Internet', 'amount' => 50, 'frequency' => 'monthly', 'due_date' => '2026-10-25', 'is_active' => true]);
+
+        $s = $this->actingAs($this->admin)->getJson('/api/v1/bills/summary')->assertOk()->json();
+
+        $this->assertSame(['start' => '2026-09-21', 'end' => '2026-10-20'], $s['period']);
+        $this->assertSame(1, $s['count']);
+        $this->assertEquals(1000, $s['total_due']);
+    }
+
+    public function test_bill_status_only_flags_bills_due_within_seven_days_as_upcoming(): void
+    {
+        $soon = \App\Models\Bill::create(['name' => 'Power', 'amount' => 10, 'frequency' => 'monthly', 'due_date' => '2026-09-27', 'is_active' => true]);
+        $later = \App\Models\Bill::create(['name' => 'Permit', 'amount' => 10, 'frequency' => 'annual', 'due_date' => '2026-11-22', 'is_active' => true]);
+        $late = \App\Models\Bill::create(['name' => 'Rent', 'amount' => 10, 'frequency' => 'monthly', 'due_date' => '2026-09-19', 'is_active' => true]);
+
+        $this->assertSame('upcoming', $soon->status());
+        $this->assertSame('scheduled', $later->status());
+        $this->assertSame('overdue', $late->status());
+    }
+
     public function test_periods_step_by_the_range_length_for_other_ranges(): void
     {
         $this->entry('payment', 100, 'Two weeks ago', '2026-09-10 10:00:00');

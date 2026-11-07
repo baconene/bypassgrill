@@ -73,6 +73,13 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.hris.update')
         ->middleware('role:admin');
 
+    Route::get('settings/accounting', [\App\Http\Controllers\Settings\AccountingSettingsController::class, 'edit'])
+        ->name('settings.accounting')
+        ->middleware('role:admin');
+    Route::post('settings/accounting', [\App\Http\Controllers\Settings\AccountingSettingsController::class, 'update'])
+        ->name('settings.accounting.update')
+        ->middleware('role:admin');
+
     // System (admin only)
     Route::get('settings/system', [SystemController::class, 'index'])
         ->name('settings.system')
