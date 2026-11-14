@@ -37,15 +37,15 @@ class DepositAdjustmentTest extends TestCase
     }
 
     /** A submitted shift whose counted money is $variance away from the books (negative = short). */
-    private function submittedShift(User $cashier, float $variance): DepositControl
+    private function submittedShift(User $cashier, float $variance, float $sales = 1000): DepositControl
     {
         FinancialTransaction::create(['user_id' => $cashier->id, 'payment_tender_id' => $this->cash->id, 'type' => 'payment',
-            'amount' => 1000, 'description' => 'Sales', 'transacted_at' => now()->subHour()]);
+            'amount' => $sales, 'description' => 'Sales', 'transacted_at' => now()->subHour()]);
         $this->actingAs($cashier)->postJson('/api/v1/deposit-controls', ['opening_cash' => 0])->assertCreated();
         $shift = DepositControl::latest('id')->firstOrFail();
         $this->postJson("/api/v1/deposit-controls/{$shift->id}/close")->assertOk();
         $this->postJson("/api/v1/deposit-controls/{$shift->id}/reconcile", [
-            'drawer_cash' => 0, 'shift_gcash' => 0, 'lockbox_total' => 1000 + $variance, 'total_gcash' => 0,
+            'drawer_cash' => 0, 'shift_gcash' => 0, 'lockbox_total' => $sales + $variance, 'total_gcash' => 0,
         ])->assertOk();
         $this->assertEquals($variance, $shift->fresh()->reconciliation['overall_variance']);
 
@@ -56,6 +56,51 @@ class DepositAdjustmentTest extends TestCase
     {
         return (float) FinancialTransaction::where('type', '!=', 'order')->get()
             ->sum(fn ($t) => in_array($t->type, ['payment', 'income_adjustment']) ? $t->amount : -$t->amount);
+    }
+
+    public function test_one_time_seeder_balances_the_1107_shortage_without_approvals_and_only_once(): void
+    {
+        $cashier = $this->user('cashier', 'Cashier Ana');
+        $this->user('admin', 'Admin Ben');
+        $shift = $this->submittedShift($cashier, -1107, 3000);
+        $before = $this->balance();
+
+        $this->seed(\Database\Seeders\Nov14ShiftShortageAdjustmentSeeder::class);
+
+        $adjustment = $shift->adjustments()->sole();
+        $this->assertSame('posted', $adjustment->status);
+        $this->assertEquals(-1107, $adjustment->amount);
+        $this->assertCount(0, $adjustment->approvals, 'No approvals are invented for the waived request.');
+        $this->assertSame('Cash', $adjustment->tender->name);
+        $this->assertSame('expense', $adjustment->transaction->type);
+        $this->assertStringContainsString('no admin approvals were collected', $adjustment->transaction->notes);
+        $this->assertEquals($before - 1107, $this->balance());
+
+        // A second run changes nothing
+        try {
+            $this->seed(\Database\Seeders\Nov14ShiftShortageAdjustmentSeeder::class);
+            $this->fail('Expected the second run to refuse.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Nothing was changed', $e->getMessage());
+        }
+        $this->assertSame(1, DepositAdjustment::count());
+        $this->assertEquals($before - 1107, $this->balance());
+    }
+
+    public function test_one_time_seeder_refuses_a_shift_with_a_different_shortage(): void
+    {
+        $cashier = $this->user('cashier', 'Cashier Ana');
+        $this->user('admin', 'Admin Ben');
+        $this->submittedShift($cashier, -50);
+        $before = $this->balance();
+
+        $this->expectException(\RuntimeException::class);
+        try {
+            $this->seed(\Database\Seeders\Nov14ShiftShortageAdjustmentSeeder::class);
+        } finally {
+            $this->assertSame(0, DepositAdjustment::count());
+            $this->assertEquals($before, $this->balance());
+        }
     }
 
     public function test_a_shortage_needs_the_requesting_admin_plus_two_other_admins_then_the_requester_posts_it(): void
