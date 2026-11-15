@@ -103,6 +103,97 @@ class DepositAdjustmentTest extends TestCase
         }
     }
 
+    private function tenderBalance(PaymentTender $tender): float
+    {
+        return round((float) FinancialTransaction::where('payment_tender_id', $tender->id)->where('type', '!=', 'order')->get()
+            ->sum(fn ($t) => in_array($t->type, ['payment', 'income_adjustment']) ? $t->amount : -$t->amount), 2);
+    }
+
+    private function rebalanceSeeder(int $shiftId): \Database\Seeders\Nov15TenderRebalanceSeeder
+    {
+        return new class($shiftId) extends \Database\Seeders\Nov15TenderRebalanceSeeder
+        {
+            public function __construct(int $shiftId)
+            {
+                $this->shiftId = $shiftId;
+                $this->countedCash = 1200.00;
+                $this->countedGcash = 250.00;
+                $this->transfer = 100.00;
+            }
+        };
+    }
+
+    public function test_tender_rebalance_seeder_matches_the_count_keeps_later_sales_and_records_the_transfer(): void
+    {
+        $cashier = $this->user('cashier', 'Cashier Ana');
+        $admin = $this->user('admin', 'Admin Ben');
+        foreach ([[$this->cash, 1000], [$this->gcash, 500]] as [$tender, $amount]) {
+            FinancialTransaction::create(['user_id' => $cashier->id, 'payment_tender_id' => $tender->id, 'type' => 'payment',
+                'amount' => $amount, 'description' => 'Sales', 'transacted_at' => now()->subHour()]);
+        }
+        $this->actingAs($cashier)->postJson('/api/v1/deposit-controls', ['opening_cash' => 0])->assertCreated();
+        $shift = DepositControl::latest('id')->firstOrFail();
+        $this->postJson("/api/v1/deposit-controls/{$shift->id}/close")->assertOk();
+        $this->postJson("/api/v1/deposit-controls/{$shift->id}/reconcile", [
+            'drawer_cash' => 0, 'shift_gcash' => 0, 'lockbox_total' => 1200, 'total_gcash' => 250,
+        ])->assertOk();
+        $this->assertEquals(-50, $shift->fresh()->reconciliation['overall_variance']);
+
+        // Last night: the ₱50 shortage posted against Cash. This morning: a ₱30 cash sale.
+        $this->travel(5)->minutes();
+        $expense = FinancialTransaction::create(['user_id' => $admin->id, 'payment_tender_id' => $this->cash->id, 'type' => 'expense',
+            'amount' => 50, 'description' => 'Deposit reconciliation', 'transacted_at' => now()]);
+        $shift->adjustments()->create(['requested_by' => $admin->id, 'amount' => -50, 'reason' => 'Short', 'status' => 'posted',
+            'payment_tender_id' => $this->cash->id, 'financial_transaction_id' => $expense->id, 'posted_by' => $admin->id, 'posted_at' => now()]);
+        FinancialTransaction::create(['user_id' => $cashier->id, 'payment_tender_id' => $this->cash->id, 'type' => 'payment',
+            'amount' => 30, 'description' => 'Morning sale', 'transacted_at' => now()]);
+        $this->travel(1)->minutes();
+        $total = $this->balance();
+
+        $this->rebalanceSeeder($shift->id)->run();
+
+        // Cash: 1200 counted + 30 since − 100 transfer; GCash: 250 counted + 100 transfer
+        $this->assertEquals(1130, $this->tenderBalance($this->cash));
+        $this->assertEquals(350, $this->tenderBalance($this->gcash));
+        $this->assertEquals($total, $this->balance(), 'Rebalancing and the transfer move money between tenders only.');
+        $this->assertSame(2, FinancialTransaction::where('description', 'like', 'Transfer %')->count());
+
+        try {
+            $this->rebalanceSeeder($shift->id)->run();
+            $this->fail('Expected the second run to refuse.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('already rebalanced', $e->getMessage());
+        }
+        $this->assertEquals(1130, $this->tenderBalance($this->cash));
+    }
+
+    public function test_tender_rebalance_seeder_refuses_before_the_overall_shortage_is_posted(): void
+    {
+        $cashier = $this->user('cashier', 'Cashier Ana');
+        $this->user('admin', 'Admin Ben');
+        $shift = $this->submittedShift($cashier, -50, 1250);
+        $shift->update(['reconciliation' => [...$shift->reconciliation, 'lockbox_total' => 1200, 'total_gcash' => 0]]);
+        $before = FinancialTransaction::count();
+
+        $seeder = new class($shift->id) extends \Database\Seeders\Nov15TenderRebalanceSeeder
+        {
+            public function __construct(int $shiftId)
+            {
+                $this->shiftId = $shiftId;
+                $this->countedCash = 1200.00;
+                $this->countedGcash = 0.00;
+            }
+        };
+
+        try {
+            $seeder->run();
+            $this->fail('Expected the seeder to refuse.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('no posted overall adjustment', $e->getMessage());
+        }
+        $this->assertSame($before, FinancialTransaction::count());
+    }
+
     public function test_a_shortage_needs_the_requesting_admin_plus_two_other_admins_then_the_requester_posts_it(): void
     {
         $cashier = $this->user('cashier', 'Cashier Ana');
