@@ -7,19 +7,27 @@ defineProps<{ src: string; name: string; poster: DishImage }>();
 
 const viewer = ref<HTMLElement | null>(null);
 const failed = ref(false);
+const initialOrbit = '12deg 66deg auto';
+let scrollProgress = 0;
 
-// Turns the model to match scroll progress (0 → 1): one full turn plus a slight tilt down.
 function spin(progress: number) {
+    scrollProgress = progress;
+    syncOrbit();
+}
+
+function syncOrbit() {
     const el = viewer.value as
-        | (HTMLElement & { cameraOrbit: string; jumpCameraToGoal?: () => void })
+        | (HTMLElement & { cameraOrbit: string; jumpCameraToGoal: () => void })
         | null;
 
-    if (!el) {
+    if (!el?.jumpCameraToGoal) {
         return;
     }
 
-    el.cameraOrbit = `${Math.round(progress * 360)}deg ${72 - progress * 12}deg auto`;
-    el.jumpCameraToGoal?.();
+    el.cameraOrbit = scrollProgress
+        ? `${12 + scrollProgress * 360}deg ${66 - Math.sin(scrollProgress * Math.PI) * 12}deg auto`
+        : initialOrbit;
+    el.jumpCameraToGoal();
 }
 
 defineExpose({ spin });
@@ -40,7 +48,7 @@ onMounted(() => {
         class="dish-model"
         :src="src"
         :alt="`${name}, 3D model`"
-        camera-orbit="0deg 72deg auto"
+        :camera-orbit="initialOrbit"
         field-of-view="28deg"
         environment-image="neutral"
         exposure="1.05"
@@ -51,6 +59,7 @@ onMounted(() => {
         disable-pan
         disable-tap
         loading="eager"
+        @load="syncOrbit"
         @error="failed = true"
     >
         <!-- A native web-component slot, not a Vue slot -->
@@ -63,8 +72,10 @@ onMounted(() => {
 
 <style scoped>
 .dish-model {
+    position: relative;
     display: block;
     width: 100%;
+    height: auto;
     aspect-ratio: 1;
     background: transparent;
     --poster-color: transparent;

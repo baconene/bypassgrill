@@ -201,10 +201,14 @@ const showcase = computed(() =>
     }),
 );
 const hero = computed(() => showcase.value[0]);
-// A real 3D model of the ribs, when one has been dropped into public/images/menu/3d
 const heroModel = computed(() => props.models[hero.value.slug] ?? null);
 const heroModelEl = ref<InstanceType<typeof DishModel> | null>(null);
-const heroPreload = computed(() => hero.value.image.src ?? null);
+const heroPoster = computed<DishImage>(() =>
+    heroModel.value && hero.value.image.kind === 'placeholder'
+        ? { kind: 'cutout', src: '/images/menu/3d/pork-monster-ribs.webp' }
+        : hero.value.image,
+);
+const heroPreload = computed(() => heroPoster.value.src ?? null);
 
 // Fixed values, not random, so the embers sit in the same places on every visit.
 const embers = Array.from({ length: 16 }, (_, i) => ({
@@ -323,6 +327,7 @@ function buildHero(mobile: boolean) {
     // A real 3D model turns itself (camera orbit); a flat plate turns with a 2.5D CSS rotation.
     const model = Boolean(heroModel.value);
     const turn = mobile ? 120 : 150;
+    const orbit = { progress: 0 };
     const tl = gsap.timeline({
         defaults: { ease: 'none' },
         scrollTrigger: {
@@ -334,9 +339,6 @@ function buildHero(mobile: boolean) {
             scrub: mobile ? 0.45 : 0.8,
             anticipatePin: 1,
             invalidateOnRefresh: true,
-            onUpdate: model
-                ? (self) => heroModelEl.value?.spin(self.progress)
-                : undefined,
         },
     });
 
@@ -410,7 +412,18 @@ function buildHero(mobile: boolean) {
         )
         .to('.hero-shadow', { opacity: 0, duration: 0.2 }, 0.85);
 
-    if (!model) {
+    if (model) {
+        tl.fromTo(
+            orbit,
+            { progress: 0 },
+            {
+                progress: 1,
+                duration: 0.85,
+                onUpdate: () => heroModelEl.value?.spin(orbit.progress),
+            },
+            0,
+        );
+    } else {
         // The light stays where it is while the plate turns beneath it, as a real one would
         tl.to(
             '.hero-dish .plate-sheen',
@@ -547,6 +560,8 @@ onMounted(async () => {
             still.value = !motion;
 
             if (!motion) {
+                heroModelEl.value?.spin(0);
+
                 return;
             }
 
@@ -662,7 +677,7 @@ onBeforeUnmount(() => {
                                     ref="heroModelEl"
                                     :src="heroModel"
                                     :name="hero.title"
-                                    :poster="hero.image"
+                                    :poster="heroPoster"
                                 />
                                 <DishVisual
                                     v-else
@@ -2486,6 +2501,14 @@ h2 em {
 }
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
+@media (min-width: 761px) {
+    .has-model .hero-stage {
+        padding-left: 32vw;
+    }
+    .has-model .hero-dish {
+        width: min(64vh, 37vw);
+    }
+}
 @media (max-width: 1100px) {
     .hero-price {
         display: none;
