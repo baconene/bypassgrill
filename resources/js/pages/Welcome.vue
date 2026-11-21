@@ -147,6 +147,7 @@ const dishes = [
     {
         slug: 'pork-monster-ribs',
         title: 'Pork Monster Ribs',
+        cameraAngle: 59,
         match: /monster\s*ribs/i,
         copy: "The one that started it all. A monster-sized rack, grilled and glazed until it's sticky, smoky and impossible to share.",
     },
@@ -161,6 +162,8 @@ const dishes = [
     {
         slug: 'grilled-pork-liempo',
         title: 'Grilled Pork Liempo',
+        cameraAngle: 52,
+        shadowIntensity: 0,
         match: /liempo/i,
         copy: 'Pork belly done right over the fire: crisp edges, juicy centre, made for a mountain of rice.',
     },
@@ -713,6 +716,7 @@ onBeforeUnmount(() => {
                                     :src="heroModel"
                                     :name="hero.title"
                                     :poster="heroPoster"
+                                    :camera-angle="hero.cameraAngle"
                                 />
                                 <DishVisual
                                     v-else
