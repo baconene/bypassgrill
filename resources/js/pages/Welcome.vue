@@ -20,6 +20,7 @@ import {
     ref,
     watch,
 } from 'vue';
+import DishModel from '@/components/welcome/DishModel.vue';
 import DishVisual from '@/components/welcome/DishVisual.vue';
 import type { DishImage } from '@/components/welcome/DishVisual.vue';
 
@@ -45,8 +46,14 @@ const props = withDefaults(
         categories?: Category[];
         canRegister?: boolean;
         cutouts?: Record<string, string>;
+        models?: Record<string, string>;
     }>(),
-    { categories: () => [], canRegister: false, cutouts: () => ({}) },
+    {
+        categories: () => [],
+        canRegister: false,
+        cutouts: () => ({}),
+        models: () => ({}),
+    },
 );
 // The logo uploaded in Settings → Logo; the header shows no icon when none is set.
 const page = usePage<{ logoUrl?: string | null }>();
@@ -194,6 +201,9 @@ const showcase = computed(() =>
     }),
 );
 const hero = computed(() => showcase.value[0]);
+// A real 3D model of the ribs, when one has been dropped into public/images/menu/3d
+const heroModel = computed(() => props.models[hero.value.slug] ?? null);
+const heroModelEl = ref<InstanceType<typeof DishModel> | null>(null);
 const heroPreload = computed(() => hero.value.image.src ?? null);
 
 // Fixed values, not random, so the embers sit in the same places on every visit.
@@ -310,6 +320,9 @@ function buildIntro() {
 // Scenes 02–03: pinned; the ribs spin, tilt and travel aside while the headline
 // lifts away faster than the dish, then "Discover our flavors" hands over.
 function buildHero(mobile: boolean) {
+    // A real 3D model turns itself (camera orbit); a flat plate turns with a 2.5D CSS rotation.
+    const model = Boolean(heroModel.value);
+    const turn = mobile ? 120 : 150;
     const tl = gsap.timeline({
         defaults: { ease: 'none' },
         scrollTrigger: {
@@ -321,15 +334,22 @@ function buildHero(mobile: boolean) {
             scrub: mobile ? 0.45 : 0.8,
             anticipatePin: 1,
             invalidateOnRefresh: true,
+            onUpdate: model
+                ? (self) => heroModelEl.value?.spin(self.progress)
+                : undefined,
         },
     });
 
     tl.to(
         '.hero-dish',
         {
-            rotation: mobile ? 120 : 150,
-            rotationX: mobile ? 12 : 22,
-            rotationY: mobile ? -10 : -24,
+            ...(model
+                ? {}
+                : {
+                      rotation: turn,
+                      rotationX: mobile ? 26 : 22,
+                      rotationY: mobile ? -16 : -24,
+                  }),
             scale: mobile ? 1.06 : 0.74,
             // Phones: the dish settles into the space the headline leaves behind
             x: () => (mobile ? 0 : window.innerWidth * 0.14),
@@ -360,6 +380,17 @@ function buildHero(mobile: boolean) {
             { xPercent: -18, yPercent: -10, opacity: 0.75, duration: 1 },
             0,
         )
+        .to(
+            '.hero-shadow',
+            {
+                x: () => (mobile ? 0 : window.innerWidth * 0.14),
+                y: () => window.innerHeight * (mobile ? 0.14 : 0.04),
+                scale: mobile ? 1.05 : 0.75,
+                opacity: 0.8,
+                duration: 1,
+            },
+            0,
+        )
         .fromTo(
             '.hero-bridge',
             { opacity: 0, y: 60 },
@@ -369,15 +400,28 @@ function buildHero(mobile: boolean) {
         .to(
             '.hero-dish',
             {
-                rotation: '+=40',
-                rotationX: '+=20',
+                ...(model ? {} : { rotation: '+=40', rotationX: '+=20' }),
                 y: () => -window.innerHeight * (mobile ? 0.3 : 0.45),
                 opacity: 0,
                 duration: 0.3,
                 ease: 'power1.in',
             },
             0.85,
+        )
+        .to('.hero-shadow', { opacity: 0, duration: 0.2 }, 0.85);
+
+    if (!model) {
+        // The light stays where it is while the plate turns beneath it, as a real one would
+        tl.to(
+            '.hero-dish .plate-sheen',
+            { rotation: -turn, duration: 1 },
+            0,
+        ).to(
+            '.hero-dish .plate-sheen',
+            { rotation: -turn - 40, duration: 0.3 },
+            0.85,
         );
+    }
 }
 
 // Scene 04: each dish rises from below with a 3D tilt, settles, then rotates up and away
@@ -586,7 +630,11 @@ onBeforeUnmount(() => {
 
         <main>
             <!-- ── Scenes 01–03: hero ───────────────────────────────────── -->
-            <section class="hero" aria-labelledby="hero-title">
+            <section
+                class="hero"
+                :class="{ 'has-model': heroModel }"
+                aria-labelledby="hero-title"
+            >
                 <div class="hero-glow" aria-hidden="true"></div>
                 <div class="smoke smoke-a" aria-hidden="true"></div>
                 <div class="smoke smoke-b" aria-hidden="true"></div>
@@ -605,10 +653,19 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div class="hero-stage">
+                    <div class="hero-shadow" aria-hidden="true"></div>
                     <div class="hero-dish">
                         <div class="hero-dish-float">
                             <div class="hero-dish-intro">
+                                <DishModel
+                                    v-if="heroModel"
+                                    ref="heroModelEl"
+                                    :src="heroModel"
+                                    :name="hero.title"
+                                    :poster="hero.image"
+                                />
                                 <DishVisual
+                                    v-else
                                     :image="hero.image"
                                     :name="hero.title"
                                     eager
@@ -1528,11 +1585,36 @@ h2 em {
     pointer-events: none;
 }
 .hero-dish {
+    grid-area: 1 / 1;
     width: min(64vh, 44vw);
     will-change: transform;
 }
+.hero-dish,
+.hero-dish-float,
+.hero-dish-intro {
+    transform-style: preserve-3d;
+}
 .hero-dish-float {
     animation: float 6s ease-in-out infinite;
+}
+/* 3D models cast their own shadow */
+.has-model .hero-shadow {
+    display: none;
+}
+/* Contact shadow on the "table" under the dish */
+.hero-shadow {
+    grid-area: 1 / 1;
+    width: min(50vh, 34vw);
+    height: 7vh;
+    margin-top: calc(min(64vh, 44vw) + 8vh);
+    border-radius: 50%;
+    background: radial-gradient(
+        closest-side,
+        #000000d9,
+        #00000059 60%,
+        transparent
+    );
+    opacity: 0.9;
 }
 .hero-copy {
     position: absolute;
@@ -2442,27 +2524,40 @@ h2 em {
         background: #0d0c0af5;
         backdrop-filter: none;
     }
+    /* Pinned scenes fill the large viewport (address bar hidden), with a bottom band the
+       bar may cover, so nothing sits under it and no gap opens when it hides. */
+    .grill-site {
+        --bar: 0px;
+        --bar: calc(100lvh - 100svh);
+    }
     .hero,
     .showcase {
         min-height: 0;
+        height: 100vh;
+        height: 100lvh;
     }
     .embers i:nth-child(n + 9) {
         display: none;
     }
     .hero-stage {
         place-items: start center;
-        padding: max(76px, 10vh) 0 0;
+        padding: 92px 0 0;
+    }
+    .hero-shadow {
+        width: min(60vw, 33vh);
+        height: 5vh;
+        margin-top: calc(min(80vw, 44vh) - 2vh);
     }
     /* Sized by height too, so the plate never reaches the headline on short phones */
     .hero-dish {
-        width: min(74vw, 38vh);
+        width: min(80vw, 44vh);
     }
     .hero-glow {
         left: 50%;
         top: 33%;
     }
     .hero-copy {
-        inset: auto 6% max(28px, 4vh);
+        inset: auto 6% calc(max(24px, 3vh) + var(--bar));
         gap: 8px;
     }
     .hero-title {
@@ -2484,26 +2579,30 @@ h2 em {
     }
     .hero-bridge {
         top: auto;
-        bottom: 7vh;
+        bottom: calc(6vh + var(--bar));
         transform: none;
         font-size: min(13vw, 7vh);
     }
 
     /* Image on top, words underneath */
+    /* Image on top, words underneath, centred in the visible screen below the header */
     .showcase {
-        grid-template-columns: 1fr;
-        grid-template-rows: 44% 56%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2vh;
+        padding: 84px 0 calc(16px + var(--bar));
     }
     .showcase-visual {
-        padding-top: 60px;
+        flex: none;
     }
     .dish-track {
-        width: min(64vw, 32vh);
+        width: min(70vw, 36svh);
     }
     .showcase-info {
+        flex: none;
         justify-content: flex-start;
-        padding: 6px 6% 24px;
-        overflow: hidden;
+        padding: 0 6%;
     }
     .info-track {
         margin-top: 10px;
@@ -2658,6 +2757,13 @@ h2 em {
     }
 }
 @media (max-width: 760px) and (max-height: 700px) {
+    .hero-dish {
+        width: min(74vw, 38vh);
+    }
+    .hero-shadow {
+        width: min(56vw, 28vh);
+        margin-top: calc(min(74vw, 38vh) - 2vh);
+    }
     .showcase-info .eyebrow {
         display: none;
     }
@@ -2682,6 +2788,9 @@ h2 em {
 @media (max-width: 760px) and (max-height: 600px) {
     .hero-dish {
         width: 32vh;
+    }
+    .hero-shadow {
+        margin-top: 30vh;
     }
 }
 @media (prefers-reduced-motion: reduce) {

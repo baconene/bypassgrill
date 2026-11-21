@@ -21,6 +21,7 @@ class WelcomePageTest extends TestCase
     protected function tearDown(): void
     {
         File::delete($this->cutout);
+        File::delete(public_path('images/menu/3d/test-dish.glb'));
         parent::tearDown();
     }
 
@@ -34,5 +35,15 @@ class WelcomePageTest extends TestCase
 
         $this->get('/')->assertOk()->assertInertia(fn ($page) => $page
             ->where('cutouts.test-dish', '/images/menu/cutouts/test-dish.webp'));
+    }
+
+    public function test_homepage_lists_3d_models_dropped_into_the_models_folder(): void
+    {
+        $this->get('/')->assertOk()->assertInertia(fn ($page) => $page->missing('models.test-dish'));
+
+        File::put(public_path('images/menu/3d/test-dish.glb'), 'glTF');
+
+        $this->get('/')->assertOk()->assertInertia(fn ($page) => $page
+            ->where('models.test-dish', '/images/menu/3d/test-dish.glb'));
     }
 }

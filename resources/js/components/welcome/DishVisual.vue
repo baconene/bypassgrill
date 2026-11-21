@@ -35,29 +35,41 @@ const kind = computed(() => (failed.value ? 'placeholder' : props.image.kind));
             width="1200"
             height="1200"
         />
-        <div v-else class="plate">
-            <img
-                v-if="kind === 'photo'"
-                :src="image.src"
-                :alt="name"
-                :loading="eager ? 'eager' : 'lazy'"
-                :fetchpriority="eager ? 'high' : 'auto'"
-                decoding="async"
-                @error="failed = true"
-                width="900"
-                height="900"
-            />
-            <div
-                v-else
-                class="plate-empty"
-                role="img"
-                :aria-label="`${name}, photo coming soon`"
-            >
-                <Flame :size="56" aria-hidden="true" />
-                <span aria-hidden="true">{{ name }}</span>
-                <small aria-hidden="true">Photo coming soon</small>
+        <template v-else>
+            <!-- Stacked discs behind the plate give it a real rim thickness when it tilts -->
+            <span
+                v-for="n in 8"
+                :key="n"
+                class="plate-edge"
+                :style="{ transform: `translateZ(${-n * 1.5}px)` }"
+                aria-hidden="true"
+            ></span>
+            <div class="plate">
+                <img
+                    v-if="kind === 'photo'"
+                    :src="image.src"
+                    :alt="name"
+                    :loading="eager ? 'eager' : 'lazy'"
+                    :fetchpriority="eager ? 'high' : 'auto'"
+                    decoding="async"
+                    @error="failed = true"
+                    width="900"
+                    height="900"
+                />
+                <div
+                    v-else
+                    class="plate-empty"
+                    role="img"
+                    :aria-label="`${name}, photo coming soon`"
+                >
+                    <Flame :size="56" aria-hidden="true" />
+                    <span aria-hidden="true">{{ name }}</span>
+                    <small aria-hidden="true">Photo coming soon</small>
+                </div>
+                <!-- Studio light; the scroll animation counter-rotates it so it stays put while the food turns -->
+                <span class="plate-sheen" aria-hidden="true"></span>
             </div>
-        </div>
+        </template>
     </div>
 </template>
 
@@ -66,7 +78,17 @@ const kind = computed(() => (failed.value ? 'placeholder' : props.image.kind));
     position: relative;
     width: 100%;
     aspect-ratio: 1;
-    backface-visibility: hidden;
+    transform-style: preserve-3d;
+}
+.plate-edge {
+    position: absolute;
+    inset: -10px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #2a2620, #0e0d0a 70%);
+    box-shadow: inset 0 0 0 1px #ff8a4c1f;
+}
+.plate-edge:last-of-type {
+    box-shadow: 0 30px 60px -10px #000;
 }
 .dish-cutout img {
     width: 100%;
@@ -100,6 +122,7 @@ const kind = computed(() => (failed.value ? 'placeholder' : props.image.kind));
     inset: 0;
     border-radius: 50%;
     pointer-events: none;
+    z-index: 2;
     box-shadow:
         inset -18px -14px 34px -12px #ff8a4c99,
         inset 14px 16px 34px -16px #ffffff40,
@@ -109,6 +132,17 @@ const kind = computed(() => (failed.value ? 'placeholder' : props.image.kind));
     width: 100%;
     height: 100%;
     object-fit: cover;
+}
+.plate-sheen {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    border-radius: 50%;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse 55% 40% at 30% 16%, #fff3e042, transparent 70%),
+        radial-gradient(ellipse 70% 50% at 70% 92%, #00000073, transparent 70%);
+    will-change: transform;
 }
 .plate-empty {
     position: absolute;

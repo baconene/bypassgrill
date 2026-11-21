@@ -57,6 +57,11 @@ class WelcomeController extends Controller
             ])->mapWithKeys(fn ($path) => [
                 pathinfo($path, PATHINFO_FILENAME) => '/images/menu/cutouts/'.basename($path),
             ]),
+            // 3D models (.glb) for a true 3D spin, keyed the same way (e.g. pork-monster-ribs)
+            'models'           => collect(glob(public_path('images/menu/3d/*.glb')) ?: [])
+                ->mapWithKeys(fn ($path) => [
+                    pathinfo($path, PATHINFO_FILENAME) => '/images/menu/3d/'.basename($path),
+                ]),
         ]);
     }
 }

@@ -22,6 +22,9 @@ export default defineConfig({
         tailwindcss(),
         vue({
             template: {
+                compilerOptions: {
+                    isCustomElement: (tag) => tag === 'model-viewer',
+                },
                 transformAssetUrls: {
                     base: null,
                     includeAbsolute: false,
@@ -32,8 +35,8 @@ export default defineConfig({
         // vendor files. In environments without PHP we skip the plugin so the
         // dev server can start for frontend-only work. In local full-stack
         // setups `vendor/autoload.php` will exist and enable the plugin.
-        (fs.existsSync('vendor/autoload.php')
+        fs.existsSync('vendor/autoload.php')
             ? wayfinder({ formVariants: true })
-            : { name: 'skip-wayfinder' }),
+            : { name: 'skip-wayfinder' },
     ],
 });
