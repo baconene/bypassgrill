@@ -50,6 +50,13 @@ class WelcomeController extends Controller
             'categories'       => $categories,
             'beforeSections'   => $sections->where('position', 'before_products')->values(),
             'afterSections'    => $sections->where('position', 'after_products')->values(),
+            // Transparent dish cutouts for the homepage showcase, keyed by file name (e.g. pork-monster-ribs)
+            'cutouts'          => collect([
+                ...(glob(public_path('images/menu/cutouts/*.webp')) ?: []),
+                ...(glob(public_path('images/menu/cutouts/*.png')) ?: []),
+            ])->mapWithKeys(fn ($path) => [
+                pathinfo($path, PATHINFO_FILENAME) => '/images/menu/cutouts/'.basename($path),
+            ]),
         ]);
     }
 }

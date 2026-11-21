@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, usePage, usePoll } from '@inertiajs/vue3';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
     ArrowDown,
     ArrowUpRight,
@@ -10,7 +12,18 @@ import {
     ShoppingBag,
     X,
 } from 'lucide-vue-next';
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+} from 'vue';
+import DishVisual from '@/components/welcome/DishVisual.vue';
+import type { DishImage } from '@/components/welcome/DishVisual.vue';
+
+gsap.registerPlugin(ScrollTrigger);
 
 interface Product {
     id: number;
@@ -25,9 +38,15 @@ interface Category {
     name: string;
     products: Product[];
 }
+type MenuProduct = Product & { category: string };
+
 const props = withDefaults(
-    defineProps<{ categories?: Category[]; canRegister?: boolean }>(),
-    { categories: () => [], canRegister: false },
+    defineProps<{
+        categories?: Category[];
+        canRegister?: boolean;
+        cutouts?: Record<string, string>;
+    }>(),
+    { categories: () => [], canRegister: false, cutouts: () => ({}) },
 );
 // The logo uploaded in Settings → Logo; the header shows no icon when none is set.
 const page = usePage<{ logoUrl?: string | null }>();
@@ -41,8 +60,12 @@ const availabilityDialog = ref<HTMLDialogElement | null>(null);
 const copied = ref(false);
 const copyError = ref('');
 const paused = ref(false);
-const activeShot = ref(0);
 const root = ref<HTMLElement | null>(null);
+const headerSolid = ref(false);
+const activeDish = ref(0);
+// Reduced motion: no pinning or scroll animation; the showcase becomes a tap-through carousel.
+const still = ref(false);
+
 const menuCategories = computed(() =>
     props.categories.filter(
         (c) => !/\b(accessor(?:y|ies)|drinks?|beverages?)\b/i.test(c.name),
@@ -51,8 +74,10 @@ const menuCategories = computed(() =>
 const products = computed(() =>
     menuCategories.value.flatMap((c) => c.products),
 );
-const signature = computed(() =>
-    products.value.find((p) => /rib/i.test(p.name)),
+const menuProducts = computed<MenuProduct[]>(() =>
+    menuCategories.value.flatMap((c) =>
+        c.products.map((p) => ({ ...p, category: c.name })),
+    ),
 );
 // Keep stock banners and availability in sync with the inventory
 usePoll(10000, { only: ['categories'] });
@@ -107,21 +132,84 @@ watch(orderText, () => {
         availabilityDialog.value?.close();
     }
 });
-const shots = [
+
+// ── Showcase ─────────────────────────────────────────────────────────────
+// Names, prices, photos and stock come from the POS; only the copy below is fixed,
+// and a POS description replaces it when one is set.
+const dishes = [
     {
-        src: '/images/welcome/ribs-plate.jpg',
-        alt: 'Stock photograph of glazed pork ribs on a serving board',
-        label: 'A little char. A lot of appetite.',
+        slug: 'pork-monster-ribs',
+        title: 'Pork Monster Ribs',
+        match: /monster\s*ribs/i,
+        copy: "The one that started it all. A monster-sized rack, grilled and glazed until it's sticky, smoky and impossible to share.",
     },
     {
-        src: '/images/welcome/ribs-grill.jpg',
-        alt: 'Stock photograph of barbecue pork ribs at the grill',
-        label: 'For the love of the grill.',
+        slug: 'chicken-jerk',
+        title: 'Jamaican Chicken Jerk',
+        match: /jerk/i,
+        copy: 'Warm island spice, a little heat and a proper char. The chicken that keeps you coming back.',
+    },
+    {
+        slug: 'grilled-pork-liempo',
+        title: 'Grilled Pork Liempo',
+        match: /liempo/i,
+        copy: 'Pork belly done right over the fire: crisp edges, juicy centre, made for a mountain of rice.',
+    },
+    {
+        slug: 'rustic-chicken-skewers',
+        title: 'Rustic Chicken Skewers',
+        match: /skewer/i,
+        copy: 'Fire-kissed chicken on the stick. Easy to love, and even easier to order two.',
     },
 ];
-let observer: IntersectionObserver | undefined;
+const isMeal = (p: MenuProduct) =>
+    /^m\s*-/i.test(p.name) || /^(food|meals?)$/i.test(p.category);
+const isAlaCarte = (p: MenuProduct) =>
+    /^ac\s*-/i.test(p.name) || /a\s*la\s*cart/i.test(p.category);
+const optionLabel = (p: MenuProduct) =>
+    isAlaCarte(p) ? 'À la carte' : isMeal(p) ? 'Meal' : p.category;
+const showcase = computed(() =>
+    dishes.map((dish) => {
+        const matches = menuProducts.value.filter((p) =>
+            dish.match.test(p.name),
+        );
+        const primary = matches.find(isMeal) ?? matches[0] ?? null;
+        const extra =
+            matches.find((p) => p !== primary && isAlaCarte(p)) ?? null;
+        const photo = primary?.image || extra?.image;
+        const image: DishImage = props.cutouts[dish.slug]
+            ? { kind: 'cutout', src: props.cutouts[dish.slug] }
+            : photo
+              ? { kind: 'photo', src: photo }
+              : { kind: 'placeholder' };
+
+        return {
+            ...dish,
+            primary,
+            extra,
+            image,
+            category: primary?.category ?? 'Signature',
+            description: primary?.description || dish.copy,
+        };
+    }),
+);
+const hero = computed(() => showcase.value[0]);
+const heroPreload = computed(() => hero.value.image.src ?? null);
+
+// Fixed values, not random, so the embers sit in the same places on every visit.
+const embers = Array.from({ length: 16 }, (_, i) => ({
+    left: `${(i * 53 + 7) % 100}%`,
+    delay: `${((i * 0.7) % 6).toFixed(1)}s`,
+    duration: `${(7 + ((i * 1.3) % 5)).toFixed(1)}s`,
+    size: `${2 + ((i * 7) % 4)}px`,
+}));
+
 let copyTimer: ReturnType<typeof setTimeout> | undefined;
 let dialog: HTMLDialogElement | null = null;
+let media: gsap.MatchMedia | undefined;
+let showcaseTrigger: ScrollTrigger | undefined;
+let revealObserver: IntersectionObserver | undefined;
+
 function updateQuantity(id: number, amount: number) {
     quantities.value[id] = Math.min(
         99,
@@ -137,6 +225,16 @@ function closeBag() {
     availabilityDialog.value?.close();
     dialog?.close();
     bagOpen.value = false;
+}
+// "Order now": straight to the order once there is one, otherwise to the full menu.
+function orderNow() {
+    if (itemCount.value) {
+        openBag();
+    } else {
+        document
+            .getElementById('menu')
+            ?.scrollIntoView({ behavior: still.value ? 'auto' : 'smooth' });
+    }
 }
 function finalizeOrder() {
     if (!bag.value.length) {
@@ -168,34 +266,258 @@ async function copyOrder() {
             'Copy is unavailable. Select the order text below and copy it manually.';
     }
 }
-onMounted(() => {
-    dialog = root.value?.querySelector('dialog') ?? null;
+function goToDish(index: number) {
+    if (still.value || !showcaseTrigger) {
+        activeDish.value = index;
 
-    if (
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
-        !('IntersectionObserver' in window)
-    ) {
         return;
     }
 
-    observer = new IntersectionObserver(
+    const { start, end } = showcaseTrigger;
+    window.scrollTo({
+        top: start + (end - start) * ((index + 0.7) / dishes.length),
+        behavior: 'smooth',
+    });
+}
+function onScroll() {
+    headerSolid.value = window.scrollY > window.innerHeight * 0.5;
+}
+
+// ── Scroll choreography ──────────────────────────────────────────────────
+// Scene 01: the reveal, played once on load.
+function buildIntro() {
+    gsap.timeline({ defaults: { ease: 'power3.out' } })
+        .from('.hero-glow', { opacity: 0, scale: 0.6, duration: 1.8 })
+        .from(
+            '.hero-dish-intro',
+            { opacity: 0, scale: 0.72, rotation: -35, y: 70, duration: 1.7 },
+            '<0.15',
+        )
+        .from(
+            '.hero-title .word > span',
+            { yPercent: 110, duration: 1.1, stagger: 0.09 },
+            '-=1.25',
+        )
+        .from(
+            '.hero-kicker, .hero-sub, .hero-actions, .hero-price',
+            { opacity: 0, y: 22, duration: 0.9, stagger: 0.1 },
+            '-=0.7',
+        );
+}
+
+// Scenes 02–03: pinned; the ribs spin, tilt and travel aside while the headline
+// lifts away faster than the dish, then "Discover our flavors" hands over.
+function buildHero(mobile: boolean) {
+    const tl = gsap.timeline({
+        defaults: { ease: 'none' },
+        scrollTrigger: {
+            trigger: '.hero',
+            start: 'top top',
+            end: mobile ? '+=110%' : '+=160%',
+            pin: true,
+            scrub: 0.8,
+            anticipatePin: 1,
+            invalidateOnRefresh: true,
+        },
+    });
+
+    tl.to(
+        '.hero-dish',
+        {
+            rotation: mobile ? 110 : 150,
+            rotationX: mobile ? 14 : 22,
+            rotationY: mobile ? -12 : -24,
+            scale: mobile ? 0.82 : 0.74,
+            x: () => (mobile ? 0 : window.innerWidth * 0.14),
+            y: () =>
+                mobile ? -window.innerHeight * 0.08 : window.innerHeight * 0.04,
+            duration: 1,
+        },
+        0,
+    )
+        .to('.hero-copy', { y: -160, opacity: 0, duration: 0.55 }, 0)
+        .to('.hero-title', { y: -90, duration: 0.55 }, 0)
+        .to(
+            '.hero-glow',
+            {
+                xPercent: mobile ? 0 : 16,
+                scale: 1.25,
+                opacity: 0.75,
+                duration: 1,
+            },
+            0,
+        )
+        .to(
+            '.smoke-a',
+            { xPercent: 22, yPercent: -18, opacity: 0.9, duration: 1 },
+            0,
+        )
+        .to(
+            '.smoke-b',
+            { xPercent: -18, yPercent: -10, opacity: 0.75, duration: 1 },
+            0,
+        )
+        .fromTo(
+            '.hero-bridge',
+            { opacity: 0, y: 60 },
+            { opacity: 1, y: 0, duration: 0.35 },
+            0.55,
+        )
+        .to(
+            '.hero-dish',
+            {
+                rotation: '+=40',
+                rotationX: '+=20',
+                y: () => -window.innerHeight * (mobile ? 0.5 : 0.45),
+                opacity: 0,
+                duration: 0.3,
+                ease: 'power1.in',
+            },
+            0.85,
+        );
+}
+
+// Scene 04: each dish rises from below with a 3D tilt, settles, then rotates up and away
+// as the next arrives. The stage stays pinned; scroll position drives every frame.
+function buildShowcase(mobile: boolean) {
+    const slots = gsap.utils.toArray<HTMLElement>('.dish-slot');
+    const infos = gsap.utils.toArray<HTMLElement>('.dish-info');
+    const n = slots.length;
+    const tilt = mobile ? 0.55 : 1;
+    const below = {
+        yPercent: 120,
+        rotationX: -55 * tilt,
+        rotationY: 28 * tilt,
+        rotation: -14 * tilt,
+        scale: 0.55,
+        autoAlpha: 0,
+    };
+    const above = {
+        yPercent: -120,
+        rotationX: 50 * tilt,
+        rotationY: -20 * tilt,
+        rotation: 12 * tilt,
+        scale: 0.6,
+        autoAlpha: 0,
+    };
+    const centre = {
+        yPercent: 0,
+        rotationX: 0,
+        rotationY: 0,
+        rotation: 0,
+        scale: 1,
+        autoAlpha: 1,
+    };
+
+    gsap.set(slots, below);
+    gsap.set(infos, { autoAlpha: 0, y: 50 });
+
+    const tl = gsap.timeline({
+        defaults: { ease: 'power2.inOut' },
+        scrollTrigger: {
+            trigger: '.showcase',
+            start: 'top top',
+            end: `+=${n * (mobile ? 80 : 95)}%`,
+            pin: true,
+            scrub: 0.9,
+            anticipatePin: 1,
+            invalidateOnRefresh: true,
+            onUpdate: (self) => {
+                activeDish.value = Math.min(
+                    n - 1,
+                    Math.floor(self.progress * n * 0.999),
+                );
+            },
+        },
+    });
+    showcaseTrigger = tl.scrollTrigger;
+
+    slots.forEach((slot, i) => {
+        // Each dish arrives over 0.6 of its segment and holds until the next starts.
+        const at = i === 0 ? 0 : i - 0.1;
+
+        if (i > 0) {
+            tl.to(slots[i - 1], { ...above, duration: 0.6 }, at).to(
+                infos[i - 1],
+                { autoAlpha: 0, y: -40, duration: 0.35 },
+                at,
+            );
+        }
+
+        tl.to(slot, { ...centre, duration: 0.6 }, at)
+            .fromTo(
+                slot.querySelector('.dish-light'),
+                { opacity: 0.2, scale: 0.7 },
+                { opacity: 1, scale: 1, duration: 0.6 },
+                at,
+            )
+            .to(infos[i], { autoAlpha: 1, y: 0, duration: 0.4 }, at + 0.25);
+    });
+    tl.to({}, { duration: 0.4 }, n - 0.4);
+}
+
+function buildReveals() {
+    revealObserver = new IntersectionObserver(
         (entries) => {
             for (const entry of entries) {
                 if (entry.isIntersecting) {
                     entry.target.classList.add('is-visible');
-                    observer?.unobserve(entry.target);
+                    revealObserver?.unobserve(entry.target);
                 }
             }
         },
-        { threshold: 0, rootMargin: '0px 0px -30px 0px' },
+        { rootMargin: '0px 0px -60px 0px' },
     );
     root.value
         ?.querySelectorAll('[data-reveal]')
-        .forEach((el) => observer?.observe(el));
+        .forEach((el) => revealObserver?.observe(el));
     root.value?.classList.add('motion-ready');
+}
+
+onMounted(async () => {
+    dialog = root.value?.querySelector('dialog') ?? null;
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    await nextTick();
+
+    // Mobile address bars resize the viewport while scrolling; refreshing then would jump.
+    ScrollTrigger.config({ ignoreMobileResize: true });
+    media = gsap.matchMedia(root.value ?? undefined);
+    media.add(
+        {
+            motion: '(prefers-reduced-motion: no-preference)',
+            mobile: '(max-width: 760px)',
+        },
+        (context) => {
+            const { motion, mobile } = context.conditions as {
+                motion: boolean;
+                mobile: boolean;
+            };
+
+            still.value = !motion;
+
+            if (!motion) {
+                return;
+            }
+
+            buildIntro();
+            buildHero(mobile);
+            buildShowcase(mobile);
+
+            return () => {
+                showcaseTrigger = undefined;
+            };
+        },
+    );
+
+    if (!still.value && 'IntersectionObserver' in window) {
+        buildReveals();
+    }
 });
 onBeforeUnmount(() => {
-    observer?.disconnect();
+    window.removeEventListener('scroll', onScroll);
+    media?.revert();
+    revealObserver?.disconnect();
     clearTimeout(copyTimer);
     dialog?.close();
 });
@@ -205,352 +527,468 @@ onBeforeUnmount(() => {
     <Head title="Pork Monster Ribs · Bypass Grill">
         <meta
             name="description"
-            content="Big rib cravings? Meet Bypass Grill. Explore our menu, build your order, and connect with us on Facebook for Pork Monster Ribs and more."
+            content="Pork Monster Ribs and more from Bypass Grill. Smoked. Grilled. Unforgettable. Explore the menu, build your order, and send it to us on Facebook."
+        />
+        <link
+            v-if="heroPreload"
+            rel="preload"
+            as="image"
+            :href="heroPreload"
+            fetchpriority="high"
         />
     </Head>
-    <div ref="root" class="grill-site" :class="{ 'motion-paused': paused }">
+    <div
+        ref="root"
+        class="grill-site"
+        :class="{ 'motion-paused': paused, 'is-still': still }"
+    >
         <a href="#menu" class="skip-link">Skip to menu</a>
-        <div class="top-strip">
-            BIG APPETITE? YOU'RE IN THE RIGHT PLACE.
-            <Flame :size="13" aria-hidden="true" />
-        </div>
-        <header class="site-header">
+        <header class="site-header" :class="{ 'is-solid': headerSolid }">
             <a href="#" class="brand" aria-label="Bypass Grill home"
                 ><img
                     v-if="logoUrl"
                     :src="logoUrl"
                     alt=""
                     class="brand-logo"
-                    width="48"
-                    height="48"
+                    width="42"
+                    height="42"
                 /><span
                     >BYPASS<span class="brand-sub"
                         >GRILL / GOOD FOOD. GOOD MOOD.</span
                     ></span
                 ></a
             >
-            <nav aria-label="Main navigation">
-                <a href="#menu">The menu</a><a href="#our-grill">Our grill</a
+            <!-- A div, not <nav>: the global welcome script re-animates every <nav> on each poll -->
+            <div
+                class="site-nav"
+                role="navigation"
+                aria-label="Main navigation"
+            >
+                <a href="#showcase">Flavors</a><a href="#menu">Full menu</a
+                ><a href="#how">How to order</a
                 ><a :href="facebook" target="_blank" rel="noopener noreferrer"
                     >Find us <ArrowUpRight :size="14"
                 /></a>
-            </nav>
+            </div>
             <button class="bag-button" @click="openBag">
-                <ShoppingBag :size="19" /><span>Your order</span
+                <ShoppingBag :size="18" /><span>Your order</span
                 ><b>{{ itemCount }}</b>
             </button>
         </header>
 
         <main>
-            <section class="hero">
-                <div class="hero-copy">
-                    <p class="eyebrow">
-                        <span></span> MEET YOUR NEXT BIG CRAVING
-                    </p>
-                    <h1>
-                        PORK.<br />MONSTER.<br /><span>RIBS.</span
-                        ><span class="headline-spark" aria-hidden="true"
-                            >✳</span
-                        >
-                    </h1>
-                    <p class="hero-description">
-                        Big on flavor. Serious about the grill.<br />Bring your
-                        appetite. We'll bring the ribs.
-                    </p>
-                    <div class="hero-actions">
-                        <a href="#menu" class="button button-orange"
-                            >Explore the menu <ArrowUpRight :size="21" /></a
-                        ><span v-if="signature" class="hero-price"
-                            >{{ peso(signature.price)
-                            }}<small>{{ signature.name }}</small></span
-                        >
-                    </div>
-                    <a href="#our-grill" class="small-scroll"
-                        ><ArrowDown :size="16" /> A taste of Bypass Grill</a
-                    >
+            <!-- ── Scenes 01–03: hero ───────────────────────────────────── -->
+            <section class="hero" aria-labelledby="hero-title">
+                <div class="hero-glow" aria-hidden="true"></div>
+                <div class="smoke smoke-a" aria-hidden="true"></div>
+                <div class="smoke smoke-b" aria-hidden="true"></div>
+                <div class="embers" aria-hidden="true">
+                    <i
+                        v-for="(ember, index) in embers"
+                        :key="index"
+                        :style="{
+                            left: ember.left,
+                            width: ember.size,
+                            height: ember.size,
+                            animationDelay: ember.delay,
+                            animationDuration: ember.duration,
+                        }"
+                    ></i>
                 </div>
-                <div class="hero-visual">
-                    <div class="orbit-text" aria-hidden="true">
-                        GRILL IT. GLAZE IT. CRAVE IT.
-                    </div>
-                    <div class="photo-stack">
-                        <div class="back-card back-one"></div>
-                        <div class="back-card back-two"></div>
-                        <figure
-                            v-for="(shot, index) in shots"
-                            :key="shot.src"
-                            class="food-photo"
-                            :class="{
-                                'is-front': activeShot === index,
-                                'grill-crop': index === 1,
-                            }"
-                            :aria-hidden="activeShot !== index"
-                        >
-                            <div class="photo-window">
-                                <img
-                                    :src="shot.src"
-                                    :alt="shot.alt"
-                                    width="1200"
-                                    height="1400"
-                                    :fetchpriority="
-                                        index === 0 ? 'high' : 'auto'
-                                    "
+
+                <div class="hero-stage">
+                    <div class="hero-dish">
+                        <div class="hero-dish-float">
+                            <div class="hero-dish-intro">
+                                <DishVisual
+                                    :image="hero.image"
+                                    :name="hero.title"
+                                    eager
                                 />
                             </div>
-                            <figcaption>
-                                <span>{{ shot.label }}</span
-                                ><Flame :size="18" />
-                            </figcaption>
-                        </figure>
-                        <div class="rib-stamp" aria-hidden="true">
-                            BIG<br /><strong>RIB</strong><br />ENERGY
                         </div>
                     </div>
-                    <div class="photo-controls">
-                        <div>
+                </div>
+
+                <div class="hero-copy">
+                    <p class="hero-kicker eyebrow">
+                        <Flame :size="14" aria-hidden="true" /> BYPASS GRILL
+                        SIGNATURE
+                    </p>
+                    <h1 id="hero-title" class="hero-title">
+                        <span class="word"><span>PORK</span></span>
+                        <span class="word"><span>MONSTER</span></span>
+                        <span class="word"><span class="hot">RIBS</span></span>
+                    </h1>
+                    <p class="hero-sub">SMOKED. GRILLED. UNFORGETTABLE.</p>
+                    <div class="hero-actions">
+                        <button class="button button-fire" @click="orderNow">
+                            ORDER NOW <ArrowUpRight :size="19" /></button
+                        ><a href="#showcase" class="button button-ghost"
+                            >EXPLORE OUR MENU <ArrowDown :size="17"
+                        /></a>
+                    </div>
+                    <p v-if="hero.primary" class="hero-price">
+                        <span>{{ optionLabel(hero.primary) }}</span
+                        ><b>{{ peso(hero.primary.price) }}</b>
+                    </p>
+                </div>
+
+                <p class="hero-bridge" aria-hidden="true">
+                    DISCOVER<br /><em>our flavors.</em>
+                </p>
+            </section>
+
+            <!-- ── Scene 04: rotating showcase ──────────────────────────── -->
+            <section
+                id="showcase"
+                class="showcase"
+                aria-labelledby="showcase-title"
+            >
+                <div class="showcase-visual">
+                    <div class="showcase-light" aria-hidden="true"></div>
+                    <div class="smoke smoke-c" aria-hidden="true"></div>
+                    <div class="dish-track">
+                        <div
+                            v-for="(dish, index) in showcase"
+                            :key="dish.slug"
+                            class="dish-slot"
+                            :class="{ 'is-active': activeDish === index }"
+                            :aria-hidden="activeDish !== index"
+                        >
+                            <div class="dish-light" aria-hidden="true"></div>
+                            <DishVisual
+                                :image="dish.image"
+                                :name="dish.title"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="showcase-info">
+                    <p id="showcase-title" class="eyebrow">
+                        DISCOVER OUR FLAVORS
+                    </p>
+                    <div class="info-track" aria-live="polite">
+                        <article
+                            v-for="(dish, index) in showcase"
+                            :key="dish.slug"
+                            class="dish-info"
+                            :class="{ 'is-active': activeDish === index }"
+                            :aria-hidden="activeDish !== index"
+                            :inert="activeDish !== index || undefined"
+                        >
+                            <p class="dish-category">
+                                {{ dish.category }}
+                            </p>
+                            <h2>{{ dish.title }}</h2>
+                            <p class="dish-description">
+                                {{ dish.description }}
+                            </p>
+                            <template v-if="dish.primary">
+                                <p
+                                    v-if="
+                                        dish.primary.soldOut ||
+                                        dish.primary.lowStock
+                                    "
+                                    class="dish-stock"
+                                    :class="{ 'is-out': dish.primary.soldOut }"
+                                >
+                                    {{
+                                        dish.primary.soldOut
+                                            ? 'Sold out · ask about availability'
+                                            : 'Low stock · order soon'
+                                    }}
+                                </p>
+                                <div class="dish-actions">
+                                    <button
+                                        class="button button-fire"
+                                        :disabled="
+                                            (quantities[dish.primary.id] ??
+                                                0) >= 99
+                                        "
+                                        @click="
+                                            updateQuantity(dish.primary.id, 1)
+                                        "
+                                    >
+                                        <Plus :size="17" />
+                                        Add
+                                        {{
+                                            optionLabel(
+                                                dish.primary,
+                                            ).toLowerCase()
+                                        }}
+                                        · {{ peso(dish.primary.price) }}
+                                    </button>
+                                    <button
+                                        v-if="dish.extra"
+                                        class="button button-ghost"
+                                        :disabled="
+                                            (quantities[dish.extra.id] ?? 0) >=
+                                            99
+                                        "
+                                        @click="
+                                            updateQuantity(dish.extra.id, 1)
+                                        "
+                                    >
+                                        {{ optionLabel(dish.extra) }} ·
+                                        {{ peso(dish.extra.price) }}
+                                    </button>
+                                </div>
+                                <button
+                                    v-if="
+                                        quantities[dish.primary.id] ||
+                                        (dish.extra &&
+                                            quantities[dish.extra.id])
+                                    "
+                                    class="dish-in-order"
+                                    @click="openBag"
+                                >
+                                    <Check :size="15" />
+                                    {{
+                                        (quantities[dish.primary.id] ?? 0) +
+                                        (dish.extra
+                                            ? (quantities[dish.extra.id] ?? 0)
+                                            : 0)
+                                    }}
+                                    in your order · View order
+                                </button>
+                            </template>
+                            <div v-else class="dish-actions">
+                                <a
+                                    :href="facebook"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="button button-fire"
+                                    >Ask about availability
+                                    <ArrowUpRight :size="17"
+                                /></a>
+                            </div>
+                        </article>
+                    </div>
+                    <ol class="dish-pager" aria-label="Dishes">
+                        <li v-for="(dish, index) in showcase" :key="dish.slug">
                             <button
-                                v-for="(_, index) in shots"
-                                :key="index"
-                                :aria-label="`Show photo ${index + 1}`"
-                                :aria-pressed="activeShot === index"
-                                :class="{ selected: activeShot === index }"
-                                @click="activeShot = index"
+                                :aria-current="
+                                    activeDish === index ? 'true' : undefined
+                                "
+                                :aria-label="`Show ${dish.title}`"
+                                @click="goToDish(index)"
                             >
-                                0{{ index + 1 }}
+                                <span>0{{ index + 1 }}</span>
                             </button>
-                        </div>
-                        <span>Stock photography · serving may vary</span>
-                    </div>
+                        </li>
+                    </ol>
+                    <p class="dish-count" aria-hidden="true">
+                        <b>0{{ activeDish + 1 }}</b> / 0{{ showcase.length }}
+                    </p>
                 </div>
             </section>
 
-            <div class="ticker" aria-hidden="true">
-                <div class="ticker-track">
-                    <span v-for="n in 4" :key="n"
-                        >PORK MONSTER RIBS <span>✳</span> BYPASS GRILL
-                        <span>✳</span> BRING YOUR APPETITE <span>✳</span></span
-                    >
-                </div>
-            </div>
-
-            <section id="menu" class="menu-section section-pad" data-reveal>
-                <div class="section-heading">
-                    <div>
-                        <p class="eyebrow">YOUR CRAVING STARTS HERE</p>
-                        <h2>Pick your<br /><em>grill fix.</em></h2>
+            <!-- ── Full menu ────────────────────────────────────────────── -->
+            <section id="menu" class="menu-section">
+                <div class="section-pad">
+                    <div class="section-heading" data-reveal>
+                        <div>
+                            <p class="eyebrow">THE FULL MENU</p>
+                            <h2>Pick your <em>grill fix.</em></h2>
+                        </div>
+                        <p>
+                            Live from our kitchen: prices and availability
+                            update on their own. Add what you like, then send us
+                            your list.
+                        </p>
                     </div>
-                    <p>
-                        Something for your appetite.<br />Something worth coming
-                        back for.
-                    </p>
-                </div>
-                <div
-                    v-if="products.length"
-                    class="menu-tabs"
-                    aria-label="Menu categories"
-                >
-                    <button
-                        :class="{ active: activeCategory === 'All' }"
-                        :aria-pressed="activeCategory === 'All'"
-                        @click="category = 'All'"
+                    <div
+                        v-if="products.length"
+                        class="menu-tabs"
+                        aria-label="Menu categories"
                     >
-                        All on the grill</button
-                    ><button
-                        v-for="c in menuCategories"
-                        :key="c.name"
-                        :class="{ active: activeCategory === c.name }"
-                        :aria-pressed="activeCategory === c.name"
-                        @click="category = c.name"
+                        <button
+                            :class="{ active: activeCategory === 'All' }"
+                            :aria-pressed="activeCategory === 'All'"
+                            @click="category = 'All'"
+                        >
+                            All on the grill</button
+                        ><button
+                            v-for="c in menuCategories"
+                            :key="c.name"
+                            :class="{ active: activeCategory === c.name }"
+                            :aria-pressed="activeCategory === c.name"
+                            @click="category = c.name"
+                        >
+                            {{ c.name }}
+                        </button>
+                    </div>
+                    <div
+                        v-if="products.length"
+                        class="product-grid"
+                        data-reveal
                     >
-                        {{ c.name }}
-                    </button>
-                </div>
-                <div v-if="products.length" class="product-grid">
-                    <article
-                        v-for="product in visibleProducts"
-                        :key="product.id"
-                        class="product-card"
-                    >
-                        <div class="product-image">
-                            <img
-                                v-if="product.image"
-                                :src="product.image"
-                                :alt="product.name"
-                                loading="lazy"
-                                width="600"
-                                height="450"
-                            /><template v-else-if="/rib/i.test(product.name)"
-                                ><img
-                                    src="/images/welcome/ribs-plate.jpg"
-                                    alt="Illustrative stock photograph of pork ribs"
+                        <article
+                            v-for="(product, index) in visibleProducts"
+                            :key="product.id"
+                            class="product-card"
+                            :style="{ '--i': index % 9 }"
+                        >
+                            <div class="product-image">
+                                <img
+                                    v-if="product.image"
+                                    :src="product.image"
+                                    :alt="product.name"
                                     loading="lazy"
                                     width="600"
                                     height="450"
-                                /><span class="image-note"
-                                    >Illustrative photo</span
-                                ></template
-                            >
-                            <div v-else class="product-placeholder">
-                                <Flame :size="64" /><span
-                                    >FRESH OFF THE GRILL</span
+                                />
+                                <div v-else class="product-placeholder">
+                                    <Flame :size="54" /><span
+                                        >FRESH OFF THE GRILL</span
+                                    >
+                                </div>
+                                <span
+                                    v-if="/rib/i.test(product.name)"
+                                    class="product-tag"
+                                    >MONSTER APPETITE</span
+                                >
+                                <span
+                                    v-if="product.soldOut || product.lowStock"
+                                    class="stock-banner"
+                                    :class="
+                                        product.soldOut
+                                            ? 'sold-out-banner'
+                                            : 'low-stock-banner'
+                                    "
+                                    >{{
+                                        product.soldOut
+                                            ? 'SOLD OUT · ASK AVAILABILITY'
+                                            : 'LOW STOCK · ORDER SOON'
+                                    }}</span
                                 >
                             </div>
-                            <span
-                                v-if="/rib/i.test(product.name)"
-                                class="product-tag"
-                                >MONSTER APPETITE</span
-                            >
-                            <span
-                                v-if="product.soldOut || product.lowStock"
-                                class="stock-banner"
-                                :class="
-                                    product.soldOut
-                                        ? 'sold-out-banner'
-                                        : 'low-stock-banner'
-                                "
-                                >{{
-                                    product.soldOut
-                                        ? 'SOLD OUT · ASK AVAILABILITY'
-                                        : 'LOW STOCK · ORDER SOON'
-                                }}</span
-                            >
-                        </div>
-                        <div class="product-info">
-                            <div class="product-title">
-                                <h3>{{ product.name }}</h3>
-                                <span>{{ peso(product.price) }}</span>
+                            <div class="product-info">
+                                <div class="product-title">
+                                    <h3>{{ product.name }}</h3>
+                                    <span>{{ peso(product.price) }}</span>
+                                </div>
+                                <p>
+                                    {{
+                                        product.description ||
+                                        'Find your next favorite at Bypass Grill.'
+                                    }}
+                                </p>
+                                <div class="product-bottom">
+                                    <span v-if="quantities[product.id]"
+                                        >{{ quantities[product.id] }} in your
+                                        order</span
+                                    ><span v-else class="product-hint"
+                                        >Made for your next craving</span
+                                    ><button
+                                        :aria-label="`Add ${product.name} to your order`"
+                                        :disabled="quantities[product.id] >= 99"
+                                        @click="updateQuantity(product.id, 1)"
+                                    >
+                                        <Plus :size="18" /> Add
+                                    </button>
+                                </div>
                             </div>
-                            <p>
-                                {{
-                                    product.description ||
-                                    'Find your next favorite at Bypass Grill.'
-                                }}
-                            </p>
-                            <div class="product-bottom">
-                                <span v-if="quantities[product.id]"
-                                    >{{ quantities[product.id] }} in your
-                                    order</span
-                                ><span v-else class="product-hint"
-                                    >Made for your next craving</span
-                                ><button
-                                    :aria-label="`Add ${product.name} to your order`"
-                                    :disabled="quantities[product.id] >= 99"
-                                    @click="updateQuantity(product.id, 1)"
-                                >
-                                    <Plus :size="18" /> Add
-                                </button>
-                            </div>
-                        </div>
-                    </article>
-                </div>
-                <div v-else class="signature-feature">
-                    <img
-                        src="/images/welcome/ribs-plate.jpg"
-                        alt="Illustrative pork ribs photograph"
-                        loading="lazy"
-                        width="600"
-                        height="600"
-                    />
-                    <div>
-                        <p class="eyebrow">THE NAME SAYS IT ALL</p>
-                        <h3>Pork Monster Ribs</h3>
+                        </article>
+                    </div>
+                    <div v-else class="menu-empty" data-reveal>
+                        <Flame :size="40" aria-hidden="true" />
+                        <h3>The grill is warming up.</h3>
                         <p>
-                            Your next rib craving starts at Bypass Grill.
-                            Message us for the current menu, prices, and
+                            Message us for today's menu, prices and
                             availability.
                         </p>
                         <a
                             :href="facebook"
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="button button-dark"
-                            >Ask about the menu <ArrowUpRight :size="18" /></a
-                        ><small>Stock photo for illustration.</small>
+                            class="button button-fire"
+                            >Ask about the menu <ArrowUpRight :size="18"
+                        /></a>
                     </div>
-                </div>
-                <p v-if="products.length" class="menu-footnote">
-                    Build an order request, then confirm availability and pickup
-                    or delivery details with us on Facebook.
-                </p>
-            </section>
-
-            <section id="our-grill" class="story section-pad" data-reveal>
-                <div class="story-visual">
-                    <img
-                        src="/images/welcome/ribs-grill.jpg"
-                        alt="Illustrative photograph of glazed pork ribs at a barbecue grill"
-                        loading="lazy"
-                        width="1400"
-                        height="933"
-                    /><span class="story-label"
-                        >A LITTLE CHAR.<br />A LOT OF CHARACTER.</span
-                    ><small>Stock photography</small>
-                </div>
-                <div class="story-copy">
-                    <p class="eyebrow">THIS IS BYPASS GRILL</p>
-                    <h2>Take a break.<br />Make it <em>ribs.</em></h2>
-                    <p>
-                        For the quick lunch that turns into a craving. For the
-                        barkada deciding what to eat. For the days when only a
-                        proper grill fix will do.
+                    <p v-if="products.length" class="menu-footnote">
+                        Build an order request, then confirm availability and
+                        pickup or delivery details with us on Facebook.
                     </p>
-                    <p>
-                        Pull up a chair, bring someone hungry, and make Pork
-                        Monster Ribs part of your next Bypass Grill stop.
-                    </p>
-                    <a
-                        :href="facebook"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="text-link"
-                        >Get to know our grill <ArrowUpRight :size="20"
-                    /></a>
                 </div>
             </section>
 
-            <section class="how-section section-pad" data-reveal>
-                <p class="eyebrow">FROM CRAVING TO CONVERSATION</p>
-                <h2>Let's get your<br /><em>order started.</em></h2>
-                <div class="steps">
-                    <article>
-                        <span>01 /</span>
-                        <h3>Pick your favorites.</h3>
-                        <p>
-                            Browse the menu and add what you're craving to your
-                            order.
-                        </p>
-                    </article>
-                    <article>
-                        <span>02 /</span>
-                        <h3>Send us your list.</h3>
-                        <p>
-                            Copy your order request and send it to our Facebook
-                            page.
-                        </p>
-                    </article>
-                    <article>
-                        <span>03 /</span>
-                        <h3>We'll take it from there.</h3>
-                        <p>
-                            Confirm availability, your total, and pickup or
-                            delivery options with our team.
-                        </p>
-                    </article>
+            <!-- ── How to order ─────────────────────────────────────────── -->
+            <section id="how" class="how-section" aria-labelledby="how-title">
+                <div class="section-pad">
+                    <div data-reveal>
+                        <p class="eyebrow">FROM CRAVING TO CONVERSATION</p>
+                        <h2 id="how-title">
+                            Three steps to <em>your order.</em>
+                        </h2>
+                    </div>
+                    <ol class="steps" data-reveal>
+                        <li style="--i: 0">
+                            <span>01</span>
+                            <h3>Pick your favorites.</h3>
+                            <p>
+                                Browse the menu and add what you're craving to
+                                your order.
+                            </p>
+                        </li>
+                        <li style="--i: 1">
+                            <span>02</span>
+                            <h3>Send us your list.</h3>
+                            <p>
+                                Copy your order request and send it to our
+                                Facebook page.
+                            </p>
+                        </li>
+                        <li style="--i: 2">
+                            <span>03</span>
+                            <h3>We'll take it from there.</h3>
+                            <p>
+                                Confirm availability, your total, and pickup or
+                                delivery options with our team.
+                            </p>
+                        </li>
+                    </ol>
                 </div>
             </section>
-            <section class="contact-banner" data-reveal>
-                <Flame :size="54" aria-hidden="true" />
-                <h2>HUNGRY?<br />WE THOUGHT SO.</h2>
-                <a
-                    :href="facebook"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="button button-dark"
-                    >Let's talk ribs <ArrowUpRight :size="20"
-                /></a>
-                <p>
-                    Visit our Facebook page for updates and ordering inquiries.
-                </p>
+
+            <!-- ── Scene 05: final call ─────────────────────────────────── -->
+            <section class="finale" aria-labelledby="finale-title">
+                <div class="embers" aria-hidden="true">
+                    <i
+                        v-for="(ember, index) in embers"
+                        :key="index"
+                        :style="{
+                            left: ember.left,
+                            width: ember.size,
+                            height: ember.size,
+                            animationDelay: ember.delay,
+                            animationDuration: ember.duration,
+                        }"
+                    ></i>
+                </div>
+                <div class="finale-inner" data-reveal>
+                    <Flame :size="42" aria-hidden="true" class="finale-flame" />
+                    <h2 id="finale-title">
+                        FIRE UP<br /><span class="hot">YOUR CRAVINGS.</span>
+                    </h2>
+                    <div class="finale-actions">
+                        <button class="button button-fire" @click="orderNow">
+                            ORDER NOW <ArrowUpRight :size="19" /></button
+                        ><a
+                            :href="facebook"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="button button-ghost"
+                            >Message us on Facebook <ArrowUpRight :size="18"
+                        /></a>
+                    </div>
+                    <p>
+                        Orders are confirmed with our team on Facebook. Nothing
+                        is charged on this site.
+                    </p>
+                </div>
             </section>
         </main>
         <footer class="site-footer">
@@ -560,7 +998,11 @@ onBeforeUnmount(() => {
             <p>© {{ new Date().getFullYear() }} Bypass Grill</p>
             <div>
                 <button :aria-pressed="paused" @click="paused = !paused">
-                    {{ paused ? 'Resume motion' : 'Pause motion' }}</button
+                    {{
+                        paused
+                            ? 'Resume ambient motion'
+                            : 'Pause ambient motion'
+                    }}</button
                 ><Link v-if="$page.props.auth?.user" href="/dashboard"
                     >Dashboard</Link
                 >
@@ -768,17 +1210,28 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .grill-site {
+    --night: #0d0c0a;
+    --charcoal: #171612;
+    --coal: #201e19;
     --ink: #24231e;
     --cream: #f6f2e9;
+    --muted: #a8a192;
     --orange: #ef5b2a;
-    background: var(--cream);
-    color: var(--ink);
+    --ember: #ff8a4c;
+    --amber: #ffb35c;
+    --rust: #ad3b19;
+    background: var(--night);
+    color: var(--cream);
     font-family: Arial, Helvetica, sans-serif;
-    overflow: hidden;
+    /* clip, not hidden: hidden makes a scroll container and breaks pinning */
+    overflow-x: clip;
+}
+.grill-site [id] {
+    scroll-margin-top: 72px;
 }
 .grill-site :focus-visible {
-    outline: 3px solid #b83e17;
-    outline-offset: 5px;
+    outline: 3px solid var(--amber);
+    outline-offset: 4px;
 }
 .grill-site a,
 .grill-site button {
@@ -787,387 +1240,601 @@ onBeforeUnmount(() => {
 .grill-site button {
     cursor: pointer;
 }
-.top-strip {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 12px;
-    background: var(--ink);
-    color: var(--cream);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    padding: 10px;
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
 }
+.skip-link {
+    position: absolute;
+    top: -100px;
+    left: 15px;
+    z-index: 100;
+    background: #fff;
+    color: var(--ink);
+    padding: 12px;
+}
+.skip-link:focus {
+    top: 10px;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────── */
 .site-header {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 40;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 24px;
-    padding: 26px 6%;
-    border-bottom: 1px solid #24231e20;
+    padding: 20px 5%;
+    transition:
+        background 0.4s,
+        padding 0.4s,
+        box-shadow 0.4s;
+}
+.site-header.is-solid {
+    background: #0d0c0ae6;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    box-shadow: 0 1px 0 #f6f2e914;
+    backdrop-filter: blur(10px);
 }
 .brand {
     display: flex;
     align-items: center;
-    gap: 10px;
-    font-size: 24px;
-    font-weight: 950;
-    letter-spacing: -1px;
-    text-decoration: none;
+    gap: 12px;
+    font-size: 21px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    line-height: 1;
 }
 .brand-logo {
-    flex-shrink: 0;
-    width: 48px;
-    height: 48px;
-    object-fit: contain;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    object-fit: cover;
 }
 .brand-sub {
     display: block;
-    font-size: 8px;
+    margin-top: 5px;
+    font-size: 7px;
+    font-weight: 700;
     letter-spacing: 1.6px;
-    margin-top: 4px;
+    color: var(--muted);
 }
-.site-header nav {
+.site-nav {
     display: flex;
-    gap: 28px;
+    gap: 30px;
     font-size: 12px;
     font-weight: 700;
+    color: #e8e1d2;
 }
-.site-header nav a {
-    display: flex;
-    gap: 4px;
+.site-nav a {
+    position: relative;
+    display: inline-flex;
     align-items: center;
+    gap: 4px;
+    padding: 6px 0;
+}
+.site-nav a::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0;
+    height: 1px;
+    background: var(--ember);
+    transform: scaleX(0);
+    transform-origin: right;
+    transition: transform 0.35s;
+}
+.site-nav a:hover::after {
+    transform: scaleX(1);
+    transform-origin: left;
 }
 .bag-button {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 9px;
+    border: 1px solid #f6f2e94d;
+    border-radius: 40px;
+    padding: 10px 16px;
+    background: #0d0c0a66;
+    color: var(--cream);
     font-size: 12px;
     font-weight: 700;
 }
 .bag-button b,
 .floating-order b {
-    border-radius: 50%;
-    background: var(--orange);
-    padding: 5px 8px;
-    color: white;
-}
-.hero {
-    max-width: 1480px;
-    margin: auto;
-    padding: 65px 7% 75px;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 7%;
-    align-items: center;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    background: var(--orange);
+    color: #fff;
+    font-size: 11px;
 }
+
+/* ── Shared ─────────────────────────────────────────────────────────── */
 .eyebrow {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 8px;
     font-size: 10px;
-    letter-spacing: 2px;
     font-weight: 800;
+    letter-spacing: 2.6px;
+    color: var(--ember);
 }
-.eyebrow > span {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--orange);
-}
-h1 {
-    position: relative;
-    font-family: Impact, 'Arial Narrow', sans-serif;
-    font-size: clamp(76px, 8.5vw, 136px);
-    line-height: 0.91;
-    font-weight: 900;
-    letter-spacing: -3px;
-    margin: 25px 0;
-}
-h1 > span:not(.headline-spark) {
+.hot {
     color: var(--orange);
-}
-.headline-spark {
-    font-family: Arial, sans-serif;
-    font-size: 80px;
-    color: var(--orange);
-    position: absolute;
-    left: 65%;
-    bottom: 5%;
-    animation: turn 24s linear infinite;
-}
-.hero-description {
-    font-size: 16px;
-    line-height: 1.8;
-    color: #68665f;
-    max-width: 340px;
-}
-.hero-actions {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    margin: 28px 0;
 }
 .button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 18px;
-    padding: 17px 23px;
+    gap: 10px;
+    min-height: 48px;
+    border-radius: 40px;
+    border: 1px solid transparent;
+    padding: 15px 26px;
     font-size: 12px;
-    font-weight: 800;
-    border-radius: 3px;
-    text-decoration: none;
+    font-weight: 900;
+    letter-spacing: 0.6px;
+    white-space: nowrap;
     transition:
-        transform 0.2s,
-        background 0.2s;
+        transform 0.25s,
+        background 0.25s,
+        box-shadow 0.25s;
 }
-.button:hover {
-    transform: translateY(-3px);
+.button:hover:not(:disabled) {
+    transform: translateY(-2px);
 }
+.button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.button-fire {
+    background: linear-gradient(135deg, #ff7a3d, #e2481a);
+    color: #fff;
+    box-shadow: 0 10px 30px -10px #ef5b2acc;
+}
+.button-fire:hover:not(:disabled) {
+    box-shadow: 0 14px 38px -8px #ef5b2aee;
+}
+.button-ghost {
+    border-color: #f6f2e94d;
+    color: var(--cream);
+    background: #f6f2e90a;
+}
+.button-ghost:hover:not(:disabled) {
+    background: #f6f2e91a;
+}
+/* Dialog buttons keep the light theme */
 .button-orange {
     background: var(--orange);
     color: #fff;
-}
-.button-orange:hover {
-    background: #c9451a;
 }
 .button-dark {
     background: var(--ink);
     color: #fff;
 }
-.hero-price {
-    font-size: 25px;
-    font-weight: 800;
+h2 {
+    font-size: clamp(40px, 5.2vw, 76px);
+    font-weight: 900;
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+    margin-top: 16px;
 }
-.hero-price small {
-    display: block;
-    font-size: 9px;
-    max-width: 120px;
-    margin-top: 4px;
+h2 em {
+    font-family: Georgia, serif;
     font-weight: 400;
+    color: var(--ember);
 }
-.small-scroll {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 10px;
-    color: #77746b;
-    margin-top: 40px;
-}
-.hero-visual {
-    position: relative;
-    padding-top: 35px;
-}
-.orbit-text {
+.smoke {
     position: absolute;
-    right: 0;
-    top: 0;
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: 2px;
-    transform: rotate(7deg);
-}
-.photo-stack {
-    height: 490px;
-    position: relative;
-    isolation: isolate;
-}
-.back-card,
-.food-photo {
-    position: absolute;
-    inset: 15px 8%;
-    border: 1px solid #24231e30;
-    border-radius: 3px;
-}
-.back-one {
-    background: #d3d0aa;
-    transform: rotate(-9deg);
-}
-.back-two {
-    background: var(--orange);
-    transform: rotate(8deg);
-}
-.food-photo {
-    background: #fff;
-    padding: 11px;
-    transform: rotate(-6deg) translate(-10px, 10px);
-    transition:
-        transform 0.7s,
-        opacity 0.5s;
-    opacity: 0;
+    z-index: 1;
     pointer-events: none;
+    border-radius: 50%;
+    background: radial-gradient(
+        closest-side,
+        #d8cfc01f,
+        #d8cfc00a 55%,
+        transparent
+    );
+    opacity: 0.55;
+    animation: drift 18s ease-in-out infinite alternate;
 }
-.food-photo.is-front {
-    z-index: 2;
-    opacity: 1;
-    transform: rotate(3deg);
-    animation: bob 6s ease-in-out infinite;
-}
-.photo-window {
-    height: calc(100% - 36px);
+.embers {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
     overflow: hidden;
 }
-.food-photo img {
-    height: 100%;
-    width: 100%;
-    object-fit: cover;
+.embers i {
+    position: absolute;
+    bottom: -10px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 10px 2px #ff8a4c99;
+    opacity: 0;
+    animation: ember linear infinite;
 }
-.grill-crop img {
-    transform: scale(1.65);
-    transform-origin: bottom left;
+
+/* ── Hero ───────────────────────────────────────────────────────────── */
+.hero {
+    position: relative;
+    height: 100vh;
+    height: 100svh;
+    min-height: 600px;
+    overflow: hidden;
+    background:
+        radial-gradient(ellipse at 50% 110%, #2a1408 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 40%, #1d1b16 0%, var(--night) 70%);
 }
-.food-photo figcaption {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    height: 36px;
-    font-family: Georgia, serif;
-    font-size: 12px;
-    font-style: italic;
+.hero-glow {
+    position: absolute;
+    z-index: 0;
+    left: calc(50% + 11vw);
+    top: 47%;
+    width: min(95vh, 92vw);
+    aspect-ratio: 1;
+    margin: calc(min(95vh, 92vw) / -2) 0 0 calc(min(95vh, 92vw) / -2);
+    border-radius: 50%;
+    background: radial-gradient(
+        closest-side,
+        #ef5b2a59,
+        #ad3b1926 45%,
+        transparent 72%
+    );
 }
-.rib-stamp {
+.smoke-a {
+    width: 70vw;
+    height: 55vh;
+    left: -15vw;
+    top: 8vh;
+}
+.smoke-b {
+    width: 60vw;
+    height: 50vh;
+    right: -20vw;
+    bottom: 0;
+    animation-duration: 24s;
+    animation-direction: alternate-reverse;
+}
+.hero-stage {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    padding: 0 0 6vh 22vw;
+    perspective: 1400px;
+    pointer-events: none;
+}
+.hero-dish {
+    width: min(64vh, 44vw);
+    will-change: transform;
+}
+.hero-dish-float {
+    animation: float 6s ease-in-out infinite;
+}
+.hero-copy {
     position: absolute;
     z-index: 3;
-    right: -10px;
-    bottom: 10px;
-    width: 105px;
-    height: 105px;
+    inset: auto 5% clamp(40px, 7vh, 80px);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    pointer-events: none;
+}
+.hero-copy > * {
+    pointer-events: auto;
+}
+.hero-title {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 0.22em;
+    max-width: 11ch;
+    font-size: clamp(54px, 8.4vw, 136px);
+    font-weight: 900;
+    line-height: 0.88;
+    letter-spacing: -0.045em;
+    text-shadow: 0 10px 40px #000a;
+}
+.hero-title .word {
+    display: inline-block;
+    overflow: hidden;
+    padding-bottom: 0.06em;
+}
+.hero-title .word > span {
+    display: inline-block;
+}
+.hero-sub {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 4px;
+    color: var(--amber);
+}
+.hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+}
+.hero-price {
+    position: absolute;
+    right: 0;
+    bottom: 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--muted);
+}
+.hero-price b {
+    font-size: 20px;
+    color: var(--cream);
+}
+.hero-bridge {
+    position: absolute;
+    z-index: 3;
+    left: 5%;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: clamp(42px, 6vw, 96px);
+    font-weight: 900;
+    line-height: 0.95;
+    letter-spacing: -0.04em;
+    opacity: 0;
+}
+.hero-bridge em {
+    font-family: Georgia, serif;
+    font-weight: 400;
+    color: var(--ember);
+}
+
+/* ── Showcase ───────────────────────────────────────────────────────── */
+.showcase {
+    position: relative;
+    display: grid;
+    grid-template-columns: 60% 40%;
+    height: 100vh;
+    height: 100svh;
+    min-height: 600px;
+    overflow: hidden;
+    background:
+        radial-gradient(ellipse at 30% 55%, #24140a 0%, transparent 55%),
+        var(--night);
+}
+.showcase-visual {
+    position: relative;
+    display: grid;
+    place-items: center;
+    perspective: 1500px;
+}
+.showcase-light {
+    position: absolute;
+    width: 70%;
+    aspect-ratio: 1;
     border-radius: 50%;
-    background: #e8e6b7;
-    border: 1px dashed var(--ink);
-    box-shadow: 0 0 0 5px #e8e6b7;
-    text-align: center;
-    padding-top: 17px;
-    line-height: 1.15;
-    transform: rotate(12deg);
+    background: radial-gradient(closest-side, #ef5b2a33, transparent 70%);
+}
+.smoke-c {
+    width: 80%;
+    height: 60%;
+    left: 5%;
+    bottom: 0;
+    animation-duration: 22s;
+}
+.dish-track {
+    position: relative;
+    z-index: 2;
+    width: min(64vh, 44vw);
+    aspect-ratio: 1;
+}
+.dish-slot {
+    position: absolute;
+    inset: 0;
+    transform-style: preserve-3d;
+    will-change: transform, opacity;
+}
+.dish-light {
+    position: absolute;
+    inset: -18%;
+    z-index: -1;
+    border-radius: 50%;
+    background: radial-gradient(
+        closest-side,
+        #ff8a4c66,
+        #ef5b2a1f 50%,
+        transparent 72%
+    );
+}
+.showcase-info {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 90px calc(5% + 76px) 60px 0;
+}
+.info-track {
+    position: relative;
+    display: grid;
+    margin-top: 22px;
+}
+.dish-info {
+    grid-area: 1 / 1;
+}
+.dish-category {
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
 }
-.rib-stamp strong {
-    font-size: 28px;
+.dish-info h2 {
+    font-size: clamp(38px, 3.9vw, 64px);
+    margin: 12px 0 18px;
 }
-.photo-controls {
-    margin-top: 35px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+.dish-description {
+    max-width: 420px;
+    font-size: 15px;
+    line-height: 1.75;
+    color: #d8d1c2;
 }
-.photo-controls > div {
-    display: flex;
-    gap: 8px;
-}
-.photo-controls button {
+.dish-stock {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 5px 9px;
+    border-radius: 3px;
+    background: #f2c230;
+    color: #12110d;
     font-size: 10px;
-    padding: 6px;
-    border-bottom: 1px solid transparent;
-}
-.photo-controls button.selected {
-    border-color: var(--orange);
-    color: #ba3b15;
-}
-.photo-controls > span {
-    font-size: 8px;
-    color: #77746b;
-}
-.ticker {
-    background: var(--orange);
-    overflow: hidden;
-    padding: 21px 0;
-    color: var(--ink);
-    transform: rotate(-1deg);
-    width: 102%;
-    margin-left: -1%;
-}
-.ticker-track {
-    display: flex;
-    width: max-content;
-    animation: ticker 35s linear infinite;
-}
-.ticker-track > span {
     font-weight: 900;
-    font-size: 20px;
-    letter-spacing: -0.5px;
-    white-space: nowrap;
+    letter-spacing: 1px;
+    text-transform: uppercase;
 }
-.ticker-track span span {
-    margin: 0 26px;
-    font-size: 25px;
+.dish-stock.is-out {
+    background: #c3441c;
+    color: #fff;
+}
+.dish-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 26px;
+}
+.dish-in-order {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 14px;
+    border: 0;
+    background: none;
+    color: var(--amber);
+    font-size: 12px;
+    font-weight: 800;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+.dish-pager {
+    position: absolute;
+    right: 5%;
+    top: 50%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transform: translateY(-50%);
+}
+.dish-pager button {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid #f6f2e933;
+    background: none;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 900;
+    transition:
+        background 0.3s,
+        color 0.3s,
+        border-color 0.3s;
+}
+.dish-pager button[aria-current='true'] {
+    background: var(--orange);
+    border-color: var(--orange);
+    color: #fff;
+}
+.dish-count {
+    margin-top: 34px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    color: var(--muted);
+}
+.dish-count b {
+    font-size: 22px;
+    color: var(--cream);
+}
+
+/* ── Full menu (dark) ───────────────────────────────────────────────── */
+.menu-section {
+    position: relative;
+    background: var(--charcoal);
 }
 .section-pad {
-    padding: 90px 7%;
     max-width: 1480px;
     margin: auto;
+    padding: 110px 6%;
 }
 .section-heading {
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
     gap: 24px;
-    margin-bottom: 35px;
-}
-h2 {
-    font-size: clamp(40px, 5vw, 68px);
-    font-weight: 850;
-    line-height: 1.04;
-    letter-spacing: -3px;
-    margin-top: 15px;
-}
-h2 em {
-    font-family: Georgia, serif;
-    font-weight: 400;
-    color: #ad3b19;
+    margin-bottom: 36px;
 }
 .section-heading > p {
+    max-width: 340px;
     font-size: 13px;
     line-height: 1.8;
-    color: #77746b;
+    color: var(--muted);
 }
 .menu-tabs {
     display: flex;
     gap: 10px;
     overflow-x: auto;
-    margin-bottom: 32px;
+    margin-bottom: 30px;
     padding: 5px 3px;
 }
 .menu-tabs button {
     white-space: nowrap;
-    border: 1px solid #24231e28;
+    border: 1px solid #f6f2e929;
     border-radius: 30px;
     padding: 11px 20px;
+    background: none;
+    color: #e8e1d2;
     font-size: 11px;
     font-weight: 700;
 }
 .menu-tabs button.active {
-    background: var(--ink);
-    color: white;
+    background: var(--cream);
+    border-color: var(--cream);
+    color: var(--ink);
 }
 .product-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 23px;
+    gap: 20px;
 }
 .product-card {
-    border: 1px solid #24231e25;
-    border-radius: 5px;
     overflow: hidden;
-    background: #fbf9f4;
+    border-radius: 8px;
+    background: var(--coal);
+    box-shadow: inset 0 0 0 1px #f6f2e912;
     transition:
-        box-shadow 0.25s,
-        transform 0.25s;
+        transform 0.3s,
+        box-shadow 0.3s;
 }
 .product-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 12px 30px #24231e12;
+    box-shadow:
+        inset 0 0 0 1px #ff8a4c40,
+        0 20px 40px -20px #000;
 }
 .product-image {
-    aspect-ratio: 1.3;
     position: relative;
+    aspect-ratio: 1.3;
     overflow: hidden;
-    background: #e5dece;
+    background: radial-gradient(circle at 50% 40%, #2c2822, #15130f);
 }
 .product-image img {
     width: 100%;
@@ -1182,20 +1849,40 @@ h2 em {
     position: absolute;
     top: 13px;
     left: 13px;
-    background: #e7e5bc;
-    font-size: 8px;
-    font-weight: 800;
     padding: 6px 8px;
-    letter-spacing: 0.6px;
-}
-.image-note {
-    position: absolute;
-    bottom: 7px;
-    right: 8px;
-    background: #0009;
+    border-radius: 3px;
+    background: var(--orange);
     color: #fff;
-    padding: 3px 5px;
     font-size: 8px;
+    font-weight: 900;
+    letter-spacing: 0.8px;
+}
+.stock-banner {
+    position: absolute;
+    inset: auto 0 0;
+    padding: 9px;
+    background: #f2c230;
+    color: #12110d;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 2px;
+}
+.sold-out-banner {
+    background: #c3441c;
+    color: #fff;
+}
+.product-placeholder {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: var(--ember);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 2px;
 }
 .product-info {
     padding: 22px;
@@ -1212,218 +1899,170 @@ h2 em {
     line-height: 1.2;
 }
 .product-title > span {
-    font-size: 14px;
+    font-size: 15px;
+    font-weight: 900;
     white-space: nowrap;
-    font-weight: 800;
-    color: #ae3916;
+    color: var(--amber);
 }
 .product-info > p {
+    min-height: 42px;
+    margin: 14px 0;
     font-size: 12px;
     line-height: 1.7;
-    color: #77746b;
-    margin: 14px 0;
-    min-height: 42px;
+    color: var(--muted);
 }
 .product-bottom {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    font-size: 9px;
-}
-.product-bottom > span {
-    color: #77746b;
+    font-size: 10px;
+    color: var(--muted);
 }
 .product-bottom button {
     display: flex;
     align-items: center;
     gap: 5px;
-    border: 1px solid #24231e30;
-    padding: 8px 12px;
+    border: 0;
+    border-radius: 30px;
+    padding: 9px 14px;
+    background: var(--orange);
+    color: #fff;
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 800;
 }
 .product-bottom button:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
-    opacity: 0.55;
 }
-.stock-banner {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: #f2c230;
-    color: var(--ink);
-    text-align: center;
+.menu-footnote {
+    margin-top: 24px;
     font-size: 11px;
-    font-weight: 900;
-    letter-spacing: 2px;
-    padding: 9px;
+    color: var(--muted);
 }
-.sold-out-banner {
-    background: #c3441c;
-    color: #fff;
-}
-.product-placeholder {
-    height: 100%;
+.menu-empty {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 16px;
-    color: #b14725;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 2px;
+    gap: 14px;
+    padding: 60px 20px;
+    border-radius: 10px;
+    background: var(--coal);
+    text-align: center;
+    color: var(--ember);
 }
-.menu-footnote {
-    font-size: 11px;
-    color: #77746b;
-    margin-top: 25px;
+.menu-empty h3 {
+    font-size: 24px;
+    font-weight: 900;
+    color: var(--cream);
 }
-.signature-feature {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    background: #e9e3d5;
-    border-radius: 4px;
-    overflow: hidden;
+.menu-empty p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 8px;
 }
-.signature-feature > img {
-    width: 100%;
-    height: 360px;
-    object-fit: cover;
-}
-.signature-feature > div {
-    align-self: center;
-    padding: 40px;
-}
-.signature-feature h3 {
-    font-size: 32px;
-    font-weight: 800;
-    margin: 15px 0;
-}
-.signature-feature p:not(.eyebrow) {
-    font-size: 14px;
-    line-height: 1.8;
-    margin-bottom: 22px;
-}
-.signature-feature small {
-    display: block;
-    font-size: 9px;
-    margin-top: 12px;
-}
-.story {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10%;
-    align-items: center;
-    border-top: 1px solid #24231e20;
-}
-.story-visual {
-    height: 480px;
-    overflow: hidden;
-    position: relative;
-    transform: rotate(-3deg);
-    border-radius: 4px;
-    background: #4e2b15;
-}
-.story-visual > img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transform: scale(1.7);
-    transform-origin: bottom left;
-    filter: brightness(0.75);
-}
-.story-label {
-    position: absolute;
-    bottom: 50px;
-    left: 30px;
-    font-size: 32px;
-    font-family: Impact, 'Arial Narrow', sans-serif;
-    line-height: 1.1;
-    color: #fff4d6;
-    transform: rotate(3deg);
-}
-.story-visual small {
-    position: absolute;
-    right: 12px;
-    bottom: 12px;
-    color: white;
-    font-size: 8px;
-}
-.story-copy > p:not(.eyebrow) {
-    color: #77746b;
-    font-size: 14px;
-    line-height: 1.9;
-    margin-top: 23px;
-}
-.text-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 15px;
-    border-bottom: 1px solid var(--ink);
-    padding: 10px 0;
-    font-size: 12px;
-    font-weight: 700;
-    margin-top: 20px;
-}
+
+/* ── How to order ───────────────────────────────────────────────────── */
 .how-section {
-    border-top: 1px solid #24231e20;
+    background: var(--night);
+    border-top: 1px solid #f6f2e90f;
 }
 .steps {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 50px;
-    margin-top: 45px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 44px;
 }
-.steps article {
-    border-top: 1px solid #24231e40;
-    padding-top: 20px;
+.steps li {
+    position: relative;
+    padding: 30px;
+    border-radius: 10px;
+    background: linear-gradient(160deg, #221f1a, #141310);
+    box-shadow: inset 0 0 0 1px #f6f2e912;
 }
-.steps article > span {
-    color: #ad3b19;
-    font-size: 12px;
-    font-weight: 700;
+.steps li::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 10px;
+    background: radial-gradient(circle at 88% 12%, #ef5b2a2e, transparent 55%);
+    pointer-events: none;
+}
+.steps span {
+    font-family: Georgia, serif;
+    font-size: 58px;
+    line-height: 1;
+    color: var(--orange);
 }
 .steps h3 {
-    font-size: 19px;
+    margin: 26px 0 10px;
+    font-size: 20px;
     font-weight: 800;
-    margin: 20px 0 10px;
 }
 .steps p {
-    color: #77746b;
     font-size: 13px;
     line-height: 1.8;
+    color: var(--muted);
 }
-.contact-banner {
-    background: var(--orange);
+
+/* ── Finale ─────────────────────────────────────────────────────────── */
+.finale {
+    position: relative;
+    overflow: hidden;
+    padding: 150px 6% 140px;
     text-align: center;
-    padding: 75px 20px;
-    color: var(--ink);
+    background:
+        radial-gradient(
+            ellipse at 50% 125%,
+            #ef5b2acc 0%,
+            #ad3b1959 32%,
+            transparent 64%
+        ),
+        var(--night);
 }
-.contact-banner > svg {
-    margin: auto;
+.finale::before {
+    content: '';
+    position: absolute;
+    inset: auto -20% -40%;
+    height: 80%;
+    background: radial-gradient(ellipse, #ff8a4c4d, transparent 60%);
+    animation: glow 4s ease-in-out infinite alternate;
 }
-.contact-banner h2 {
-    font-family: Impact, 'Arial Narrow', sans-serif;
-    font-size: clamp(55px, 7vw, 95px);
-    letter-spacing: -1px;
-    line-height: 1;
-    margin: 20px 0 30px;
+.finale-inner {
+    position: relative;
+    z-index: 2;
 }
-.contact-banner p {
-    font-size: 11px;
-    margin-top: 24px;
+.finale-flame {
+    margin: 0 auto;
+    color: var(--ember);
 }
+.finale h2 {
+    margin: 22px 0 36px;
+    font-weight: 900;
+    font-size: clamp(52px, 9vw, 150px);
+    line-height: 0.9;
+    letter-spacing: -0.045em;
+}
+.finale-actions {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.finale p {
+    margin-top: 26px;
+    font-size: 12px;
+    color: #c9c2b3;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────── */
 .site-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 30px;
-    background: var(--ink);
-    color: var(--cream);
     padding: 40px 6% 90px;
+    background: #000;
 }
 .site-footer .brand {
     display: block;
@@ -1431,28 +2070,72 @@ h2 em {
 }
 .site-footer p {
     font-size: 10px;
-    color: #c4bfb1;
+    color: var(--muted);
 }
 .site-footer > div {
     display: flex;
     gap: 24px;
-    font-size: 10px;
+    font-size: 11px;
 }
+.site-footer button {
+    border: 0;
+    background: none;
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+/* ── Scroll reveals ─────────────────────────────────────────────────── */
+.motion-ready [data-reveal] {
+    transition:
+        opacity 0.8s,
+        transform 0.8s cubic-bezier(0.2, 0.7, 0.1, 1);
+}
+.motion-ready [data-reveal]:not(.is-visible) {
+    opacity: 0;
+    transform: translateY(30px);
+}
+.motion-ready .product-grid:not(.is-visible),
+.motion-ready .steps:not(.is-visible) {
+    opacity: 1;
+    transform: none;
+}
+.motion-ready .product-grid:not(.is-visible) .product-card,
+.motion-ready .steps:not(.is-visible) li {
+    opacity: 0;
+}
+.motion-ready .product-grid.is-visible .product-card,
+.motion-ready .steps.is-visible li {
+    animation: card-in 0.8s cubic-bezier(0.2, 0.7, 0.1, 1) both;
+    animation-delay: calc(var(--i) * 70ms);
+}
+
+/* ── Reduced motion: a tap-through showcase, nothing pinned ─────────── */
+.is-still .hero-bridge {
+    display: none;
+}
+.is-still .dish-slot:not(.is-active),
+.is-still .dish-info:not(.is-active) {
+    display: none;
+}
+
+/* ── Order dialogs (light) ──────────────────────────────────────────── */
 .floating-order {
     position: fixed;
-    bottom: 20px;
     right: 25px;
-    z-index: 20;
+    bottom: 20px;
+    z-index: 30;
     display: flex;
     align-items: center;
     gap: 12px;
-    background: var(--ink);
-    color: white;
-    border: 1px solid #ffffff50;
-    border-radius: 5px;
     padding: 14px 20px;
-    box-shadow: 0 6px 30px #0003;
+    border-radius: 40px;
+    border: 1px solid #f6f2e933;
+    background: #171612f2;
+    color: #fff;
+    box-shadow: 0 10px 34px #000a;
     font-size: 12px;
+    font-weight: 700;
 }
 .floating-order > span {
     padding-left: 12px;
@@ -1461,34 +2144,38 @@ h2 em {
 .order-dialog {
     position: fixed;
     inset: 0 0 0 auto;
-    margin: 0;
-    border: 0;
-    padding: 0;
-    max-height: 100dvh;
-    height: 100dvh;
     width: min(100%, 480px);
     max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    border: 0;
     background: var(--cream);
     color: var(--ink);
 }
 .order-dialog::backdrop {
-    background: #15120eb3;
+    background: #0d0c0ac2;
     backdrop-filter: blur(3px);
 }
+.order-dialog .eyebrow,
+.availability-dialog .eyebrow {
+    color: var(--rust);
+}
 .order-panel {
-    padding: 32px;
     display: flex;
     flex-direction: column;
     gap: 18px;
     height: 100%;
+    padding: 32px;
     overflow-y: auto;
 }
 .order-heading {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #24231e20;
     padding-bottom: 24px;
+    border-bottom: 1px solid #24231e20;
 }
 .order-heading h2 {
     font-size: 38px;
@@ -1496,6 +2183,9 @@ h2 em {
 }
 .icon-button {
     padding: 8px;
+    background: none;
+    border: 0;
+    color: inherit;
 }
 .order-line {
     display: flex;
@@ -1511,9 +2201,9 @@ h2 em {
 }
 .order-line > div > span {
     display: block;
-    font-size: 13px;
     margin-top: 5px;
-    color: #ad3b19;
+    font-size: 13px;
+    color: var(--rust);
 }
 .quantity-controls {
     display: flex;
@@ -1521,8 +2211,9 @@ h2 em {
     gap: 12px;
 }
 .quantity-controls button {
-    border: 1px solid #24231e30;
     padding: 7px;
+    border: 1px solid #24231e30;
+    background: none;
 }
 .quantity-controls button:disabled {
     opacity: 0.4;
@@ -1534,8 +2225,8 @@ h2 em {
 .order-total {
     display: flex;
     justify-content: space-between;
-    font-size: 17px;
     margin-top: 10px;
+    font-size: 17px;
 }
 .order-note {
     font-size: 12px;
@@ -1544,31 +2235,31 @@ h2 em {
 }
 .cart-stock-note {
     margin-top: 6px;
-    color: #a73513;
     font-size: 11px;
     line-height: 1.5;
+    color: #a73513;
 }
 .availability-dialog {
-    margin: auto;
-    padding: 0;
     width: min(540px, calc(100% - 24px));
     max-height: calc(100dvh - 24px);
+    margin: auto;
+    padding: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border: 1px solid #ded7cb;
     border-radius: 16px;
     background: var(--cream);
     color: var(--ink);
-    overflow-y: auto;
-    overscroll-behavior: contain;
     box-shadow: 0 24px 80px #0005;
 }
 .availability-dialog::backdrop {
-    background: #15120ec9;
+    background: #0d0c0ad0;
     backdrop-filter: blur(3px);
 }
 .availability-panel {
-    padding: clamp(18px, 4vw, 30px);
     display: grid;
     gap: 20px;
+    padding: clamp(18px, 4vw, 30px);
 }
 .availability-heading {
     display: flex;
@@ -1601,8 +2292,8 @@ h2 em {
     justify-content: space-between;
     gap: 8px;
     padding: 14px;
-    background: #eee7da;
     border-radius: 6px;
+    background: #eee7da;
     font-size: 13px;
 }
 .availability-list span {
@@ -1624,8 +2315,8 @@ h2 em {
     gap: 10px;
 }
 .availability-actions .button {
-    white-space: normal;
     min-height: 48px;
+    white-space: normal;
     text-align: center;
 }
 .order-preview {
@@ -1633,18 +2324,18 @@ h2 em {
 }
 .order-preview textarea {
     width: 100%;
-    border: 1px solid #24231e40;
-    padding: 10px;
     margin-top: 12px;
+    padding: 10px;
+    border: 1px solid #24231e40;
     font-size: 12px;
 }
 .empty-order {
-    text-align: center;
-    margin: auto 0;
     display: flex;
-    align-items: center;
     flex-direction: column;
+    align-items: center;
     gap: 20px;
+    margin: auto 0;
+    text-align: center;
 }
 .empty-order > svg {
     color: var(--orange);
@@ -1657,215 +2348,193 @@ h2 em {
     font-size: 13px;
     color: #77746b;
 }
-.skip-link {
-    position: absolute;
-    top: -100px;
-    left: 15px;
-    background: #fff;
-    padding: 12px;
-    z-index: 100;
-}
-.skip-link:focus {
-    top: 10px;
-}
-.motion-ready [data-reveal] {
-    transition:
-        opacity 0.7s,
-        transform 0.7s;
-}
-.motion-ready [data-reveal]:not(.is-visible) {
-    opacity: 0;
-    transform: translateY(24px);
-}
-.motion-paused * {
+
+/* ── Motion ─────────────────────────────────────────────────────────── */
+.motion-paused *,
+.motion-paused *::before,
+.motion-paused *::after {
     animation-play-state: paused !important;
 }
-.motion-paused [data-reveal] {
-    opacity: 1 !important;
-    transform: none !important;
-}
-@keyframes bob {
-    0%,
-    100% {
-        transform: rotate(3deg) translateY(0);
-    }
+@keyframes float {
     50% {
-        transform: rotate(1deg) translateY(-10px);
+        transform: translateY(-14px);
     }
 }
-@keyframes turn {
+@keyframes drift {
     to {
-        transform: rotate(360deg);
+        transform: translate(6vw, -4vh) scale(1.15);
     }
 }
-@keyframes ticker {
+@keyframes ember {
+    0% {
+        opacity: 0;
+        transform: translate(0, 0);
+    }
+    15% {
+        opacity: 0.9;
+    }
+    100% {
+        opacity: 0;
+        transform: translate(40px, -105vh);
+    }
+}
+@keyframes glow {
     to {
-        transform: translateX(-50%);
+        opacity: 0.55;
+        transform: scale(1.08);
     }
 }
-@media (min-width: 1500px) {
-    .hero {
-        padding-top: 90px;
-        padding-bottom: 100px;
-    }
-    .photo-stack {
-        height: 570px;
+@keyframes card-in {
+    from {
+        opacity: 0;
+        transform: translateY(40px) scale(0.97);
     }
 }
-@media (max-width: 950px) {
-    .site-header nav {
-        gap: 15px;
-    }
-    .hero {
-        gap: 4%;
-        padding: 55px 5%;
-    }
-    .photo-stack {
-        height: 420px;
-    }
-    h1 {
-        font-size: 86px;
-    }
-    .headline-spark {
-        font-size: 60px;
-        left: 75%;
-    }
-    .hero-actions {
-        flex-wrap: wrap;
-        gap: 15px;
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+    .hero-price {
+        display: none;
     }
     .product-grid {
         grid-template-columns: repeat(2, 1fr);
     }
-    .story {
-        gap: 6%;
+}
+@media (max-width: 860px) {
+    .site-nav {
+        display: none;
     }
-    .story-visual {
-        height: 390px;
-    }
-    .rib-stamp {
-        right: -4px;
-        width: 85px;
-        height: 85px;
-        font-size: 8px;
-        padding-top: 13px;
-    }
-    .rib-stamp strong {
-        font-size: 24px;
+    .steps {
+        grid-template-columns: 1fr;
     }
 }
-@media (max-width: 650px) {
-    .top-strip {
-        font-size: 8px;
-        letter-spacing: 1px;
-    }
+@media (max-width: 760px) {
     .site-header {
-        padding: 20px 5%;
+        padding: 14px 5%;
     }
     .brand {
-        font-size: 21px;
+        font-size: 18px;
     }
     .brand-logo {
-        width: 40px;
-        height: 40px;
+        width: 36px;
+        height: 36px;
     }
     .brand-sub {
         font-size: 6px;
     }
-    .site-header nav {
-        display: none;
-    }
     .bag-button > span {
         display: none;
     }
-    .hero {
-        grid-template-columns: 1fr;
-        padding: 42px 7% 35px;
-    }
-    .hero-copy {
-        text-align: left;
-    }
-    h1 {
-        /* Scales with the screen so "MONSTER." fits down to 320px phones. */
-        font-size: clamp(56px, 20vw, 115px);
-        letter-spacing: -2px;
-    }
-    .headline-spark {
-        left: 75%;
-        bottom: 8%;
-        font-size: 65px;
-    }
-    .hero-description {
-        font-size: 14px;
-    }
-    .small-scroll {
+    .embers i:nth-child(n + 9) {
         display: none;
     }
-    .hero-visual {
-        margin-top: 30px;
-        /* Room for the rotated back cards and stamp so the page never crops them. */
-        padding: 0 14px;
+    .hero-stage {
+        place-items: start center;
+        padding: max(84px, 11vh) 0 0;
     }
-    .photo-stack {
-        height: min(440px, 112vw);
-        max-width: 420px;
-        margin: auto;
+    .hero-dish {
+        width: min(78vw, 42vh);
     }
-    .rib-stamp {
-        right: 0;
+    .hero-glow {
+        left: 50%;
+        top: 33%;
     }
-    /* The grill photo is zoomed from its bottom-left corner to hide the price sign
-       on its right. Narrow phone frames need the zoom centred on the ribs instead,
-       or they sit at the top above a band of empty grill. */
-    .grill-crop img,
-    .story-visual > img {
-        object-position: 28% 50%;
-        transform: scale(1.6);
-        transform-origin: 50% 80%;
+    .hero-copy {
+        inset: auto 6% max(28px, 4vh);
+        gap: 8px;
     }
-    .photo-controls {
-        margin-top: 20px;
+    .hero-title {
+        font-size: clamp(46px, 15vw, 84px);
     }
-    .photo-controls > span {
-        text-align: right;
-        line-height: 1.5;
+    .hero-sub {
+        font-size: 11px;
+        letter-spacing: 3px;
     }
-    .orbit-text {
-        /* In the flow above the photos, so it never sits on top of them. */
-        position: relative;
-        margin: 0 4px 18px 0;
-        text-align: right;
-        font-size: 9px;
+    .hero-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        width: 100%;
+        margin-top: 8px;
     }
-    .ticker-track > span {
-        font-size: 16px;
+    .hero-actions .button {
+        padding: 14px 10px;
+        font-size: 11px;
     }
-    .ticker {
-        padding: 15px 0;
+    .hero-bridge {
+        top: auto;
+        bottom: 16vh;
+        transform: none;
     }
+
+    /* Image on top, words underneath */
+    .showcase {
+        grid-template-columns: 1fr;
+        grid-template-rows: 46% 54%;
+    }
+    .showcase-visual {
+        padding-top: 64px;
+    }
+    .dish-track {
+        width: min(68vw, 36vh);
+    }
+    .showcase-info {
+        justify-content: flex-start;
+        padding: 6px 6% 24px;
+        overflow: hidden;
+    }
+    .info-track {
+        margin-top: 10px;
+    }
+    .dish-info h2 {
+        font-size: clamp(30px, 9vw, 44px);
+        margin: 6px 0 10px;
+    }
+    .dish-description {
+        font-size: 13px;
+        line-height: 1.6;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        overflow: hidden;
+    }
+    .dish-actions {
+        margin-top: 16px;
+    }
+    .dish-actions .button {
+        flex: 1 1 auto;
+        padding: 13px 14px;
+    }
+    .dish-pager {
+        position: static;
+        flex-direction: row;
+        gap: 8px;
+        margin-top: 22px;
+        transform: none;
+    }
+    .dish-pager button {
+        width: 40px;
+        height: 40px;
+        font-size: 10px;
+    }
+    .dish-count {
+        display: none;
+    }
+
     .section-pad {
-        padding: 60px 7%;
+        padding: 72px 6%;
     }
     .section-heading {
-        align-items: flex-start;
         flex-direction: column;
-        gap: 15px;
+        align-items: flex-start;
+        gap: 14px;
     }
-    h2 {
-        letter-spacing: -2px;
-    }
-    .section-heading > p {
-        font-size: 12px;
-    }
-    /* Category chips run edge to edge, with a fade that shows they scroll. */
     .menu-tabs {
-        margin: 0 -7vw 24px;
-        padding: 5px 7vw;
-        scroll-padding: 0 7vw;
+        margin: 0 -6vw 24px;
+        padding: 5px 6vw;
+        scroll-padding: 0 6vw;
         mask-image: linear-gradient(90deg, #000 82%, transparent);
     }
-    /* Compact menu rows: photo on the left, details on the right, so several
-       items fit on one screen instead of one tall card each. */
+    /* Compact rows: photo left, details right */
     .product-grid {
         grid-template-columns: 1fr;
         gap: 12px;
@@ -1883,8 +2552,8 @@ h2 em {
         gap: 0;
     }
     .product-placeholder svg {
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
     }
     .product-placeholder span {
         display: none;
@@ -1894,11 +2563,6 @@ h2 em {
         left: 6px;
         padding: 3px 5px;
         font-size: 6.5px;
-    }
-    .image-note {
-        right: 4px;
-        bottom: 4px;
-        font-size: 7px;
     }
     .stock-banner {
         padding: 4px 3px;
@@ -1918,9 +2582,6 @@ h2 em {
     .product-title h3 {
         font-size: 15px;
     }
-    .product-title span {
-        font-size: 14px;
-    }
     .product-info > p {
         display: -webkit-box;
         -webkit-box-orient: vertical;
@@ -1928,7 +2589,6 @@ h2 em {
         overflow: hidden;
         min-height: 0;
         margin: 6px 0 10px;
-        font-size: 12px;
         line-height: 1.5;
     }
     .product-bottom {
@@ -1937,55 +2597,26 @@ h2 em {
     .product-bottom .product-hint {
         visibility: hidden;
     }
-    .product-bottom button {
-        flex-shrink: 0;
-        padding: 7px 11px;
+    .finale {
+        padding: 110px 6% 120px;
     }
-    .signature-feature {
-        grid-template-columns: 1fr;
-    }
-    .signature-feature > img {
-        height: 300px;
-    }
-    .signature-feature > div {
-        padding: 28px;
-    }
-    .story {
-        grid-template-columns: 1fr;
-        gap: 40px;
-    }
-    .story-visual {
-        height: 350px;
-        margin: 0 8px;
-    }
-    .story-copy h2 {
-        font-size: 45px;
-    }
-    .steps {
-        grid-template-columns: 1fr;
-        gap: 25px;
-        margin-top: 30px;
-    }
-    .steps h3 {
-        margin-top: 14px;
+    .finale-actions .button {
+        flex: 1 1 100%;
     }
     .site-footer {
-        align-items: flex-start;
         flex-direction: column;
-        gap: 25px;
+        align-items: flex-start;
+        gap: 22px;
     }
     .floating-order {
         left: 16px;
         right: 16px;
         bottom: 12px;
         justify-content: space-between;
-        padding: 12px;
+        padding: 12px 16px;
     }
     .order-panel {
         padding: 24px;
-    }
-    .hero-price {
-        font-size: 23px;
     }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1996,9 +2627,8 @@ h2 em {
         transition: none !important;
         scroll-behavior: auto !important;
     }
-    .motion-ready [data-reveal] {
-        opacity: 1 !important;
-        transform: none !important;
+    .embers {
+        display: none;
     }
 }
 </style>

@@ -1,11 +1,29 @@
 # Customer welcome page
 
-The public `/` page presents Pork Monster Ribs and the active menu supplied by `WelcomeController`. Category filters, prices, descriptions, and uploaded product images come from the POS catalog. No sample menu prices are embedded in the page. If no products are available, customers see the signature ribs introduction and a Facebook inquiry link.
+The public `/` page is a dark, scroll-driven presentation of Bypass Grill built in `resources/js/pages/Welcome.vue`. Menu data comes from `WelcomeController`: names, prices, descriptions, uploaded product photos and stock status are all live from the POS, and refresh every 10 seconds. No prices are hard-coded.
 
-Customers can add menu items to an order request, adjust quantities, copy the request, and open the business Facebook page to send it. The estimate uses menu prices and does not include unconfigured delivery charges. This flow does not create a POS order, submit a Facebook message, or accept payment. Customers confirm availability and fulfillment with the team. The in-page order resets on refresh.
+## Scenes
 
-The provided Facebook URL is used for contact. Its contents could not be fetched during implementation, so unverified addresses, hours, promotions, nutrition, and prices were not added.
+1. **Reveal** (on load): Pork Monster Ribs fades in against a charcoal background with a warm glow, then the headline "PORK MONSTER RIBS", "SMOKED. GRILLED. UNFORGETTABLE.", and the ORDER NOW / EXPLORE OUR MENU buttons.
+2. **Rotation** (pinned, scroll-linked): the ribs rotate, tilt in 3D, shrink and move aside as you scroll; the headline lifts away faster than the dish; smoke and light drift.
+3. **Hand-over**: "Discover our flavors" appears and the ribs rotate up and out.
+4. **Showcase** (pinned, scroll-linked): Pork Monster Ribs, Jamaican Chicken Jerk, Grilled Pork Liempo and Rustic Chicken Skewers each rise from below with an X/Y/Z tilt, settle in the centre under a stronger light, then rotate up and away as the next arrives. Desktop is a 60/40 split with a 01–04 pager; phones stack the image above the text with a compact pager.
+5. **Full menu**, **how to order**, and the closing "FIRE UP YOUR CRAVINGS." with ORDER NOW.
 
-Two local stock photographs form a selectable animated stack. See `public/images/welcome/CREDITS.md` for their sources. Product photos from the POS take precedence over illustrative imagery. Animations include a floating photo, rotating accent, scrolling banner, hover feedback, and scroll reveals. The footer has a pause control, and the operating system's reduced-motion preference disables movement. The order dialog supports keyboard dismissal and native modal focus handling.
+ORDER NOW opens the existing order request when it has items, and otherwise jumps to the full menu. Showcase buttons add the dish's meal (and à-la-carte option, when the POS has one) to the same order. The order flow itself is unchanged: customers build a request, copy it, and send it on Facebook. Nothing is submitted or charged on the site.
 
-Validation: the two Vue pages passed targeted ESLint and reported no TypeScript diagnostics. A temporary browser preview using the real Vue components with fixture data verified desktop/mobile layout, menu filtering, quantities/totals, clipboard copying, dialog dismissal, photo switching, reduced motion, empty catalog behavior, and snapshot history table/detail/pagination. This does not replace a deployed Laravel integration check; PHP dependencies were unavailable in the checkout. Project-wide TypeScript checks still report pre-existing issues.
+## Dish images
+
+Each showcase dish is matched to POS products by name (`monster ribs`, `jerk`, `liempo`, `skewer`; meals are names starting `M -`, à la carte `AC -`). Its image is chosen in this order:
+
+1. A transparent cutout in `public/images/menu/cutouts/` named `pork-monster-ribs`, `chicken-jerk`, `grilled-pork-liempo` or `rustic-chicken-skewers` (`.webp` or `.png`). The controller lists whatever files are there, so dropping one in is enough. See the README in that folder.
+2. The product photo uploaded in the POS, shown on a round, rim-lit plate so its rotation reads as a spinning plate (2.5D; the photos are flat, not 3D models).
+3. A placeholder plate with the dish name and "Photo coming soon".
+
+The page no longer uses stock photography.
+
+## Motion
+
+Animation uses the bundled `gsap` package with ScrollTrigger (not the CDN copy in `app.blade.php`), inside `gsap.matchMedia`, so animations rebuild when the screen crosses the 760px mobile breakpoint and are reverted on unmount. Scroll position drives every frame (`scrub`), so reverse scrolling plays backwards; there is no snapping or scroll hijacking. With "reduce motion" turned on in the operating system nothing is pinned or animated and the showcase becomes a tap-through carousel. The footer's "Pause ambient motion" stops the embers, smoke drift and float.
+
+The header uses `role="navigation"` on a `div` rather than a `<nav>`: the global welcome script in `app.blade.php` re-runs on every Inertia poll and fades in every `<nav>`, which made a `<nav>` flicker every 10 seconds.
