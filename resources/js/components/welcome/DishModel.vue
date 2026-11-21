@@ -3,7 +3,15 @@ import { onMounted, ref } from 'vue';
 import DishVisual from '@/components/welcome/DishVisual.vue';
 import type { DishImage } from '@/components/welcome/DishVisual.vue';
 
-defineProps<{ src: string; name: string; poster: DishImage }>();
+withDefaults(
+    defineProps<{
+        src: string;
+        name: string;
+        poster: DishImage;
+        eager?: boolean;
+    }>(),
+    { eager: true },
+);
 
 const viewer = ref<HTMLElement | null>(null);
 const failed = ref(false);
@@ -41,7 +49,7 @@ onMounted(() => {
 </script>
 
 <template>
-    <DishVisual v-if="failed" :image="poster" :name="name" eager />
+    <DishVisual v-if="failed" :image="poster" :name="name" :eager="eager" />
     <model-viewer
         v-else
         ref="viewer"
@@ -58,14 +66,14 @@ onMounted(() => {
         disable-zoom
         disable-pan
         disable-tap
-        loading="eager"
+        :loading="eager ? 'eager' : 'lazy'"
         @load="syncOrbit"
         @error="failed = true"
     >
         <!-- A native web-component slot, not a Vue slot -->
         <!-- eslint-disable-next-line vue/no-deprecated-slot-attribute -->
         <div slot="poster" class="dish-model-poster">
-            <DishVisual :image="poster" :name="name" eager />
+            <DishVisual :image="poster" :name="name" :eager="eager" />
         </div>
     </model-viewer>
 </template>

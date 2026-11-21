@@ -203,12 +203,19 @@ const showcase = computed(() =>
 const hero = computed(() => showcase.value[0]);
 const heroModel = computed(() => props.models[hero.value.slug] ?? null);
 const heroModelEl = ref<InstanceType<typeof DishModel> | null>(null);
+const showcaseModelEl = ref<InstanceType<typeof DishModel> | null>(null);
+const ribsModelPoster: DishImage = {
+    kind: 'cutout',
+    src: '/images/menu/3d/pork-monster-ribs.webp',
+};
 const heroPoster = computed<DishImage>(() =>
     heroModel.value && hero.value.image.kind === 'placeholder'
-        ? { kind: 'cutout', src: '/images/menu/3d/pork-monster-ribs.webp' }
+        ? ribsModelPoster
         : hero.value.image,
 );
 const heroPreload = computed(() => heroPoster.value.src ?? null);
+const dishTransitionHalf = 0.24;
+const showcaseHold = 0.5;
 
 // Fixed values, not random, so the embers sit in the same places on every visit.
 const embers = Array.from({ length: 16 }, (_, i) => ({
@@ -290,8 +297,10 @@ function goToDish(index: number) {
     }
 
     const { start, end } = showcaseTrigger;
+    const settledTime = index + dishTransitionHalf;
+    const duration = dishes.length - 1 + showcaseHold;
     window.scrollTo({
-        top: start + (end - start) * ((index + 0.7) / dishes.length),
+        top: start + (end - start) * (settledTime / duration),
         behavior: 'smooth',
     });
 }
@@ -443,6 +452,7 @@ function buildShowcase(mobile: boolean) {
     const slots = gsap.utils.toArray<HTMLElement>('.dish-slot');
     const infos = gsap.utils.toArray<HTMLElement>('.dish-info');
     const n = slots.length;
+    const duration = n - 1 + showcaseHold;
     const tilt = mobile ? 0.55 : 1;
     const below = {
         yPercent: 120,
@@ -471,49 +481,60 @@ function buildShowcase(mobile: boolean) {
 
     gsap.set(slots, below);
     gsap.set(infos, { autoAlpha: 0, y: 50 });
+    gsap.set(slots[0], centre);
+    gsap.set(infos[0], { autoAlpha: 1, y: 0 });
 
     const tl = gsap.timeline({
         defaults: { ease: 'power2.inOut' },
+        onUpdate: () => {
+            // Match the pager and available order buttons to the rendered transition.
+            activeDish.value = Math.floor(tl.time());
+        },
         scrollTrigger: {
             trigger: '.showcase',
             start: 'top top',
-            end: `+=${n * (mobile ? 65 : 95)}%`,
+            end: `+=${duration * (mobile ? 50 : 70)}%`,
             pin: true,
-            scrub: mobile ? 0.45 : 0.9,
+            scrub: mobile ? 0.25 : 0.55,
             anticipatePin: 1,
             invalidateOnRefresh: true,
-            onUpdate: (self) => {
-                activeDish.value = Math.min(
-                    n - 1,
-                    Math.floor(self.progress * n * 0.999),
-                );
-            },
         },
     });
     showcaseTrigger = tl.scrollTrigger;
 
-    slots.forEach((slot, i) => {
-        // Each dish arrives over 0.6 of its segment and holds until the next starts.
-        const at = i === 0 ? 0 : i - 0.1;
+    if (heroModel.value) {
+        const orbit = { progress: 0 };
+        tl.fromTo(
+            orbit,
+            { progress: 0 },
+            {
+                progress: 1,
+                duration: 1 - dishTransitionHalf,
+                ease: 'none',
+                onUpdate: () => showcaseModelEl.value?.spin(orbit.progress),
+            },
+            0,
+        );
+    }
 
-        if (i > 0) {
-            tl.to(slots[i - 1], { ...above, duration: 0.6 }, at).to(
+    slots.slice(1).forEach((slot, index) => {
+        const i = index + 1;
+        const at = i - dishTransitionHalf;
+        const slideDuration = dishTransitionHalf * 2;
+        tl.to(slots[i - 1], { ...above, duration: slideDuration }, at)
+            .to(slot, { ...centre, duration: slideDuration }, at)
+            .to(
                 infos[i - 1],
-                { autoAlpha: 0, y: -40, duration: 0.35 },
-                at,
-            );
-        }
-
-        tl.to(slot, { ...centre, duration: 0.6 }, at)
-            .fromTo(
-                slot.querySelector('.dish-light'),
-                { opacity: 0.2, scale: 0.7 },
-                { opacity: 1, scale: 1, duration: 0.6 },
+                { autoAlpha: 0, y: -40, duration: dishTransitionHalf },
                 at,
             )
-            .to(infos[i], { autoAlpha: 1, y: 0, duration: 0.4 }, at + 0.25);
+            .to(
+                infos[i],
+                { autoAlpha: 1, y: 0, duration: dishTransitionHalf },
+                i,
+            );
     });
-    tl.to({}, { duration: 0.4 }, n - 0.4);
+    tl.to({}, { duration: showcaseHold }, n - 1);
 }
 
 function buildReveals() {
@@ -561,6 +582,7 @@ onMounted(async () => {
 
             if (!motion) {
                 heroModelEl.value?.spin(0);
+                showcaseModelEl.value?.spin(0);
 
                 return;
             }
@@ -737,7 +759,20 @@ onBeforeUnmount(() => {
                             :aria-hidden="activeDish !== index"
                         >
                             <div class="dish-light" aria-hidden="true"></div>
+                            <DishModel
+                                v-if="index === 0 && heroModel"
+                                :ref="
+                                    (model) =>
+                                        (showcaseModelEl =
+                                            model as typeof showcaseModelEl)
+                                "
+                                :src="heroModel"
+                                :name="dish.title"
+                                :poster="ribsModelPoster"
+                                :eager="false"
+                            />
                             <DishVisual
+                                v-else
                                 :image="dish.image"
                                 :name="dish.title"
                             />
