@@ -209,6 +209,8 @@ let dialog: HTMLDialogElement | null = null;
 let media: gsap.MatchMedia | undefined;
 let showcaseTrigger: ScrollTrigger | undefined;
 let revealObserver: IntersectionObserver | undefined;
+let previousPageBackground = '';
+const brokenImages = ref<Record<number, boolean>>({});
 
 function updateQuantity(id: number, amount: number) {
     quantities.value[id] = Math.min(
@@ -313,9 +315,10 @@ function buildHero(mobile: boolean) {
         scrollTrigger: {
             trigger: '.hero',
             start: 'top top',
-            end: mobile ? '+=110%' : '+=160%',
+            end: mobile ? '+=90%' : '+=160%',
             pin: true,
-            scrub: 0.8,
+            // Tighter on phones so a quick flick doesn't leave the dish trailing behind
+            scrub: mobile ? 0.45 : 0.8,
             anticipatePin: 1,
             invalidateOnRefresh: true,
         },
@@ -324,13 +327,13 @@ function buildHero(mobile: boolean) {
     tl.to(
         '.hero-dish',
         {
-            rotation: mobile ? 110 : 150,
-            rotationX: mobile ? 14 : 22,
-            rotationY: mobile ? -12 : -24,
-            scale: mobile ? 0.82 : 0.74,
+            rotation: mobile ? 120 : 150,
+            rotationX: mobile ? 12 : 22,
+            rotationY: mobile ? -10 : -24,
+            scale: mobile ? 1.06 : 0.74,
+            // Phones: the dish settles into the space the headline leaves behind
             x: () => (mobile ? 0 : window.innerWidth * 0.14),
-            y: () =>
-                mobile ? -window.innerHeight * 0.08 : window.innerHeight * 0.04,
+            y: () => window.innerHeight * (mobile ? 0.14 : 0.04),
             duration: 1,
         },
         0,
@@ -368,7 +371,7 @@ function buildHero(mobile: boolean) {
             {
                 rotation: '+=40',
                 rotationX: '+=20',
-                y: () => -window.innerHeight * (mobile ? 0.5 : 0.45),
+                y: () => -window.innerHeight * (mobile ? 0.3 : 0.45),
                 opacity: 0,
                 duration: 0.3,
                 ease: 'power1.in',
@@ -417,9 +420,9 @@ function buildShowcase(mobile: boolean) {
         scrollTrigger: {
             trigger: '.showcase',
             start: 'top top',
-            end: `+=${n * (mobile ? 80 : 95)}%`,
+            end: `+=${n * (mobile ? 65 : 95)}%`,
             pin: true,
-            scrub: 0.9,
+            scrub: mobile ? 0.45 : 0.9,
             anticipatePin: 1,
             invalidateOnRefresh: true,
             onUpdate: (self) => {
@@ -476,6 +479,9 @@ function buildReveals() {
 
 onMounted(async () => {
     dialog = root.value?.querySelector('dialog') ?? null;
+    // The app's <html> is white for light-theme visitors; overscroll would flash it behind this dark page.
+    previousPageBackground = document.documentElement.style.backgroundColor;
+    document.documentElement.style.backgroundColor = '#0d0c0a';
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
     await nextTick();
@@ -515,6 +521,7 @@ onMounted(async () => {
     }
 });
 onBeforeUnmount(() => {
+    document.documentElement.style.backgroundColor = previousPageBackground;
     window.removeEventListener('scroll', onScroll);
     media?.revert();
     revealObserver?.disconnect();
@@ -529,6 +536,7 @@ onBeforeUnmount(() => {
             name="description"
             content="Pork Monster Ribs and more from Bypass Grill. Smoked. Grilled. Unforgettable. Explore the menu, build your order, and send it to us on Facebook."
         />
+        <meta name="theme-color" content="#0d0c0a" />
         <link
             v-if="heroPreload"
             rel="preload"
@@ -833,12 +841,16 @@ onBeforeUnmount(() => {
                         >
                             <div class="product-image">
                                 <img
-                                    v-if="product.image"
+                                    v-if="
+                                        product.image &&
+                                        !brokenImages[product.id]
+                                    "
                                     :src="product.image"
                                     :alt="product.name"
                                     loading="lazy"
                                     width="600"
                                     height="450"
+                                    @error="brokenImages[product.id] = true"
                                 />
                                 <div v-else class="product-placeholder">
                                     <Flame :size="54" /><span
@@ -2425,15 +2437,25 @@ h2 em {
     .bag-button > span {
         display: none;
     }
+    /* Backdrop blur over moving content is a common source of scroll jank on Android */
+    .site-header.is-solid {
+        background: #0d0c0af5;
+        backdrop-filter: none;
+    }
+    .hero,
+    .showcase {
+        min-height: 0;
+    }
     .embers i:nth-child(n + 9) {
         display: none;
     }
     .hero-stage {
         place-items: start center;
-        padding: max(84px, 11vh) 0 0;
+        padding: max(76px, 10vh) 0 0;
     }
+    /* Sized by height too, so the plate never reaches the headline on short phones */
     .hero-dish {
-        width: min(78vw, 42vh);
+        width: min(74vw, 38vh);
     }
     .hero-glow {
         left: 50%;
@@ -2444,7 +2466,7 @@ h2 em {
         gap: 8px;
     }
     .hero-title {
-        font-size: clamp(46px, 15vw, 84px);
+        font-size: min(15vw, 8.2vh, 84px);
     }
     .hero-sub {
         font-size: 11px;
@@ -2462,20 +2484,21 @@ h2 em {
     }
     .hero-bridge {
         top: auto;
-        bottom: 16vh;
+        bottom: 7vh;
         transform: none;
+        font-size: min(13vw, 7vh);
     }
 
     /* Image on top, words underneath */
     .showcase {
         grid-template-columns: 1fr;
-        grid-template-rows: 46% 54%;
+        grid-template-rows: 44% 56%;
     }
     .showcase-visual {
-        padding-top: 64px;
+        padding-top: 60px;
     }
     .dish-track {
-        width: min(68vw, 36vh);
+        width: min(64vw, 32vh);
     }
     .showcase-info {
         justify-content: flex-start;
@@ -2500,20 +2523,35 @@ h2 em {
     .dish-actions {
         margin-top: 16px;
     }
+    /* Both options side by side; labels may wrap inside the button on the narrowest phones */
+    .dish-actions {
+        flex-wrap: nowrap;
+        gap: 8px;
+    }
     .dish-actions .button {
-        flex: 1 1 auto;
-        padding: 13px 14px;
+        flex: 1 1 0;
+        min-width: 0;
+        min-height: 46px;
+        padding: 10px 8px;
+        font-size: 11px;
+        letter-spacing: 0;
+        white-space: normal;
+        text-align: center;
+        line-height: 1.25;
+    }
+    .dish-actions .button svg {
+        display: none;
     }
     .dish-pager {
         position: static;
         flex-direction: row;
         gap: 8px;
-        margin-top: 22px;
+        margin-top: 18px;
         transform: none;
     }
     .dish-pager button {
-        width: 40px;
-        height: 40px;
+        width: 38px;
+        height: 38px;
         font-size: 10px;
     }
     .dish-count {
@@ -2617,6 +2655,33 @@ h2 em {
     }
     .order-panel {
         padding: 24px;
+    }
+}
+@media (max-width: 760px) and (max-height: 700px) {
+    .showcase-info .eyebrow {
+        display: none;
+    }
+    .dish-info h2 {
+        font-size: clamp(26px, 8vw, 36px);
+        margin: 4px 0 8px;
+    }
+    .dish-description {
+        -webkit-line-clamp: 2;
+    }
+    .dish-actions {
+        margin-top: 12px;
+    }
+    .dish-pager {
+        margin-top: 12px;
+    }
+    .dish-pager button {
+        width: 34px;
+        height: 34px;
+    }
+}
+@media (max-width: 760px) and (max-height: 600px) {
+    .hero-dish {
+        width: 32vh;
     }
 }
 @media (prefers-reduced-motion: reduce) {

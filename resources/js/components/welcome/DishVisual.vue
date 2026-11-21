@@ -1,37 +1,49 @@
 <script setup lang="ts">
 import { Flame } from 'lucide-vue-next';
+import { computed, ref, watch } from 'vue';
 
 export interface DishImage {
     kind: 'cutout' | 'photo' | 'placeholder';
     src?: string;
 }
 
-withDefaults(
+const props = withDefaults(
     defineProps<{ image: DishImage; name: string; eager?: boolean }>(),
     { eager: false },
 );
+// A missing file (e.g. a deleted upload) shows the placeholder plate, not broken-image alt text.
+const failed = ref(false);
+watch(
+    () => props.image.src,
+    () => {
+        failed.value = false;
+    },
+);
+const kind = computed(() => (failed.value ? 'placeholder' : props.image.kind));
 </script>
 
 <template>
-    <div class="dish" :class="`dish-${image.kind}`">
+    <div class="dish" :class="`dish-${kind}`">
         <img
-            v-if="image.kind === 'cutout'"
+            v-if="kind === 'cutout'"
             :src="image.src"
             :alt="name"
             :loading="eager ? 'eager' : 'lazy'"
             :fetchpriority="eager ? 'high' : 'auto'"
             decoding="async"
+            @error="failed = true"
             width="1200"
             height="1200"
         />
         <div v-else class="plate">
             <img
-                v-if="image.kind === 'photo'"
+                v-if="kind === 'photo'"
                 :src="image.src"
                 :alt="name"
                 :loading="eager ? 'eager' : 'lazy'"
                 :fetchpriority="eager ? 'high' : 'auto'"
                 decoding="async"
+                @error="failed = true"
                 width="900"
                 height="900"
             />
