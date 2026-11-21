@@ -1,11 +1,15 @@
 # Homepage 3D models
 
-Drop a `.glb` file here and the homepage hero shows it as a real 3D product that spins as visitors
-scroll (no code change, no rebuild). Until a model exists, the hero uses the cutout or POS photo.
+The homepage hero and featured menu load models from this directory. Each model spins as visitors
+scroll through its dish. Put a transparent `.webp` with the same name alongside each `.glb` to use
+as its loading and fallback image. Dishes without a model use their cutout or POS photo.
 
-| Dish                     | File name               |
-| ------------------------ | ----------------------- |
-| Pork Monster Ribs (hero) | `pork-monster-ribs.glb` |
+| Dish                     | File name                    |
+| ------------------------ | ---------------------------- |
+| Pork Monster Ribs (hero) | `pork-monster-ribs.glb`      |
+| Jamaican Chicken Jerk    | `chicken-jerk.glb`           |
+| Grilled Pork Liempo      | `grilled-pork-liempo.glb`    |
+| Rustic Chicken Skewers   | `rustic-chicken-skewers.glb` |
 
 ## Getting a realistic model
 

@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import DishVisual from '@/components/welcome/DishVisual.vue';
 import type { DishImage } from '@/components/welcome/DishVisual.vue';
 
-withDefaults(
+const props = withDefaults(
     defineProps<{
         src: string;
         name: string;
         poster: DishImage;
         eager?: boolean;
+        progress?: number;
     }>(),
     { eager: true },
 );
@@ -39,6 +40,16 @@ function syncOrbit() {
 }
 
 defineExpose({ spin });
+
+watch(
+    () => props.progress,
+    (progress) => {
+        if (progress !== undefined) {
+            spin(progress);
+        }
+    },
+    { immediate: true },
+);
 
 onMounted(() => {
     // Loaded only when a model exists, so visitors without one never download the viewer

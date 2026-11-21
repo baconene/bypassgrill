@@ -184,6 +184,10 @@ const showcase = computed(() =>
         const extra =
             matches.find((p) => p !== primary && isAlaCarte(p)) ?? null;
         const photo = primary?.image || extra?.image;
+        const model = props.models[dish.slug];
+        const modelPoster: DishImage | undefined = model
+            ? { kind: 'cutout', src: model.replace(/\.glb$/, '.webp') }
+            : undefined;
         const image: DishImage = props.cutouts[dish.slug]
             ? { kind: 'cutout', src: props.cutouts[dish.slug] }
             : photo
@@ -195,22 +199,20 @@ const showcase = computed(() =>
             primary,
             extra,
             image,
+            model,
+            modelPoster,
             category: primary?.category ?? 'Signature',
             description: primary?.description || dish.copy,
         };
     }),
 );
 const hero = computed(() => showcase.value[0]);
-const heroModel = computed(() => props.models[hero.value.slug] ?? null);
+const heroModel = computed(() => hero.value.model);
 const heroModelEl = ref<InstanceType<typeof DishModel> | null>(null);
-const showcaseModelEl = ref<InstanceType<typeof DishModel> | null>(null);
-const ribsModelPoster: DishImage = {
-    kind: 'cutout',
-    src: '/images/menu/3d/pork-monster-ribs.webp',
-};
+const showcaseOrbits = ref(dishes.map(() => 0));
 const heroPoster = computed<DishImage>(() =>
-    heroModel.value && hero.value.image.kind === 'placeholder'
-        ? ribsModelPoster
+    hero.value.modelPoster && hero.value.image.kind === 'placeholder'
+        ? hero.value.modelPoster
         : hero.value.image,
 );
 const heroPreload = computed(() => heroPoster.value.src ?? null);
@@ -363,7 +365,7 @@ function buildHero(mobile: boolean) {
                   }),
             scale: mobile ? 1.06 : 0.74,
             // Phones: the dish settles into the space the headline leaves behind
-            x: () => (mobile ? 0 : window.innerWidth * 0.14),
+            x: () => (mobile ? 0 : window.innerWidth * (model ? 0.07 : 0.14)),
             y: () => window.innerHeight * (mobile ? 0.14 : 0.04),
             duration: 1,
         },
@@ -502,20 +504,28 @@ function buildShowcase(mobile: boolean) {
     });
     showcaseTrigger = tl.scrollTrigger;
 
-    if (heroModel.value) {
+    showcase.value.forEach((dish, index) => {
+        if (!dish.model) {
+            return;
+        }
+
         const orbit = { progress: 0 };
+        const start = index ? index - dishTransitionHalf / 2 : 0;
+        const end = Math.min(index + 1 - dishTransitionHalf, duration);
         tl.fromTo(
             orbit,
             { progress: 0 },
             {
                 progress: 1,
-                duration: 1 - dishTransitionHalf,
+                duration: end - start,
                 ease: 'none',
-                onUpdate: () => showcaseModelEl.value?.spin(orbit.progress),
+                onUpdate: () => {
+                    showcaseOrbits.value[index] = orbit.progress;
+                },
             },
-            0,
+            start,
         );
-    }
+    });
 
     slots.slice(1).forEach((slot, index) => {
         const i = index + 1;
@@ -570,6 +580,7 @@ onMounted(async () => {
     media.add(
         {
             motion: '(prefers-reduced-motion: no-preference)',
+            reducedMotion: '(prefers-reduced-motion: reduce)',
             mobile: '(max-width: 760px)',
         },
         (context) => {
@@ -582,7 +593,7 @@ onMounted(async () => {
 
             if (!motion) {
                 heroModelEl.value?.spin(0);
-                showcaseModelEl.value?.spin(0);
+                showcaseOrbits.value.fill(0);
 
                 return;
             }
@@ -760,20 +771,19 @@ onBeforeUnmount(() => {
                         >
                             <div class="dish-light" aria-hidden="true"></div>
                             <DishModel
-                                v-if="index === 0 && heroModel"
-                                :ref="
-                                    (model) =>
-                                        (showcaseModelEl =
-                                            model as typeof showcaseModelEl)
+                                v-if="
+                                    dish.model &&
+                                    Math.abs(activeDish - index) <= 1
                                 "
-                                :src="heroModel"
+                                :src="dish.model"
                                 :name="dish.title"
-                                :poster="ribsModelPoster"
+                                :poster="dish.modelPoster ?? dish.image"
                                 :eager="false"
+                                :progress="showcaseOrbits[index]"
                             />
                             <DishVisual
                                 v-else
-                                :image="dish.image"
+                                :image="dish.modelPoster ?? dish.image"
                                 :name="dish.title"
                             />
                         </div>
@@ -2537,11 +2547,26 @@ h2 em {
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
 @media (min-width: 761px) {
-    .has-model .hero-stage {
-        padding-left: 32vw;
+    .hero-copy {
+        inset: 92px 52% 44px 5%;
+        justify-content: center;
+    }
+    .hero-title {
+        font-size: clamp(54px, 7.5vw, 136px);
+    }
+    .hero-price {
+        position: static;
+        margin-top: 6px;
+    }
+    .hero-stage {
+        padding: 48px 0 0 45vw;
+    }
+    .hero-glow {
+        left: 72.5%;
+        top: 53%;
     }
     .has-model .hero-dish {
-        width: min(64vh, 37vw);
+        width: min(67vh, 42vw, 720px);
     }
 }
 @media (max-width: 1100px) {
