@@ -153,6 +153,8 @@ const dishes = [
     {
         slug: 'chicken-jerk',
         title: 'Jamaican Chicken Jerk',
+        cameraAngle: 52,
+        shadowIntensity: 0,
         match: /jerk/i,
         copy: 'Warm island spice, a little heat and a proper char. The chicken that keeps you coming back.',
     },
@@ -780,6 +782,8 @@ onBeforeUnmount(() => {
                                 :poster="dish.modelPoster ?? dish.image"
                                 :eager="false"
                                 :progress="showcaseOrbits[index]"
+                                :camera-angle="dish.cameraAngle"
+                                :shadow-intensity="dish.shadowIntensity"
                             />
                             <DishVisual
                                 v-else

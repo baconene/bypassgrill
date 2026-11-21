@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import DishVisual from '@/components/welcome/DishVisual.vue';
 import type { DishImage } from '@/components/welcome/DishVisual.vue';
 
@@ -10,13 +10,15 @@ const props = withDefaults(
         poster: DishImage;
         eager?: boolean;
         progress?: number;
+        cameraAngle?: number;
+        shadowIntensity?: number;
     }>(),
-    { eager: true },
+    { eager: true, cameraAngle: 66, shadowIntensity: 1.2 },
 );
 
 const viewer = ref<HTMLElement | null>(null);
 const failed = ref(false);
-const initialOrbit = '12deg 66deg auto';
+const initialOrbit = computed(() => `12deg ${props.cameraAngle}deg auto`);
 let scrollProgress = 0;
 
 function spin(progress: number) {
@@ -34,8 +36,8 @@ function syncOrbit() {
     }
 
     el.cameraOrbit = scrollProgress
-        ? `${12 + scrollProgress * 360}deg ${66 - Math.sin(scrollProgress * Math.PI) * 12}deg auto`
-        : initialOrbit;
+        ? `${12 + scrollProgress * 360}deg ${props.cameraAngle - Math.sin(scrollProgress * Math.PI) * 12}deg auto`
+        : initialOrbit.value;
     el.jumpCameraToGoal();
 }
 
@@ -71,7 +73,7 @@ onMounted(() => {
         field-of-view="28deg"
         environment-image="neutral"
         exposure="1.05"
-        shadow-intensity="1.2"
+        :shadow-intensity="shadowIntensity"
         shadow-softness="0.85"
         interaction-prompt="none"
         disable-zoom
