@@ -158,7 +158,7 @@ onMounted(() => {
 <template>
     <Head title="Print Service Settings" />
 
-    <div class="space-y-6">
+    <div class="space-y-4">
         <div>
             <h2 class="text-base font-semibold">Print Service</h2>
             <p class="text-sm text-muted-foreground mt-0.5">
@@ -166,9 +166,16 @@ onMounted(() => {
             </p>
         </div>
 
+        <nav aria-label="Print service sections" class="flex flex-wrap gap-2 text-sm">
+            <a href="#print-device" class="rounded-md border px-3 py-2 hover:bg-muted">Printer setup</a>
+            <a href="#print-receipt" class="rounded-md border px-3 py-2 hover:bg-muted">Receipt details</a>
+            <a href="#print-tests" class="rounded-md border px-3 py-2 hover:bg-muted">Connection tests</a>
+            <a href="#print-settings-save" class="rounded-md border px-3 py-2 hover:bg-muted">Save settings</a>
+        </nav>
+
         <!-- Master toggle -->
-        <div class="rounded-xl border bg-card shadow-sm p-5">
-            <div class="flex items-start justify-between">
+        <div id="print-device" class="rounded-xl border bg-card p-3 sm:p-4">
+            <div class="flex items-start justify-between gap-3">
                 <div>
                     <h3 class="font-semibold text-sm">Enable receipt printing</h3>
                     <p class="text-xs text-muted-foreground mt-0.5">
@@ -183,7 +190,7 @@ onMounted(() => {
         </div>
 
         <!-- Print Channel (Pusher WebSocket) -->
-        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-3">
+        <div class="rounded-xl border bg-card p-3 sm:p-4 space-y-3">
             <h3 class="font-semibold text-sm flex items-center gap-2">
                 <Wifi class="h-4 w-4" /> Print Channel
             </h3>
@@ -209,7 +216,7 @@ onMounted(() => {
         </div>
 
         <!-- Android POS Bluetooth printer -->
-        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+        <div class="rounded-xl border bg-card p-3 sm:p-4 space-y-4">
             <h3 class="font-semibold text-sm flex items-center gap-2"><Printer class="h-4 w-4" /> Android POS Bluetooth Printer</h3>
             <p class="text-xs text-muted-foreground -mt-2">Source-of-truth settings synced to the Android POS. Pair the printer in Android first; the POS connects to this saved device and keeps the last synced settings for offline printing.</p>
             <div class="grid gap-3 sm:grid-cols-2">
@@ -219,7 +226,7 @@ onMounted(() => {
         </div>
 
         <!-- Service URL -->
-        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+        <div class="rounded-xl border bg-card p-3 sm:p-4 space-y-4">
             <h3 class="font-semibold text-sm flex items-center gap-2">
                 <Printer class="h-4 w-4" /> Service Connection
             </h3>
@@ -228,12 +235,12 @@ onMounted(() => {
                 <label class="text-xs font-medium text-muted-foreground block mb-1">
                     Service URL
                 </label>
-                <div class="flex gap-2">
+                <div class="flex flex-wrap gap-2">
                     <input
                         v-model="form.print_service_url"
                         type="url"
                         placeholder="http://192.168.1.42:8080"
-                        class="flex-1 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        class="min-w-0 flex-1 rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                     <button
                         @click="testConnection"
@@ -267,7 +274,7 @@ onMounted(() => {
         </div>
 
         <!-- Paper width -->
-        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+        <div id="print-receipt" class="rounded-xl border bg-card p-3 sm:p-4 space-y-4">
             <h3 class="font-semibold text-sm">Paper Width</h3>
             <div class="flex gap-3">
                 <label
@@ -298,7 +305,7 @@ onMounted(() => {
         </div>
 
         <!-- Store details -->
-        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+        <div class="rounded-xl border bg-card p-3 sm:p-4 space-y-4">
             <h3 class="font-semibold text-sm">Store Details</h3>
             <p class="text-xs text-muted-foreground -mt-2">
                 Printed at the top of every receipt.
@@ -346,8 +353,8 @@ onMounted(() => {
         </div>
 
         <!-- Auto-print toggle -->
-        <div class="rounded-xl border bg-card shadow-sm p-5">
-            <div class="flex items-start justify-between">
+        <div class="rounded-xl border bg-card p-3 sm:p-4">
+            <div class="flex items-start justify-between gap-3">
                 <div>
                     <h3 class="font-semibold text-sm">Automatically print on completed sale</h3>
                     <p class="text-xs text-muted-foreground mt-0.5">
@@ -362,7 +369,7 @@ onMounted(() => {
         </div>
 
         <!-- Pusher Channels test (primary WebSocket delivery) -->
-        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+        <div id="print-tests" class="rounded-xl border bg-card p-3 sm:p-4 space-y-4">
             <div class="flex items-start justify-between gap-3">
                 <div>
                     <h3 class="font-semibold text-sm flex items-center gap-2">
@@ -452,7 +459,7 @@ onMounted(() => {
         </div>
 
         <!-- Pusher Beams webhook test -->
-        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+        <div class="rounded-xl border bg-card p-3 sm:p-4 space-y-4">
             <div class="flex items-start justify-between gap-3">
                 <div>
                     <h3 class="font-semibold text-sm flex items-center gap-2">
@@ -527,7 +534,7 @@ onMounted(() => {
         </div>
 
         <!-- Social Links -->
-        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+        <div class="rounded-xl border bg-card p-3 sm:p-4 space-y-4">
             <h3 class="font-semibold text-sm flex items-center gap-2">
                 <Share2 class="h-4 w-4" /> Social Links
             </h3>
@@ -557,7 +564,7 @@ onMounted(() => {
         </div>
 
         <!-- Receipt QR Code -->
-        <div class="rounded-xl border bg-card shadow-sm p-5 space-y-4">
+        <div class="rounded-xl border bg-card p-3 sm:p-4 space-y-4">
             <h3 class="font-semibold text-sm flex items-center gap-2">
                 <QrCode class="h-4 w-4" /> Receipt QR Code
             </h3>
@@ -603,7 +610,7 @@ onMounted(() => {
         </div>
 
         <!-- Save button -->
-        <div>
+        <div id="print-settings-save">
             <button
                 @click="save"
                 :disabled="saving"

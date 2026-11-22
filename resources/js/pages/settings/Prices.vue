@@ -105,7 +105,7 @@ function marginColor(price: string, cost: string): string {
 <template>
     <Head title="Price Management" />
 
-    <div class="space-y-6">
+    <div class="space-y-4">
         <div class="flex items-start justify-between gap-4">
             <div>
                 <h2 class="text-base font-semibold">Price Management</h2>
@@ -140,7 +140,8 @@ function marginColor(price: string, cost: string): string {
             <!-- category header -->
             <button
                 @click="toggleCat(cat.id)"
-                class="w-full flex items-center justify-between px-5 py-3.5 bg-muted/40 hover:bg-muted/70 transition text-left"
+                class="flex min-h-11 w-full items-center justify-between bg-muted/40 px-3 text-left transition hover:bg-muted/70 sm:px-4"
+                :aria-expanded="!collapsed[cat.id]"
             >
                 <div class="flex items-center gap-2">
                     <component :is="collapsed[cat.id] ? ChevronRight : ChevronDown" class="h-4 w-4 text-muted-foreground" />
@@ -152,7 +153,7 @@ function marginColor(price: string, cost: string): string {
             <!-- product rows -->
             <div v-if="!collapsed[cat.id]" class="divide-y divide-border">
                 <!-- header row -->
-                <div class="hidden sm:grid grid-cols-[1fr_120px_120px_80px_32px] gap-3 px-5 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <div class="hidden @xl:grid grid-cols-[minmax(0,1fr)_7rem_7rem_4rem_2rem] gap-2 px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     <span>Product</span>
                     <span>Selling Price (₱)</span>
                     <span>Cost (₱)</span>
@@ -162,57 +163,61 @@ function marginColor(price: string, cost: string): string {
 
                 <div
                     v-for="product in cat.products" :key="product.id"
-                    :class="['grid grid-cols-1 sm:grid-cols-[1fr_120px_120px_80px_32px] gap-3 items-center px-5 py-3',
+                    :class="['grid grid-cols-2 @xl:grid-cols-[minmax(0,1fr)_7rem_7rem_4rem_2rem] gap-2 items-center px-3 py-2 sm:px-4',
                         !product.is_active && 'opacity-50']"
                 >
                     <!-- name + sku -->
-                    <div class="min-w-0">
-                        <p class="font-medium text-sm truncate">{{ product.name }}</p>
+                    <div class="col-span-2 min-w-0 @xl:col-span-1">
+                        <p class="font-medium text-sm break-words">{{ product.name }}</p>
                         <p v-if="product.sku" class="text-xs text-muted-foreground">{{ product.sku }}</p>
                         <p v-if="!product.is_active" class="text-xs text-muted-foreground italic">Inactive</p>
                     </div>
 
                     <!-- price -->
                     <div>
-                        <label class="sm:hidden text-xs text-muted-foreground mb-0.5 block">Selling Price (₱)</label>
+                        <label :for="`price-${product.id}`" class="mb-0.5 block text-xs text-muted-foreground @xl:sr-only">Selling price <span class="sr-only">for {{ product.name }}</span></label>
                         <div class="relative">
                             <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₱</span>
                             <input
                                 v-if="edits[product.id]"
                                 v-model="edits[product.id].price"
+                                :id="`price-${product.id}`"
                                 type="number" min="0" step="0.01"
-                                class="w-full rounded-lg border pl-7 pr-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                                class="w-full rounded-lg border pl-7 pr-2 py-1.5 text-base @xl:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                             />
                         </div>
                     </div>
 
                     <!-- cost -->
                     <div>
-                        <label class="sm:hidden text-xs text-muted-foreground mb-0.5 block">Cost (₱)</label>
+                        <label :for="`cost-${product.id}`" class="mb-0.5 block text-xs text-muted-foreground @xl:sr-only">Cost <span class="sr-only">for {{ product.name }}</span></label>
                         <div class="relative">
                             <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₱</span>
                             <input
                                 v-if="edits[product.id]"
                                 v-model="edits[product.id].cost"
+                                :id="`cost-${product.id}`"
                                 type="number" min="0" step="0.01"
-                                class="w-full rounded-lg border pl-7 pr-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                                class="w-full rounded-lg border pl-7 pr-2 py-1.5 text-base @xl:text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                             />
                         </div>
                     </div>
 
                     <!-- margin -->
-                    <div class="hidden sm:block">
+                    <div class="flex flex-wrap items-center gap-x-1.5">
+                        <span class="text-xs text-muted-foreground @xl:hidden">Margin</span>
                         <span v-if="edits[product.id]" :class="['text-sm font-semibold', marginColor(edits[product.id].price, edits[product.id].cost)]">
                             {{ margin(edits[product.id].price, edits[product.id].cost) }}
                         </span>
                     </div>
 
                     <!-- reset row -->
-                    <div class="hidden sm:flex justify-end">
+                    <div class="flex justify-end">
                         <button
                             @click="resetRow(product.id, product.price, product.cost)"
                             :title="'Reset ' + product.name"
-                            class="rounded p-1 hover:bg-muted transition text-muted-foreground hover:text-foreground"
+                            :aria-label="'Reset prices for ' + product.name"
+                            class="grid size-10 place-items-center rounded text-muted-foreground transition hover:bg-muted hover:text-foreground @xl:size-8"
                         >
                             <RotateCcw class="h-3.5 w-3.5" />
                         </button>
