@@ -4,18 +4,35 @@ use App\Models\FinancialTransaction;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\PaymentTender;
+use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use Illuminate\Support\Facades\DB;
 
 class PaymentService {
     public function processPayment(Order $order, array $paymentData): Payment {
         return DB::transaction(function () use ($order, $paymentData) {
+            $order = Order::query()->lockForUpdate()->findOrFail($order->id);
+            abort_if($order->status === OrderStatus::CANCELLED->value || in_array($order->payment_status, ['voided', 'refunded'], true), 409, 'This order cannot accept payments.');
+
+            $collected = Payment::where('order_id', $order->id)
+                ->where('status', PaymentStatus::COMPLETED->value);
+            $paid = (int) round((float) $collected->sum('amount') * 100);
+            $total = (int) round((float) $order->total_amount * 100);
+            $amount = (int) round((float) $paymentData['amount'] * 100);
+            // Mobile checkout can settle a fully discounted order once at zero.
+            $zeroSettlement = $total === 0 && $amount === 0 && ! $collected->exists();
+            $remaining = max(0, $total - $paid);
+
+            abort_if($order->payment_status === 'paid' || ($remaining === 0 && ! $zeroSettlement), 409, 'This order is already paid.');
+            abort_if($amount > $remaining, 409, 'Payment exceeds the remaining balance. Refresh the order before collecting.');
+            abort_if($amount <= 0 && ! $zeroSettlement, 422, 'Payment must be greater than zero.');
+
             $tender = PaymentTender::findOrFail($paymentData['payment_tender_id']);
 
             $payment = Payment::create([
                 'order_id'          => $order->id,
                 'user_id'           => auth()->id(),
-                'amount'            => $paymentData['amount'],
+                'amount'            => $amount / 100,
                 'method'            => $tender->name,
                 'payment_tender_id' => $tender->id,
                 'status'            => PaymentStatus::COMPLETED->value,
@@ -34,11 +51,7 @@ class PaymentService {
                 'transacted_at'     => now(),
             ]);
 
-            $totalPaid = Payment::where('order_id', $order->id)
-                ->where('status', PaymentStatus::COMPLETED->value)
-                ->sum('amount');
-
-            if ($totalPaid >= $order->total_amount && $order->payment_status !== 'paid') {
+            if ($paid + $amount >= $total) {
                 $order->update(['payment_status' => 'paid']);
             }
 

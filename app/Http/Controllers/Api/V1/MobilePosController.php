@@ -15,7 +15,7 @@ use App\Models\PrintServiceSetting;
 use App\Services\DepositReconciliation;
 use App\Services\DepositSnapshot;
 use App\Services\InventoryService;
-use App\Services\OrderService;
+use App\Services\PosCheckoutService;
 use App\Services\PrintJobService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -40,20 +40,46 @@ class MobilePosController extends Controller
         return response()->json(['server_time'=>now()->toIso8601String(),'user'=>$this->userPayload($user),'categories'=>Category::where('is_active',true)->orderBy('display_order')->get(),'products'=>$products,'payment_tenders'=>PaymentTender::where('is_active',true)->orderBy('display_order')->orderBy('name')->get(),'print_settings'=>PrintServiceSetting::getSetting(),'realtime'=>$this->realtimeConfig()]);
     }
 
-    public function sync(Request $request,OrderService $orders): JsonResponse {
-        $user=$this->authenticate($request);
+    public function sync(Request $request, PosCheckoutService $checkout): JsonResponse {
+        $this->authenticate($request);
         $data=$request->validate(['orders'=>'array|max:100','orders.*.client_id'=>'required|string|max:100','orders.*.order_type'=>'nullable|string|max:50','orders.*.table_number'=>'nullable|string|max:50','orders.*.customer_name'=>'nullable|string|max:255','orders.*.customer_contact'=>'nullable|string|max:255','orders.*.customer_address'=>'nullable|string|max:500','orders.*.notes'=>'nullable|string|max:500','orders.*.discount_amount'=>'nullable|numeric|min:0','orders.*.offline_number'=>'nullable|string|max:20','orders.*.items'=>'required|array|min:1','orders.*.items.*.product_id'=>'required|integer|exists:products,id','orders.*.items.*.quantity'=>'required|integer|min:1','orders.*.items.*.modifiers'=>'nullable|array']);
-        $results=[];foreach($data['orders']??[] as $payload){$existing=DB::table('mobile_pos_sync_records')->where('client_id',$payload['client_id'])->first();if($existing){$results[]=['client_id'=>$payload['client_id'],'order_id'=>$existing->order_id,'status'=>'already_synced','public_token'=>Order::whereKey($existing->order_id)->value('public_token')];continue;}try{$order=DB::transaction(function()use($orders,$payload,$user){$d=$payload;unset($d['client_id'],$d['offline_number']);$d['user_id']=$user->id;$order=$orders->createOrder($d);if(!empty($payload['offline_number'])&&$this->hasOfflineNumberColumn())$order->update(['offline_number'=>$payload['offline_number']]);DB::table('mobile_pos_sync_records')->insert(['client_id'=>$payload['client_id'],'order_id'=>$order->id,'user_id'=>$user->id,'created_at'=>now(),'updated_at'=>now()]);return $order;});$results[]=['client_id'=>$payload['client_id'],'order_id'=>$order->id,'status'=>'synced','public_token'=>$order->public_token];}catch(\Throwable $e){report($e);$results[]=['client_id'=>$payload['client_id'],'status'=>'error','message'=>$e->getMessage()];}}
+        $results = [];
+        foreach ($data['orders'] ?? [] as $payload) {
+            $clientId = $payload['client_id'];
+            $offlineNumber = $payload['offline_number'] ?? null;
+            unset($payload['client_id'], $payload['offline_number']);
+            try {
+                $order = $checkout->createOrder($payload, $clientId, $offlineNumber);
+                $results[] = [
+                    'client_id' => $clientId,
+                    'order_id' => $order->id,
+                    'status' => $order->wasRecentlyCreated ? 'synced' : 'already_synced',
+                    'public_token' => $order->public_token,
+                ];
+            } catch (\Throwable $e) {
+                report($e);
+                $results[] = ['client_id' => $clientId, 'status' => 'error', 'message' => $e->getMessage()];
+            }
+        }
         return response()->json(['server_time'=>now()->toIso8601String(),'orders'=>$results]);
     }
 
-    public function paymentStore(Request $request): JsonResponse {
-        $user=$this->authenticate($request);
-        $data=$request->validate(['client_id'=>'required|string|max:100','order_id'=>'required|integer|exists:orders,id','payment_tender_id'=>'required|integer|exists:payment_tenders,id','amount'=>'required|numeric|min:0','reference'=>'nullable|string|max:255']);
-        $existing=DB::table('mobile_pos_payment_sync_records')->where('client_id',$data['client_id'])->first();
-        if($existing)return response()->json(['payment_id'=>$existing->payment_id,'status'=>'already_synced']);
-        $payment=DB::transaction(function()use($data,$user){$payload=$data;unset($payload['client_id']);$order=\App\Models\Order::findOrFail($payload['order_id']);$payment=app(\App\Services\PaymentService::class)->processPayment($order,$payload);DB::table('mobile_pos_payment_sync_records')->insert(['client_id'=>$data['client_id'],'payment_id'=>$payment->id,'order_id'=>$order->id,'user_id'=>$user->id,'created_at'=>now(),'updated_at'=>now()]);return $payment;});
-        return response()->json(['payment_id'=>$payment->id,'status'=>'synced'],201);
+    public function paymentStore(Request $request, PosCheckoutService $checkout): JsonResponse {
+        $this->authenticate($request);
+        $data = $request->validate([
+            'client_id' => 'required|string|max:100',
+            'order_id' => 'required|integer|exists:orders,id',
+            'payment_tender_id' => 'required|integer|exists:payment_tenders,id',
+            'amount' => 'required|numeric|min:0',
+            'reference' => 'nullable|string|max:255',
+        ]);
+
+        $payment = $checkout->collectPayment(Order::findOrFail($data['order_id']), $data, $data['client_id']);
+
+        return response()->json([
+            'payment_id' => $payment->id,
+            'status' => $payment->wasRecentlyCreated ? 'synced' : 'already_synced',
+        ], $payment->wasRecentlyCreated ? 201 : 200);
     }
 
 
@@ -101,7 +127,6 @@ class MobilePosController extends Controller
         });
         return response()->json(['date'=>$date,'start'=>$end-$size+1,'end'=>$end]);
     }
-    private function hasOfflineNumberColumn(): bool { static $has=null;return $has??=\Illuminate\Support\Facades\Schema::hasColumn('orders','offline_number'); }
 
     /** Sends a receipt to the online print channel (Pusher) - used when this device has no printer connected */
     public function orderPrint(Request $request,int $id): JsonResponse {

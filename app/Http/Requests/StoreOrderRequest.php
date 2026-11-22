@@ -14,6 +14,7 @@ class StoreOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'client_id' => 'nullable|string|max:100',
             'order_type' => 'required|in:dine_in,takeout,delivery',
             'table_number' => 'nullable|string',
             'customer_name' => 'nullable|string|max:100',

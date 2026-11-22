@@ -83,18 +83,19 @@ export async function queueOrder(payload: Record<string, unknown>): Promise<Pend
         createdAt: new Date().toISOString(),
     }
     await db.put('pending_orders', entry)
-    requestBackgroundSync()
     return entry
 }
 
 export async function queuePayment(
     orderLocalId: string,
     payload: Record<string, unknown>,
+    serverOrderId?: number,
 ): Promise<PendingPayment> {
     const db = await getDB()
     const entry: PendingPayment = {
         localId: uuid(),
         orderLocalId,
+        serverOrderId,
         payload: JSON.parse(JSON.stringify(payload)),
         status: 'pending',
         createdAt: new Date().toISOString(),
@@ -116,6 +117,38 @@ export async function getPendingCounts(): Promise<{ orders: number; payments: nu
     }
 }
 
+// Keep successful writes authoritative if foreground checkout and sync overlap.
+export async function markOrderSynced(localId: string, serverOrderId: number) {
+    await updateEntry('pending_orders', localId, { status: 'synced', serverOrderId })
+}
+
+export async function markPaymentSynced(localId: string) {
+    await updateEntry('pending_payments', localId, { status: 'synced' })
+}
+
+export async function markCheckoutFailed(
+    store: 'pending_orders' | 'pending_payments', localId: string, error: string,
+) {
+    await updateEntry(store, localId, { status: 'failed', error })
+}
+
+async function updateEntry(
+    store: 'pending_orders' | 'pending_payments', localId: string,
+    changes: { status: 'synced' | 'failed'; serverOrderId?: number; error?: string },
+) {
+    const db = await getDB()
+    const tx = db.transaction(store, 'readwrite')
+    const row = await tx.store.get(localId)
+    if (row && row.status !== 'synced') await tx.store.put({ ...row, ...changes })
+    await tx.done
+}
+
+export function isRejectedCheckout(status?: number): boolean {
+    // Timeouts, throttling and server errors leave the outcome uncertain.
+    return status !== undefined && status >= 400 && status < 500 &&
+        ![401, 408, 419, 425, 429].includes(status)
+}
+
 export async function syncQueue(): Promise<{ synced: number; failed: number }> {
     const db = await getDB()
     let synced = 0
@@ -127,87 +160,63 @@ export async function syncQueue(): Promise<{ synced: number; failed: number }> {
     const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content
     if (csrfToken) headers['X-CSRF-TOKEN'] = csrfToken
 
-    // 1. Sync pending orders first
-    const pendingOrders = await db.getAllFromIndex('pending_orders', 'by_status', 'pending')
-    for (const order of pendingOrders) {
-        try {
-            const res = await fetch('/api/v1/orders', {
-                method: 'POST',
-                headers,
-                credentials: 'same-origin',
-                body: JSON.stringify(order.payload),
-            })
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}))
-                throw new Error((body as any).message ?? `HTTP ${res.status}`)
-            }
-            const data = await res.json()
-            const serverOrderId: number = (data.data ?? data).id
-            await db.put('pending_orders', { ...order, status: 'synced', serverOrderId })
+    async function send(path: string, payload: Record<string, unknown>) {
+        const response = await fetch(path, {
+            method: 'POST', headers, credentials: 'same-origin', body: JSON.stringify(payload),
+        })
+        const body = await response.json().catch(() => ({}))
+        return { response, body }
+    }
 
-            // Update linked payments with the resolved server order ID
-            const linked = await db.getAllFromIndex('pending_payments', 'by_order_local_id', order.localId)
-            for (const p of linked) {
-                await db.put('pending_payments', {
-                    ...p,
-                    serverOrderId,
-                    payload: { ...p.payload, order_id: serverOrderId },
-                })
+    for (const order of await db.getAllFromIndex('pending_orders', 'by_status', 'pending') as PendingOrder[]) {
+        try {
+            const { response, body } = await send('/api/v1/orders', { ...order.payload, client_id: order.localId })
+            if (response.ok) {
+                const serverOrderId = Number((body.data ?? body).id)
+                if (!serverOrderId) continue
+                await markOrderSynced(order.localId, serverOrderId)
+                synced++
+            } else if (isRejectedCheckout(response.status)) {
+                await markCheckoutFailed('pending_orders', order.localId, body.message ?? `HTTP ${response.status}`)
+                failed++
             }
-            synced++
-        } catch (err) {
-            await db.put('pending_orders', { ...order, status: 'failed', error: String(err) })
-            // Linked payments can never be synced without a server order ID — mark them failed
-            // so they don't keep pendingCount > 0 and block the banner from clearing.
-            const linked = await db.getAllFromIndex('pending_payments', 'by_order_local_id', order.localId)
-            for (const p of linked) {
-                if (p.status === 'pending') {
-                    await db.put('pending_payments', { ...p, status: 'failed', error: 'Parent order failed to sync' })
+        } catch {
+            // Same request ID will be sent again when the connection is available.
+        }
+    }
+
+    for (const payment of await db.getAllFromIndex('pending_payments', 'by_status', 'pending') as PendingPayment[]) {
+        try {
+            const parent: PendingOrder | undefined = await db.get('pending_orders', payment.orderLocalId)
+            // Also recover online-order payments queued by older builds without serverOrderId.
+            const serverOrderId = payment.serverOrderId || parent?.serverOrderId || Number(payment.payload.order_id)
+            if (!serverOrderId) {
+                if (!parent || parent.status === 'failed') {
+                    await markCheckoutFailed('pending_payments', payment.localId, 'Parent order could not sync')
+                    failed++
                 }
+                continue
             }
-            failed++
-        }
-    }
 
-    // 2. Sync pending payments that have a resolved server order ID
-    const pendingPayments = await db.getAllFromIndex('pending_payments', 'by_status', 'pending')
-    for (const payment of pendingPayments) {
-        if (!payment.serverOrderId) continue
-        try {
-            const res = await fetch('/api/v1/payments', {
-                method: 'POST',
-                headers,
-                credentials: 'same-origin',
-                body: JSON.stringify(payment.payload),
+            const { response, body } = await send('/api/v1/payments', {
+                ...payment.payload, order_id: serverOrderId, client_id: payment.localId,
             })
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}))
-                throw new Error((body as any).message ?? `HTTP ${res.status}`)
+            if (response.ok && (body.data ?? body).id) {
+                await markPaymentSynced(payment.localId)
+                synced++
+            } else if (isRejectedCheckout(response.status)) {
+                await markCheckoutFailed('pending_payments', payment.localId, body.message ?? `HTTP ${response.status}`)
+                failed++
             }
-            await db.put('pending_payments', { ...payment, status: 'synced' })
-            synced++
-        } catch (err) {
-            await db.put('pending_payments', { ...payment, status: 'failed', error: String(err) })
-            failed++
-        }
-    }
-
-    // 3. Clean up orphaned pending payments — no serverOrderId and their parent order
-    //    is no longer pending (already failed/synced in a previous session). These can
-    //    never be synced, so mark them failed so pendingCount can reach 0.
-    const orphaned = await db.getAllFromIndex('pending_payments', 'by_status', 'pending')
-    for (const payment of orphaned) {
-        if (payment.serverOrderId) continue
-        const parentOrder = await db.get('pending_orders', payment.orderLocalId)
-        if (!parentOrder || parentOrder.status !== 'pending') {
-            await db.put('pending_payments', { ...payment, status: 'failed', error: 'Parent order failed to sync' })
+        } catch {
+            // Do not generate a new payment ID after a lost response.
         }
     }
 
     return { synced, failed }
 }
 
-function requestBackgroundSync() {
+export function requestBackgroundSync() {
     navigator.serviceWorker?.ready
         .then(reg => (reg as any).sync?.register('pos-queue-sync'))
         .catch(() => {})

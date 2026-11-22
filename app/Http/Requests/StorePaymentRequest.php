@@ -8,6 +8,7 @@ class StorePaymentRequest extends FormRequest {
     }
     public function rules(): array {
         return [
+            'client_id' => 'nullable|string|max:100',
             'order_id'          => 'required|integer|exists:orders,id',
             'amount'            => 'required|numeric|min:0.01',
             'payment_tender_id' => 'required|exists:payment_tenders,id',

@@ -13,6 +13,7 @@ use App\Models\Order;
 use App\Repositories\OrderRepository;
 use App\Services\InventoryService;
 use App\Services\OrderService;
+use App\Services\PosCheckoutService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -80,12 +81,12 @@ class OrderController extends Controller
         ]);
     }
 
-    public function store(StoreOrderRequest $request): JsonResponse
+    public function store(StoreOrderRequest $request, PosCheckoutService $checkout): JsonResponse
     {
         $this->checkPermission('create orders');
-        $order = $this->orderService->createOrder($request->validated());
+        $order = $checkout->createOrder($request->safe()->except('client_id'), $request->validated('client_id'));
 
-        return response()->json(new OrderResource($order), 201);
+        return response()->json(new OrderResource($order), $order->wasRecentlyCreated ? 201 : 200);
     }
 
     public function show(Order $order): JsonResponse

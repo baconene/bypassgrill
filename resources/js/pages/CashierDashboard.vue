@@ -6,8 +6,8 @@ import { toast } from 'vue-sonner'
 import api from '@/utils/api'
 import { ShoppingCart, X, Plus, Minus, Search, CreditCard, Banknote, CheckCircle2, Printer, ClipboardList, ChevronDown, Copy, Check, Flame, Wallet, ArrowUpRight, TriangleAlert } from 'lucide-vue-next'
 import { printReceipt as doPrint } from '@/utils/printReceipt'
-import { queueOrder, queuePayment } from '@/utils/offlineQueue'
-import { refreshCount } from '@/utils/offlineSync'
+import { isRejectedCheckout, markCheckoutFailed, markOrderSynced, markPaymentSynced, queueOrder, queuePayment, type PendingOrder } from '@/utils/offlineQueue'
+import { refreshCount, requestCheckoutSync } from '@/utils/offlineSync'
 import OfflineBanner from '@/components/OfflineBanner.vue'
 import { FocusScope } from 'reka-ui'
 
@@ -72,6 +72,7 @@ interface CompletedOrder {
     items: { name: string; quantity: number; unit_price: number }[]
     subtotal: number; discount: number; total: number
     tenderName: string; amountTendered: number; change: number; paid: boolean
+    pendingSync?: boolean
     publicToken: string | null
 }
 
@@ -247,27 +248,20 @@ const loadTenders = async () => {
     }
 }
 
-const queueOrderOffline = async (payload: Record<string, unknown>): Promise<boolean> => {
-    try {
-        const queued = await queueOrder(payload)
-        pendingOrder.value = {
-            id: 0,
-            total_amount: Number(cartStore.total),
-            _localId: queued.localId,
-            _offlineQueue: queued.offlineQueueNumber,
-        }
-        await refreshCount()
-        toast.warning(`Offline — order ${queued.offlineQueueNumber} queued for sync.`)
-        return true
-    } catch (err) {
-        console.error('[Offline queue error]', err)
-        toast.error(`Offline queue failed: ${err instanceof Error ? err.message : String(err)}`)
-        return false
+const showQueuedOrder = (queued: PendingOrder) => {
+    pendingOrder.value = {
+        id: 0,
+        total_amount: Number(cartStore.total),
+        _localId: queued.localId,
+        _offlineQueue: queued.offlineQueueNumber,
     }
+    void refreshCount()
+    requestCheckoutSync()
+    toast.warning(`Order ${queued.offlineQueueNumber} queued for sync.`)
 }
 
 const submitOrder = async () => {
-    if (submitting.value) return
+    if (submitting.value || pendingOrder.value) return
     if (cartStore.items.length === 0) return
     if (!cartStore.orderType) {
         orderTypeOpen.value = true
@@ -321,25 +315,27 @@ const submitOrder = async () => {
             items: itemsPayload,
         }
 
-        // If already offline before the call — skip network entirely
+        // Persist the request ID before sending. A lost response and background sync
+        // must replay the same checkout, including after the browser restarts.
+        const queued = await queueOrder(payload)
         if (!navigator.onLine) {
-            const ok = await queueOrderOffline(payload as Record<string, unknown>)
-            if (!ok) return
+            showQueuedOrder(queued)
         } else {
             try {
-                const res = await api.post('/api/v1/orders', payload)
+                const res = await api.post('/api/v1/orders', { ...payload, client_id: queued.localId })
                 const raw = res.data.data ?? res.data
+                if (!raw.id) throw new Error('Order response did not include an ID.')
+                await markOrderSynced(queued.localId, raw.id)
+                void refreshCount()
                 pendingOrder.value = { ...raw, total_amount: parseFloat(raw.total_amount ?? 0) }
             } catch (err: any) {
-                // Connection dropped mid-request — no server response
-                if (!err.response) {
-                    const ok = await queueOrderOffline(payload as Record<string, unknown>)
-                    if (!ok) return
-                } else {
-                    // Server returned a real error (validation, auth, etc.)
-                    toast.error(err.response.data?.message ?? 'Failed to submit order')
+                if (isRejectedCheckout(err.response?.status)) {
+                    const message = err.response.data?.message ?? 'Failed to submit order'
+                    await markCheckoutFailed('pending_orders', queued.localId, message)
+                    toast.error(message)
                     return
                 }
+                showQueuedOrder(queued)
             }
         }
 
@@ -349,6 +345,8 @@ const submitOrder = async () => {
         amountTendered.value = (pendingOrder.value?.total_amount ?? 0).toFixed(2)
         reference.value = ''
         paymentOpen.value = true
+    } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Unable to save order on this device.')
     } finally {
         submitting.value = false
     }
@@ -382,7 +380,7 @@ const captureOrder = (paid: boolean): CompletedOrder => {
 }
 
 const submitPayment = async () => {
-    if (!pendingOrder.value || !paymentReady.value) return
+    if (!pendingOrder.value || !paymentReady.value || paymentDone.value) return
     paymentSubmitting.value = true
     try {
         const paymentPayload = {
@@ -392,27 +390,29 @@ const submitPayment = async () => {
             reference: reference.value || null,
         }
 
-        if (isOfflineOrder()) {
-            // Order is queued offline — queue the payment linked by localId
-            await queuePayment(pendingOrder.value._localId!, paymentPayload as Record<string, unknown>)
-            await refreshCount()
-            toast.warning('Payment queued — will sync when connection is restored.')
-        } else {
+        const order = pendingOrder.value
+        const queued = await queuePayment(order._localId ?? String(order.id), paymentPayload, order.id || undefined)
+        let pendingSync = isOfflineOrder() || !navigator.onLine
+        if (!pendingSync) {
             try {
-                await api.post('/api/v1/payments', paymentPayload)
+                await api.post('/api/v1/payments', { ...paymentPayload, client_id: queued.localId })
+                await markPaymentSynced(queued.localId)
+                void refreshCount()
             } catch (err: any) {
-                // Connection dropped between order and payment — queue the payment
-                if (!navigator.onLine || !err.response) {
-                    await queuePayment(pendingOrder.value._localId ?? String(pendingOrder.value.id), paymentPayload as Record<string, unknown>)
-                    await refreshCount()
-                    toast.warning('Payment queued — will sync when connection is restored.')
-                } else {
+                if (isRejectedCheckout(err.response?.status)) {
+                    await markCheckoutFailed('pending_payments', queued.localId, err.response.data?.message ?? 'Payment rejected')
                     throw err
                 }
+                pendingSync = true
             }
         }
+        if (pendingSync) {
+            void refreshCount()
+            requestCheckoutSync()
+            toast.warning('Payment queued — it will sync when the connection is available.')
+        }
 
-        completedOrder.value = captureOrder(true)
+        completedOrder.value = { ...captureOrder(true), pendingSync }
         paymentDone.value = true
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Payment failed')
@@ -433,6 +433,10 @@ const holdOrder = () => {
     if (paymentSubmitting.value || cancellingOrder.value) return
     const o = pendingOrder.value
     if (!o) return
+    if (o._localId) {
+        toast.info('This order is queued. Wait for it to sync before editing it from Pending Payments.')
+        return
+    }
 
     // A pending order opened from the list isn't in the cart. Load its own items
     // first, or "Update order" would replace them with whatever the cart holds.
@@ -506,6 +510,10 @@ const cancelPendingOrder = async () => {
     if (paymentSubmitting.value || cancellingOrder.value) return
     const o = pendingOrder.value
     if (!o) return
+    if (o._localId) {
+        toast.info('This order is queued. Wait for it to sync before cancelling it from Pending Payments.')
+        return
+    }
     if (!confirm('Cancel this order? This cannot be undone.')) return
 
     cancellingOrder.value = true
@@ -533,7 +541,8 @@ const closeAndClear = () => {
     const isExisting = pendingOrder.value?._isExistingOrder ?? false
     const queueOrId = o?.queueNumber ?? o?.orderId
     // Shown at the top so it doesn't cover the cart's Place Order button.
-    if (o?.paid) toast.success(`Order #${queueOrId} paid! Thank you.`, { position: 'top-center' })
+    if (o?.pendingSync) toast.info(`Payment for #${queueOrId} is queued for sync.`, { position: 'top-center' })
+    else if (o?.paid) toast.success(`Order #${queueOrId} paid! Thank you.`, { position: 'top-center' })
     else toast.success(`Order #${queueOrId} placed. Payment pending.`, { position: 'top-center' })
     if (!isExisting) cartStore.clear()
     paymentOpen.value = false
@@ -1126,7 +1135,7 @@ onBeforeUnmount(() => {
                             <div class="flex h-14 w-14 items-center justify-center rounded-full bg-green-100 mx-auto mb-3">
                                 <CheckCircle2 class="h-8 w-8 text-green-600" />
                             </div>
-                            <h3 class="text-lg font-black">{{ completedOrder.paid ? 'Payment Complete' : 'Order Placed' }}</h3>
+                            <h3 class="text-lg font-black">{{ completedOrder.pendingSync ? 'Payment Queued' : completedOrder.paid ? 'Payment Complete' : 'Order Placed' }}</h3>
                             <p class="text-sm text-muted-foreground mt-0.5">
                                 {{ completedOrder.queueNumber ? 'Queue #' + completedOrder.queueNumber : 'Order #' + completedOrder.orderId }}
                             </p>

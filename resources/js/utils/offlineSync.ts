@@ -1,6 +1,6 @@
 // Module-level singleton — all components that call useOfflineSync() share this state.
 import { ref } from 'vue'
-import { syncQueue, getPendingCounts } from './offlineQueue'
+import { syncQueue, getPendingCounts, requestBackgroundSync } from './offlineQueue'
 import { toast } from 'vue-sonner'
 
 export const pendingCount = ref(0)
@@ -15,14 +15,21 @@ export async function refreshCount() {
 
 export async function doSync() {
     if (syncing.value || !navigator.onLine) return
-    await refreshCount()
-    if (pendingCount.value === 0) return
     syncing.value = true
     try {
-        const result = await syncQueue()
+        await refreshCount()
+        if (pendingCount.value === 0) return
+        const result = navigator.locks
+            ? await navigator.locks.request('bypassgrill-pos-sync', { ifAvailable: true }, lock => lock ? syncQueue() : null)
+            : await syncQueue()
+        if (!result) {
+            scheduleSync(15_000)
+            return
+        }
         await refreshCount()
         if (result.synced > 0) toast.success(`${result.synced} offline transaction(s) synced.`)
-        if (result.failed > 0) toast.error(`${result.failed} transaction(s) failed to sync — will retry.`)
+        if (result.failed > 0) toast.error(`${result.failed} queued transaction(s) were rejected. Review the order before collecting again.`)
+        if (pendingCount.value > 0) scheduleSync(15_000)
     } catch {
         await refreshCount()
         toast.error('Sync error. Will retry when connection stabilises.')
@@ -31,14 +38,19 @@ export async function doSync() {
     }
 }
 
-function scheduleSync() {
+export function requestCheckoutSync() {
+    requestBackgroundSync()
+    if (navigator.onLine) scheduleSync()
+}
+
+function scheduleSync(delay = 1500) {
     if (syncTimer) clearTimeout(syncTimer)
-    syncTimer = setTimeout(doSync, 1500)
+    syncTimer = setTimeout(doSync, delay)
 }
 
 // ── One-time setup — called from app.ts ───────────────────────────────────────
 export function initOfflineSync() {
-    window.addEventListener('online', scheduleSync)
+    window.addEventListener('online', () => scheduleSync())
 
     // Receive wake-up messages from the service worker (Background Sync API)
     navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {

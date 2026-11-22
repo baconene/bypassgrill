@@ -7,20 +7,21 @@ use App\Http\Requests\StorePaymentRequest;
 use App\Http\Resources\PaymentResource;
 use App\Models\Payment;
 use App\Services\PaymentService;
+use App\Services\PosCheckoutService;
 use Illuminate\Http\JsonResponse;
 
 class PaymentController extends Controller
 {
     public function __construct(private PaymentService $paymentService) {}
 
-    public function store(StorePaymentRequest $request): JsonResponse
+    public function store(StorePaymentRequest $request, PosCheckoutService $checkout): JsonResponse
     {
         $data = $request->validated();
         $order = \App\Models\Order::findOrFail($data['order_id']);
 
-        $payment = $this->paymentService->processPayment($order, $data);
+        $payment = $checkout->collectPayment($order, $data, $data['client_id'] ?? null);
 
-        return response()->json(new PaymentResource($payment), 201);
+        return response()->json(new PaymentResource($payment), $payment->wasRecentlyCreated ? 201 : 200);
     }
 
     public function orderPayments(int $orderId): JsonResponse
