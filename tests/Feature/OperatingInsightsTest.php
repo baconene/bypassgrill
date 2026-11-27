@@ -54,7 +54,12 @@ class OperatingInsightsTest extends TestCase
             ->assertJsonPath('days.0.units', 15)->assertJsonPath('days.0.weekday_units', 80)
             ->assertJsonPath('days.0.rain_chance', 80)->assertJsonPath('days.0.products.0.suggested', 15)
             ->assertJsonPath('days.0.products.0.busy', 20)
-            ->assertJsonPath('days.1.units', null);
+            ->assertJsonPath('days.0.net_sales', 1500)
+            ->assertJsonPath('days.0.net_sales_samples', [
+                ['date' => '2026-10-23', 'net_sales' => 2000],
+                ['date' => '2026-11-06', 'net_sales' => 1000],
+            ])
+            ->assertJsonPath('days.1.units', null)->assertJsonPath('days.1.net_sales_samples', []);
     }
 
     public function test_review_reconciles_signed_payments_and_compares_staffing(): void

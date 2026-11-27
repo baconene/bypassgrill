@@ -88,6 +88,13 @@ class OperatingInsights
                 usort($products, fn ($a, $b) => $b['suggested'] <=> $a['suggested'] ?: strcmp($a['name'], $b['name']));
             }
 
+            $matchedSales = array_intersect_key($weekdaySales, array_flip($matches));
+            ksort($matchedSales, SORT_STRING);
+            $salesSamples = [];
+            foreach ($matchedSales as $sampleDate => $netSales) {
+                $salesSamples[] = ['date' => $sampleDate, 'net_sales' => $netSales];
+            }
+
             $result[] = [
                 'date' => $date, 'payday' => $payday, 'rain_chance' => $weather['rain_chance'],
                 'basis' => $basis, 'sample_days' => count($matches), 'units' => $units,
@@ -98,7 +105,8 @@ class OperatingInsights
                 'lower_demand_signal' => $lowerDemand,
                 'orders' => $units === null ? null : $this->median(array_map(fn ($d) => (int) ($orders[$d] ?? 0), $matches)),
                 'typical_orders' => $this->median(array_map(fn ($d) => (int) ($orders[$d] ?? 0), $typical)),
-                'net_sales' => $units === null ? null : $this->median(array_intersect_key($weekdaySales, array_flip($matches))),
+                'net_sales' => $units === null ? null : $this->median($matchedSales),
+                'net_sales_samples' => $salesSamples,
                 'products' => $products,
             ];
         }

@@ -12,6 +12,7 @@ type Day = {
     orders: number | null; typical_orders: number | null;
     weekday_rank: { days: number; lowest: number | null; typical_low: number | null; typical_high: number | null };
     units: number | null; weekday_units: number | null; net_sales: number | null;
+    net_sales_samples: { date: string; net_sales: number }[];
     products: { id: number; name: string; suggested: number; busy: number }[];
 };
 
@@ -21,6 +22,14 @@ const day = computed(() => days.value[selected.value]);
 const state = ref<'loading' | 'error' | 'ready'>('loading');
 const scope = new AbortController();
 const pesos = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' });
+const historyDate = new Intl.DateTimeFormat('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const chartScale = computed(() => {
+    const values = day.value?.net_sales_samples?.map(sample => sample.net_sales) ?? [];
+    const min = Math.min(0, ...values);
+    const max = Math.max(0, ...values);
+    return { min, span: max - min || 1 };
+});
+const chartPosition = (amount: number) => (amount - chartScale.value.min) / chartScale.value.span * 100;
 const dateLabel = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const basis = {
     typical_range: 'Stock targets use dates in the typical sales range for this weekday.',
@@ -93,6 +102,34 @@ onUnmounted(() => scope.abort());
                 </p>
                 <p class="text-sm text-[#68665f]">{{ day.sample_days }} comparable dates. {{ basis[day.basis] }}</p>
                 <a v-if="day.rain_chance !== null" href="https://www.visualcrossing.com/" target="_blank" rel="noopener noreferrer" class="w-fit text-xs text-[#ad3b19] underline">Weather Data Provided by Visual Crossing</a>
+            </section>
+
+            <section aria-labelledby="forecast-sales-history" class="min-w-0 rounded-lg border border-[#ded7cb] bg-[#fffcf6] p-4">
+                <h2 id="forecast-sales-history" class="text-lg font-bold">Sales behind the estimate</h2>
+                <p v-if="day.net_sales !== null" class="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-[#68665f]">
+                    <span aria-hidden="true" class="w-5 border-t-2 border-dashed border-[#24231e]"></span>
+                    Estimate: {{ pesos.format(day.net_sales) }} · median of the dates below
+                </p>
+                <p v-else class="mt-1 text-sm text-[#68665f]">At least two comparable dates are needed for a net sales estimate.</p>
+
+                <ul v-if="day.net_sales_samples?.length" :key="day.date"
+                    aria-label="Comparable dates and actual net sales" tabindex="0"
+                    class="mt-3 grid max-h-96 gap-3 overflow-y-auto rounded-sm pr-1 focus-visible:outline-2 focus-visible:outline-[#ad3b19]">
+                    <li v-for="sample in day.net_sales_samples" :key="sample.date" class="grid gap-1">
+                        <div class="flex flex-wrap justify-between gap-x-3 text-sm">
+                            <time :datetime="sample.date">{{ historyDate.format(new Date(sample.date + 'T00:00:00Z')) }}</time>
+                            <strong class="tabular-nums">{{ pesos.format(sample.net_sales) }}</strong>
+                        </div>
+                        <div aria-hidden="true" class="relative h-4 rounded bg-[#eee6d9]">
+                            <span class="absolute inset-y-0 rounded-sm" :class="sample.net_sales < 0 ? 'bg-[#775066]' : 'bg-[#ad3b19]'"
+                                :style="{ left: chartPosition(Math.min(0, sample.net_sales)) + '%', width: Math.abs(chartPosition(sample.net_sales) - chartPosition(0)) + '%' }"></span>
+                            <span v-if="chartScale.min < 0" class="absolute inset-y-0 border-l border-[#68665f]" :style="{ left: chartPosition(0) + '%' }"></span>
+                            <span v-if="day.net_sales !== null" class="absolute inset-y-0 border-l-2 border-dashed border-[#24231e]"
+                                :style="{ left: 'min(' + chartPosition(day.net_sales) + '%, calc(100% - 2px))' }"></span>
+                        </div>
+                    </li>
+                </ul>
+                <p v-else class="mt-3 text-sm text-[#68665f]">No comparable sales dates found.</p>
             </section>
 
             <section class="rounded-lg border border-[#ded7cb] bg-[#fffcf6] p-4">
