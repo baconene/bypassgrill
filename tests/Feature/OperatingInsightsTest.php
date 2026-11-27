@@ -47,6 +47,15 @@ class OperatingInsightsTest extends TestCase
         $this->getJson('/api/v1/reports/production-forecast')->assertOk()
             ->assertJsonPath('days.0.date', '2026-11-20')->assertJsonPath('days.1.date', '2026-11-21')
             ->assertJsonPath('days.2.date', '2026-11-22')
+            ->assertJsonPath('month.0.date', '2026-11-20')
+            ->assertJsonPath('month.0.weather_source', 'forecast')
+            ->assertJsonPath('month.0.rain_chance', 80)
+            ->assertJsonPath('month.3.date', '2026-11-27')
+            ->assertJsonPath('month.3.weather_source', 'history')
+            ->assertJsonPath('month.3.rain_chance', 75)
+            ->assertJsonPath('month.3.net_sales', 4800)
+            ->assertJsonPath('month.4.weather_source', 'unavailable')
+            ->assertJsonPath('month.4.net_sales', null)
             ->assertJsonPath('model.training_days', 5)->assertJsonPath('model.weather_days', 5)
             ->assertJsonPath('model.use_context', false)
             ->assertJsonPath('days.0.weekday_rank.days', 5)->assertJsonPath('days.0.weekday_rank.lowest', 1000)
@@ -60,6 +69,51 @@ class OperatingInsightsTest extends TestCase
             ->assertJsonPath('days.0.net_sales_samples.2.condition', 'rain')
             ->assertJsonPath('days.0.net_sales_samples.2.rain_mm', 7)
             ->assertJsonPath('days.1.units', null)->assertJsonPath('days.1.net_sales_samples', []);
+    }
+
+    public function test_daily_batch_freezes_the_forecast_and_scores_only_completed_service_dates(): void
+    {
+        $this->fakeWeather();
+        foreach (['2026-11-20' => 1000, '2026-11-13' => 3000, '2026-11-21' => 1000, '2026-11-14' => 1000] as $date => $sales) {
+            $this->ledger($date, $sales);
+        }
+
+        $this->artisan('forecast:capture')->assertSuccessful();
+        $this->assertDatabaseHas('production_forecast_snapshots', [
+            'forecast_as_of' => '2026-11-27', 'service_date' => '2026-11-27',
+            'estimated_net_sales' => 2000, 'weather_source' => 'forecast',
+            'rain_chance' => 80, 'payday_distance' => 3, 'result' => 'pending',
+        ]);
+        $rows = \Illuminate\Support\Facades\DB::table('production_forecast_snapshots')->where('forecast_as_of', '2026-11-27')->count();
+        $this->ledger('2026-11-20', 500);
+        $this->ledger('2026-11-27', 2200);
+        $this->ledger('2026-11-27', -200);
+        $this->artisan('forecast:capture')->assertSuccessful();
+        $this->assertDatabaseCount('production_forecast_snapshots', $rows);
+        $this->assertDatabaseHas('production_forecast_snapshots', [
+            'forecast_as_of' => '2026-11-27', 'service_date' => '2026-11-27',
+            'estimated_net_sales' => 2000, 'actual_net_sales' => null, 'result' => 'pending',
+        ]);
+
+        $this->travelTo(CarbonImmutable::parse('2026-11-28 10:00', 'Asia/Manila'));
+        $this->artisan('forecast:capture')->assertSuccessful();
+        $this->assertDatabaseHas('production_forecast_snapshots', [
+            'forecast_as_of' => '2026-11-27', 'service_date' => '2026-11-27',
+            'estimated_net_sales' => 2000, 'actual_net_sales' => 2000, 'sales_error' => 0, 'result' => 'hit',
+        ]);
+        $this->ledger('2026-11-28', 1350);
+        $this->travelTo(CarbonImmutable::parse('2026-11-30 10:00', 'Asia/Manila'));
+        $this->artisan('forecast:capture')->assertSuccessful();
+        $this->assertDatabaseHas('production_forecast_snapshots', [
+            'forecast_as_of' => '2026-11-28', 'service_date' => '2026-11-28', 'actual_net_sales' => 1350,
+            'sales_error' => 350, 'baseline_error' => 350, 'result' => 'miss',
+        ]);
+        $this->getJson('/api/v1/reports/production-forecast')->assertOk()
+            ->assertJsonPath('accuracy.hits', 1)->assertJsonPath('accuracy.scored', 2)
+            ->assertJsonPath('accuracy.days.0.result', 'no_sales_record')
+            ->assertJsonPath('accuracy.days.1.result', 'miss')
+            ->assertJsonPath('accuracy.days.1.as_of', '2026-11-28')
+            ->assertJsonPath('accuracy.days.2.result', 'hit');
     }
 
     public function test_weather_backfill_keeps_every_sale_with_or_without_weather(): void

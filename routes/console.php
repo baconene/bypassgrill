@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\ForecastSnapshots;
 use App\Services\OperatingInsights;
 use App\Services\StoreWeather;
 use Carbon\CarbonImmutable;
@@ -16,3 +17,10 @@ Artisan::command('forecast:backfill-weather', function (OperatingInsights $insig
 })->purpose('Cache trading-hour weather for historical production forecasts');
 
 Schedule::command('forecast:backfill-weather')->hourly()->withoutOverlapping();
+
+Artisan::command('forecast:capture', function (ForecastSnapshots $snapshots) {
+    $result = $snapshots->capture(CarbonImmutable::now(StoreWeather::TIMEZONE));
+    $this->info("Saved {$result['saved']} forecasts and reconciled {$result['evaluated']} snapshots.");
+})->purpose('Save the daily production forecast and reconcile completed service dates');
+
+Schedule::command('forecast:capture')->dailyAt('10:00')->timezone(StoreWeather::TIMEZONE)->withoutOverlapping();

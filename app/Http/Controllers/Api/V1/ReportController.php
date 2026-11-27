@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Services\AnalyticsService;
+use App\Services\ForecastSnapshots;
 use App\Services\OperatingInsights;
 use App\Services\ReportService;
 use App\Services\SalesDayInsights;
@@ -35,11 +36,12 @@ class ReportController extends Controller
         );
     }
 
-    public function productionForecast(OperatingInsights $insights): JsonResponse
+    public function productionForecast(OperatingInsights $insights, ForecastSnapshots $snapshots): JsonResponse
     {
         $this->checkPermission();
 
-        return response()->json($insights->forecast(CarbonImmutable::now(StoreWeather::TIMEZONE)));
+        return response()->json($insights->forecast(CarbonImmutable::now(StoreWeather::TIMEZONE))
+            + ['accuracy' => $snapshots->summary()]);
     }
 
     public function operatingReview(Request $request, OperatingInsights $insights): JsonResponse

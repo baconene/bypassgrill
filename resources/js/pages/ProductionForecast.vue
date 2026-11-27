@@ -2,6 +2,8 @@
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import api from '@/utils/api';
+import ForecastAccuracy from '@/pages/reports/ForecastAccuracy.vue';
+import MonthlyForecastChart from '@/pages/reports/MonthlyForecastChart.vue';
 import ForecastHistoryChart from '@/pages/reports/ForecastHistoryChart.vue';
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard' }, { title: 'Production forecast', href: '/production-forecast' }] } });
@@ -17,7 +19,11 @@ type Day = {
 };
 
 type Model = { training_days: number; weather_days: number; test_days: number; weekday_mae: number | null; context_mae: number | null; use_context: boolean };
+type Month = InstanceType<typeof MonthlyForecastChart>['$props']['days'];
+type Accuracy = InstanceType<typeof ForecastAccuracy>['$props']['accuracy'];
 const days = ref<Day[]>([]);
+const month = ref<Month>([]);
+const accuracy = ref<Accuracy>();
 const model = ref<Model>();
 const selected = ref(0);
 const day = computed(() => days.value[selected.value]);
@@ -35,9 +41,11 @@ function plan(day: Day) {
 async function load() {
     state.value = 'loading';
     try {
-        const { data } = await api.get<{ days: Day[]; model: Model }>('/api/v1/reports/production-forecast', { signal: scope.signal, timeout: 26000 });
+        const { data } = await api.get<{ days: Day[]; model: Model; month: Month; accuracy: Accuracy }>('/api/v1/reports/production-forecast', { signal: scope.signal, timeout: 26000 });
         days.value = data.days;
         model.value = data.model;
+        month.value = data.month ?? [];
+        accuracy.value = data.accuracy;
         state.value = 'ready';
     } catch {
         if (!scope.signal.aborted) state.value = 'error';
@@ -62,6 +70,8 @@ onUnmounted(() => scope.abort());
             Forecast unavailable. <button type="button" class="min-h-11 px-2 text-[#ad3b19] underline" @click="load">Try again</button>
         </div>
         <template v-else-if="day">
+            <MonthlyForecastChart v-if="month.length" :days="month" />
+
             <nav aria-label="Service dates" class="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <button v-for="(entry, i) in days" :key="entry.date" type="button" :aria-pressed="selected === i"
                     class="rounded-lg border border-[#ded7cb] bg-[#fffcf6] p-3 text-left aria-pressed:border-[#ad3b19] aria-pressed:ring-1 aria-pressed:ring-[#ad3b19]"
@@ -112,6 +122,7 @@ onUnmounted(() => scope.abort());
                 </table>
                 <p v-else class="mt-3 text-sm text-[#68665f]">There isn’t enough paid order history to estimate product quantities for this day.</p>
             </section>
+            <ForecastAccuracy v-if="accuracy" :accuracy="accuracy" />
         </template>
     </main>
 </template>

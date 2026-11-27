@@ -12,10 +12,11 @@ class OperatingInsights
     public function forecast(CarbonImmutable $now): array
     {
         $today = $now->startOfDay();
-        $nextDays = [];
-        for ($day = $today; count($nextDays) < 3; $day = $day->addDay()) {
+        $serviceDates = [];
+        $until = $today->addDays(30);
+        for ($day = $today; $day->lt($until); $day = $day->addDay()) {
             if ($day->dayOfWeekIso >= 5 && $day->addHours((int) config('services.store_weather.opens_hour'))->gt($now)) {
-                $nextDays[] = $day->toDateString();
+                $serviceDates[] = $day->toDateString();
             }
         }
 
@@ -32,7 +33,7 @@ class OperatingInsights
             ->selectRaw('DATE(created_at) as day, COUNT(*) as orders')->groupByRaw('DATE(created_at)')
             ->pluck('orders', 'day')->all();
         $salesHistory = $this->productionSales($sales);
-        $forecast = $this->weather->serviceWeather($nextDays, $now, forecast: true);
+        $forecast = $this->weather->serviceWeather($serviceDates, $now, forecast: true);
         $weatherHistory = $this->weather->trainingWeather(array_reverse(array_keys($salesHistory)), $now);
         $training = [];
         foreach ($salesHistory as $date => $netSales) {
@@ -49,8 +50,8 @@ class OperatingInsights
         $validation = $this->model->validate($training);
         $unitHistory = $items->map(fn ($rows) => (int) $rows->sum('units'))->all();
 
-        $result = [];
-        foreach ($nextDays as $date) {
+        $result = $month = [];
+        foreach ($serviceDates as $date) {
             $target = $this->date($date);
             $payday = $this->payday($target);
             $weather = $forecast[$date];
@@ -60,6 +61,31 @@ class OperatingInsights
             $rank = WeekdaySalesRank::summarize($weekdaySales, $date);
             $weights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => $weather['rainy']], $validation['use_context']);
             $baseline = array_fill_keys(array_keys($weekday), 1);
+            $hasLiveWeather = $weather['rainy'] !== null;
+            $historicalRain = $hasLiveWeather ? null : $this->historicalRainChance($weekday, $target);
+            $salesEstimate = count($weekday) >= 2 ? $this->model->estimate($weekdaySales, $weights) : null;
+            if ($salesEstimate !== null && $historicalRain !== null && $validation['use_context']) {
+                $rainyWeights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => true], true);
+                $dryWeights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => false], true);
+                $chance = $historicalRain / 100;
+                $salesEstimate = round($chance * $this->model->estimate($weekdaySales, $rainyWeights)
+                    + (1 - $chance) * $this->model->estimate($weekdaySales, $dryWeights), 2);
+            }
+            $month[] = [
+                'date' => $date,
+                'net_sales' => $salesEstimate,
+                'weekday_baseline' => count($weekday) >= 2 ? $this->model->estimate($weekdaySales, $baseline) : null,
+                'weather_source' => $hasLiveWeather ? 'forecast' : ($historicalRain !== null ? 'history' : 'unavailable'),
+                'rain_chance' => $hasLiveWeather ? $weather['rain_chance'] : $historicalRain,
+                'condition' => $hasLiveWeather ? $weather['condition'] : null,
+                'payday_distance' => WeekdaySalesRank::paydayDistance($target),
+                'sample_days' => count($weekday),
+            ];
+
+            if (count($month) > 3) {
+                continue;
+            }
+
             $stockWeights = array_intersect_key($weights, $unitHistory);
             $baselineUnits = $this->model->estimate($unitHistory, array_intersect_key($baseline, $unitHistory));
             $units = count($stockWeights) >= 2 ? $this->model->estimate($unitHistory, $stockWeights) : null;
@@ -97,16 +123,31 @@ class OperatingInsights
                 'near_payday' => $nearPayday,
                 'orders' => $projectedOrders,
                 'typical_orders' => $baselineOrders,
-                'net_sales' => count($weekday) >= 2 ? $this->model->estimate($weekdaySales, $weights) : null,
+                'net_sales' => $salesEstimate,
                 'net_sales_samples' => array_values($weekday),
                 'products' => $products,
             ];
         }
 
-        return ['days' => $result, 'model' => $validation + [
+        return ['days' => $result, 'month' => $month, 'model' => $validation + [
             'training_days' => count($training),
             'weather_days' => count(array_filter($training, fn ($day) => $day['rainy'] !== null)),
         ]];
+    }
+
+    private function historicalRainChance(array $weekday, CarbonImmutable $target): ?float
+    {
+        $known = array_filter($weekday, fn ($day) => $day['rainy'] !== null);
+        $season = array_filter($known, function ($day) use ($target) {
+            $monthGap = abs($this->date($day['date'])->month - $target->month);
+
+            return min($monthGap, 12 - $monthGap) <= 1;
+        });
+        $sample = count($season) >= 4 ? $season : $known;
+
+        return count($sample) >= 4
+            ? round(100 * count(array_filter($sample, fn ($day) => $day['rainy'])) / count($sample), 2)
+            : null;
     }
 
     public function warmForecastWeather(CarbonImmutable $now): void
