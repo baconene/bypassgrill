@@ -1,0 +1,118 @@
+# Prediction factors plan
+
+Status: **saved for later, not built yet.** Requested November 27, 2026.
+
+## Why
+
+The replay report (June 1 – November 28, 2026) shows the sales forecast is weak:
+
+- 25 of 61 completed days were hits (within 10% of the estimate); 36 were misses.
+- Average absolute error ₱3,322.93, barely better than a plain same-weekday average (₱3,369.56).
+
+Today the model (`ProductionDemandModel`) averages past sales from the same weekday, weighting days that
+match on two things only: near payday (within 3 days of the 15th or 30th) and rain. It knows nothing about
+holidays.
+
+The owner's observation: **when payday meets a long weekend, sales peak.** The data agrees. October 31
+was the biggest miss in the chart, actual well above forecast, and October 31 – November 2 was a long
+weekend right after the October 30 payday. November 28–30 is the same pattern (Bonifacio Day Monday on
+the November 30 payday).
+
+## What to build
+
+### 1. A factor system admins can extend
+
+A **Forecast factors** settings page listing the factors the forecast uses, each one on/off, so new ones
+can be added without rewriting the model. A factor flags a date (true/false, or a category) and the
+model uses the flag:
+
+- as a **similarity weight**: past days with the same flag count more, the way payday and rain do now; and
+- as an **uplift**: the average ratio of actual sales to the weekday baseline on past flagged days,
+  applied to the estimate once there are enough examples (e.g. at least 3). Until then, an optional
+  admin-entered starting uplift (e.g. +25%).
+
+Built-in factors to start with: payday, near payday, rain (existing), holiday, long weekend, and
+**payday + long weekend** (the peak case). Later candidates: 13th-month pay (December), school breaks,
+local fiesta, promos, and custom one-off events entered by date.
+
+### 2. Philippine holiday calendar
+
+A `holidays` table: date, name, type (`regular`, `special_non_working`, `special_working`), and
+whether it is confirmed. Admins can edit it in Settings, because:
+
+- the list is set each year by presidential proclamation, and
+- Eid'l Fitr and Eid'l Adha dates, and sometimes others, are announced close to the date, and
+  holidays are occasionally moved ("holiday economics").
+
+Seed each year from the official proclamation. Draft 2026 list (dates marked * must be checked against
+the proclamation before seeding):
+
+| Date | Day | Holiday | Type |
+| --- | --- | --- | --- |
+| Jan 1 | Thu | New Year's Day | Regular |
+| Feb 17 | Tue | Chinese New Year | Special |
+| Mar 20* | Fri | Eid'l Fitr | Regular |
+| Apr 2 | Thu | Maundy Thursday | Regular |
+| Apr 3 | Fri | Good Friday | Regular |
+| Apr 4 | Sat | Black Saturday | Special |
+| Apr 9 | Thu | Araw ng Kagitingan | Regular |
+| May 1 | Fri | Labor Day | Regular |
+| May 27* | Wed | Eid'l Adha | Regular |
+| Jun 12 | Fri | Independence Day | Regular |
+| Aug 21 | Fri | Ninoy Aquino Day | Special |
+| Aug 31 | Mon | National Heroes Day | Regular |
+| Nov 1 | Sun | All Saints' Day | Special |
+| Nov 2* | Mon | All Souls' Day | Special |
+| Nov 30 | Mon | Bonifacio Day | Regular |
+| Dec 8 | Tue | Immaculate Conception | Special |
+| Dec 24* | Thu | Christmas Eve | Special |
+| Dec 25 | Fri | Christmas Day | Regular |
+| Dec 30 | Wed | Rizal Day | Regular |
+| Dec 31* | Thu | Last day of the year | Special |
+
+### 3. Long-weekend flag
+
+A **long weekend** is a run of 3 or more consecutive days off (Saturdays, Sundays, regular and special
+non-working holidays) that contains at least one holiday. Flag every day in the run, plus the evening
+before it starts as an optional "eve" flag, since people often eat out the night a break begins.
+
+**Payday + long weekend** is set when a payday falls inside the run or within 3 days before it.
+
+From the draft list, 2026 long weekends:
+
+| Long weekend | Days | Payday |
+| --- | --- | --- |
+| Mar 20–22 (Eid'l Fitr) | 3 | |
+| Apr 2–5 (Holy Week) | 4 | Mar 30 |
+| May 1–3 (Labor Day) | 3 | Apr 30 |
+| Jun 12–14 (Independence Day) | 3 | |
+| Aug 21–23 (Ninoy Aquino Day) | 3 | |
+| Aug 29–31 (National Heroes Day) | 3 | Aug 30 |
+| Oct 31 – Nov 2 (All Saints/Souls) | 3 | Oct 30 |
+| Nov 28–30 (Bonifacio Day) | 3 | Nov 30 |
+| Dec 24–27 (Christmas) | 4 | |
+
+### 4. Payday rule to settle
+
+The code treats the 15th and 30th as paydays. Two gaps to decide on:
+
+- **February** has no 30th, so it currently has no second payday. Use the last day of the month.
+- When payday lands on a weekend or holiday, many employers pay on the previous working day. Make this
+  a setting.
+
+## Where it goes in the code
+
+- `ProductionDemandModel::weights()`: add the new flags alongside `near_payday` and `rainy`; apply the
+  learned uplift in `estimate()`.
+- The day records that feed it (`SalesDayInsights`, `OperatingInsights`, `ForecastSnapshots`): add
+  `holiday`, `holiday_type`, `long_weekend`, `long_weekend_eve` and `payday_long_weekend`.
+- `WeekdaySalesRank::paydayDistance()` / `SalesDayInsights::isPayday()`: one shared payday rule
+  covering the February and previous-working-day cases.
+- Predictions report and POS insights: show the flags on each date (e.g. "Payday + long weekend: expect a
+  peak") so staff can prep extra stock.
+
+## How to know it worked
+
+Re-run the June-onward replay (`ForecastSnapshots`) with and without the new factors and compare hits and
+average absolute error, overall and on flagged days. Keep a factor switched on only if it lowers the
+error, the same test the model already uses before trusting payday and rain.
