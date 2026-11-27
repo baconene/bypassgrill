@@ -28,6 +28,14 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'store_weather' => [
+        'key' => env('VISUAL_CROSSING_API_KEY'),
+        'coordinates' => env('STORE_WEATHER_COORDINATES', '14.185367,121.509690'),
+        'location' => env('STORE_WEATHER_LOCATION', 'Luisiana, Laguna'),
+        'opens_hour' => env('STORE_WEATHER_OPENS_HOUR', 15),
+        'closes_hour' => env('STORE_WEATHER_CLOSES_HOUR', 22),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

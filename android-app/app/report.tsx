@@ -46,7 +46,7 @@ export default function Reports() {
 
   const start = shiftDate(today, 1 - range);
   const params = new URLSearchParams();
-  if (tab === 'daily-sales') params.set('date', day);
+  if (tab === 'daily-sales' || tab === 'sales-insights') params.set('date', day);
   else if (tab === 'monthly-sales') {
     params.set('year', month.slice(0, 4));
     params.set('month', month.slice(5));
@@ -85,7 +85,7 @@ export default function Reports() {
   }
 
   const current = result?.path === path ? result : undefined;
-  const isDaily = tab === 'daily-sales';
+  const isDaily = tab === 'daily-sales' || tab === 'sales-insights';
   const isMonthly = tab === 'monthly-sales';
   const period = isDaily ? day : month;
   const latest = isDaily ? today : thisMonth;

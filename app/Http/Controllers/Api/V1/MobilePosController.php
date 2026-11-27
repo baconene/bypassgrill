@@ -17,6 +17,9 @@ use App\Services\DepositSnapshot;
 use App\Services\InventoryService;
 use App\Services\PosCheckoutService;
 use App\Services\PrintJobService;
+use App\Services\SalesDayInsights;
+use App\Services\StoreWeather;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -183,6 +186,13 @@ class MobilePosController extends Controller
     public function paymentTenders(Request $request): JsonResponse { $this->authenticate($request); return app(PaymentTenderController::class)->index(); }
     public function financialStore(Request $request): JsonResponse { $this->authenticate($request); return app(FinancialTransactionController::class)->store($request); }
 
+    public function weather(Request $request, StoreWeather $weather): JsonResponse
+    {
+        $this->authenticate($request);
+
+        return response()->json($weather->forecast(CarbonImmutable::now(StoreWeather::TIMEZONE)));
+    }
+
     public function report(Request $request,string $type): JsonResponse {
         $this->authenticate($request);
         $controller=app(ReportController::class);
@@ -193,9 +203,21 @@ class MobilePosController extends Controller
             'profit-loss'=>$controller->profitLoss(),
             'heatmap'=>$controller->heatmap(),
             'analytics'=>$controller->analytics(),
+            'sales-insights'=>$this->salesInsights($request),
             'serving-time'=>$controller->servingTime(),
             default=>abort(404,'Unknown report.')
         };
+    }
+
+    private function salesInsights(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user->hasAnyRole('admin') || $user->hasPermissionTo('view reports'), 403, 'Unauthorized');
+        $now = CarbonImmutable::now(StoreWeather::TIMEZONE);
+        $validated = $request->validate(['date' => ['sometimes', 'required', 'date_format:Y-m-d', 'before_or_equal:'.$now->toDateString()]]);
+        $day = CarbonImmutable::parse($validated['date'] ?? $now->toDateString(), StoreWeather::TIMEZONE)->startOfDay();
+
+        return response()->json(app(SalesDayInsights::class)->report($day, $now));
     }
 
     /** Public Pusher settings so the Android POS can listen for web print requests (the key is public; no secret is sent) */

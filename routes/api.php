@@ -40,6 +40,7 @@ Route::prefix('v1/mobile-pos')->group(function () {
     Route::get('/financial-periods', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'financialPeriods']);
     Route::get('/payment-tenders', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'paymentTenders']);
     Route::post('/financial-transactions', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'financialStore']);
+    Route::get('/weather', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'weather']);
     Route::get('/reports/{type}', [\App\Http\Controllers\Api\V1\MobilePosController::class, 'report']);
 });
 

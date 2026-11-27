@@ -1,9 +1,10 @@
 import {useState} from 'react';
+import {SalesInsights} from './SalesInsights';
 import {Choices, ColumnChart, Empty, Metrics, Panel, RowChart, colors, type Bar} from './ReportCharts';
 
 export const tabs = [
   ['daily-sales', 'Daily sales'], ['monthly-sales', 'Monthly sales'], ['product-sales', 'Products'],
-  ['profit-loss', 'P&L'], ['heatmap', 'Peak hours'], ['analytics', 'Trends'], ['serving-time', 'Serving time'],
+  ['profit-loss', 'P&L'], ['heatmap', 'Peak hours'], ['analytics', 'Trends'], ['sales-insights', 'Sales insights'], ['serving-time', 'Serving time'],
 ] as const;
 
 export type ReportType = typeof tabs[number][0];
@@ -254,6 +255,7 @@ export function ReportBody({type, data}: {type: ReportType; data: unknown}) {
     case 'product-sales': return <Products data={Array.isArray(data) ? data : []}/>;
     case 'profit-loss': return <Profit data={data as ProfitData}/>;
     case 'heatmap': return <PeakHours data={data as PeakData}/>;
+    case 'sales-insights': return <SalesInsights data={data as Parameters<typeof SalesInsights>[0]['data']}/>;
     case 'analytics': return <Trends data={data as TrendData}/>;
     case 'serving-time': return <Serving data={data as ServingData}/>;
   }
