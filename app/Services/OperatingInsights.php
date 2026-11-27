@@ -19,22 +19,25 @@ class OperatingInsights
             }
         }
 
-        $sales = $this->sales($today->subWeeks(12), $today);
+        $sales = $this->sales($today);
         $items = DB::table('order_items as i')->join('orders as o', 'i.order_id', '=', 'o.id')
             ->join('products as p', 'i.product_id', '=', 'p.id')
-            ->where('o.created_at', '>=', $today->subWeeks(12))->where('o.created_at', '<', $today)
+            ->where('o.created_at', '<', $today)
             ->where('o.payment_status', 'paid')->where('o.status', '!=', 'cancelled')
             ->where('i.status', '!=', 'cancelled')->where('p.is_active', true)
             ->selectRaw('DATE(o.created_at) as day, p.id, p.name, SUM(i.quantity) as units')
             ->groupByRaw('DATE(o.created_at), p.id, p.name')->get()->groupBy('day');
+        $orders = DB::table('orders')->where('created_at', '<', $today)
+            ->where('payment_status', 'paid')->where('status', '!=', 'cancelled')
+            ->selectRaw('DATE(created_at) as day, COUNT(*) as orders')->groupByRaw('DATE(created_at)')
+            ->pluck('orders', 'day')->all();
         $history = array_values(array_filter($items->keys()->all(), fn ($date) => $this->date($date)->dayOfWeekIso >= 5));
         rsort($history);
         $forecast = $this->weather->serviceWeather($nextDays, $now, forecast: true);
         $weatherHistory = $this->weather->serviceWeather(array_slice($history, 0, 12), $now);
         $unitHistory = $items->map(fn ($rows) => (int) $rows->sum('units'))->all();
-        $salesHistory = array_map(fn ($day) => $day['net'], $sales);
-        $paydayUnits = $this->paydayLift($history, $unitHistory);
-        $paydaySales = $this->paydayLift($history, $salesHistory);
+        $salesHistory = array_map(fn ($day) => $day['net'], array_filter($sales, fn ($day) => $day['receipts'] > 0));
+
 
         $result = [];
         foreach ($nextDays as $date) {
@@ -42,35 +45,43 @@ class OperatingInsights
             $payday = $this->payday($target);
             $weather = $forecast[$date];
             $weekday = array_values(array_filter($history, fn ($d) => $this->date($d)->dayOfWeekIso === $target->dayOfWeekIso));
-            $payPeers = array_values(array_filter($weekday, fn ($d) => $this->payday($this->date($d)) === $payday));
-            $weatherPeers = $weather['rainy'] === null ? [] : array_values(array_filter($payPeers,
-                fn ($d) => ($weatherHistory[$d]['rainy'] ?? null) === $weather['rainy']));
-            $matches = count($weatherPeers) >= 2 ? $weatherPeers : (count($payPeers) >= 3 ? $payPeers : $weekday);
-            $basis = count($weatherPeers) >= 2 ? 'weekday_payday_weather' : (count($payPeers) >= 3 ? 'weekday_payday' : 'weekday');
-            $usePaydayLift = $payday && $basis === 'weekday' && $paydayUnits !== null;
-            $regularWeekday = array_values(array_filter($weekday, fn ($d) => !$this->payday($this->date($d))));
-            if ($usePaydayLift && count($regularWeekday) >= 2) {
-                $matches = $regularWeekday;
-                $basis = 'weekday_payday_adjusted';
+            $nearPayday = WeekdaySalesRank::nearPayday($target);
+            $lowerDemand = !$nearPayday && $weather['rainy'] === true;
+            $weekdaySales = array_intersect_key($salesHistory, array_flip($weekday));
+            $typical = WeekdaySalesRank::typicalDates($weekdaySales);
+            $rank = WeekdaySalesRank::summarize($weekdaySales, $date);
+            $ranked = array_keys($weekdaySales);
+            usort($ranked, fn ($a, $b) => $weekdaySales[$a] <=> $weekdaySales[$b] ?: strcmp($b, $a));
+            $matches = $typical;
+            $basis = 'typical_range';
+
+            if ($lowerDemand) {
+                $lowerHalf = array_slice($ranked, 0, max(2, (int) ceil(count($ranked) / 2)));
+                $rainPeers = array_values(array_filter($lowerHalf, fn ($d) =>
+                    ($weatherHistory[$d]['rainy'] ?? null) === true && !WeekdaySalesRank::nearPayday($this->date($d))));
+                $matches = count($rainPeers) >= 2 ? $rainPeers : $lowerHalf;
+                $basis = count($rainPeers) >= 2 ? 'rain_away_matched' : 'lower_range';
+            } elseif (count($matches) < 2) {
+                $matches = $ranked;
+                $basis = 'weekday_fallback';
             }
-            $unitFactor = $basis === 'weekday_payday_adjusted' ? $paydayUnits : 1;
-            $salesFactor = $basis === 'weekday_payday_adjusted' ? $paydaySales : 1;
-            $baselineUnits = $this->median(array_map(fn ($d) => $unitHistory[$d], $weekday));
-            $units = count($matches) >= 2 ? $this->median(array_map(fn ($d) => $unitHistory[$d], $matches)) * $unitFactor : null;
+
+            $baselineUnits = $this->median(array_map(fn ($d) => $unitHistory[$d], $typical));
+            $units = count($matches) >= 2 ? $this->median(array_map(fn ($d) => $unitHistory[$d], $matches)) : null;
             $products = [];
             if ($units !== null) {
                 $lines = collect($matches)->flatMap(fn ($d) => $items[$d]->map(fn ($item) => [$d, $item]))->groupBy(fn ($line) => $line[1]->id);
                 foreach ($lines as $group) {
                     $byDay = $group->mapWithKeys(fn ($line) => [$line[0] => (int) $line[1]->units]);
                     $daily = array_map(fn ($d) => $byDay->get($d, 0), $matches);
-                    $typical = (int) ceil($this->median($daily) * $unitFactor);
-                    if ($typical > 0) {
+                    $suggested = (int) ceil($this->median($daily));
+                    if ($suggested > 0) {
                         sort($daily);
                         $products[] = [
                             'id' => (int) $group->first()[1]->id,
                             'name' => $group->first()[1]->name,
-                            'suggested' => $typical,
-                            'busy' => max($typical, (int) ceil($daily[(int) ceil(count($daily) * 0.75) - 1] * $unitFactor)),
+                            'suggested' => $suggested,
+                            'busy' => max($suggested, (int) ceil($daily[(int) ceil(count($daily) * 0.75) - 1])),
                         ];
                     }
                 }
@@ -81,7 +92,13 @@ class OperatingInsights
                 'date' => $date, 'payday' => $payday, 'rain_chance' => $weather['rain_chance'],
                 'basis' => $basis, 'sample_days' => count($matches), 'units' => $units,
                 'weekday_units' => $baselineUnits,
-                'net_sales' => $units === null || $salesFactor === null ? null : round($this->median(array_map(fn ($d) => $sales[$d]['net'] ?? 0, $matches)) * $salesFactor, 2),
+                'weekday_rank' => $rank,
+                'payday_distance' => WeekdaySalesRank::paydayDistance($target),
+                'near_payday' => $nearPayday,
+                'lower_demand_signal' => $lowerDemand,
+                'orders' => $units === null ? null : $this->median(array_map(fn ($d) => (int) ($orders[$d] ?? 0), $matches)),
+                'typical_orders' => $this->median(array_map(fn ($d) => (int) ($orders[$d] ?? 0), $typical)),
+                'net_sales' => $units === null ? null : $this->median(array_intersect_key($weekdaySales, array_flip($matches))),
                 'products' => $products,
             ];
         }
@@ -93,23 +110,20 @@ class OperatingInsights
     {
         $selected = $date->toDateString();
         $lastWeek = $date->subWeek()->toDateString();
-        $sales = $this->sales($date->subWeeks(12), $date->addDay());
-        $prior = [];
-        for ($i = 1; $i <= 12; $i++) {
-            $d = $date->subWeeks($i)->toDateString();
-            if (($sales[$d]['receipts'] ?? 0) > 0) {
-                $prior[] = $d;
-            }
-        }
+        $sales = $this->sales($now->startOfDay());
+        $sameWeekday = array_filter($sales, fn ($row, $d) => $row['receipts'] > 0 &&
+            $this->date($d)->dayOfWeekIso === $date->dayOfWeekIso, ARRAY_FILTER_USE_BOTH);
+        $rank = WeekdaySalesRank::summarize(array_map(fn ($row) => $row['net'], $sameWeekday), $selected);
+        $prior = array_values(array_filter(array_keys($sameWeekday), fn ($d) => $d < $selected));
+        rsort($prior);
         $weather = $this->weather->serviceWeather(array_values(array_unique([$selected, $lastWeek, ...array_slice($prior, 0, 6)])), $now);
-        $staffing = DB::table('service_day_staffing')->whereBetween('service_date', [$date->subWeeks(12)->toDateString(), $selected])
+        $staffing = DB::table('service_day_staffing')->whereIn('service_date', array_keys($weather))
             ->get(['service_date', 'headcount', 'staff_hours'])->keyBy('service_date');
         $payday = $this->payday($date);
         $rainy = $weather[$selected]['rainy'];
-        $payPeers = array_values(array_filter($prior, fn ($d) => $this->payday($this->date($d)) === $payday));
+        $payPeers = array_values(array_filter($prior, fn ($d) => WeekdaySalesRank::nearPayday($this->date($d)) === WeekdaySalesRank::nearPayday($date)));
         $rainPeers = $rainy === null ? [] : array_values(array_filter($payPeers,
             fn ($d) => ($weather[$d]['rainy'] ?? null) === $rainy));
-        $priorNet = $this->summarize($prior, $sales);
         $matched = $this->summarize($rainPeers, $sales);
         $payMatched = $this->summarize($payPeers, $sales);
         $differentPayday = array_values(array_diff($prior, $payPeers));
@@ -132,7 +146,12 @@ class OperatingInsights
                 'headcount' => $staffing->has($lastWeek) ? (int) $staffing[$lastWeek]->headcount : null,
                 'staff_hours' => $staffing->has($lastWeek) ? (float) $staffing[$lastWeek]->staff_hours : null,
             ],
-            'typical' => $priorNet + ['change_pct' => $hasReceipts && $priorNet['days'] >= 3 ? $this->change($net, $priorNet['net']) : null],
+            'weekday_rank' => $rank,
+            'near_payday' => WeekdaySalesRank::nearPayday($date),
+            'payday_distance' => WeekdaySalesRank::paydayDistance($date),
+            'lower_demand_signal' => !WeekdaySalesRank::nearPayday($date) && $rainy === true,
+            'typical' => ['days' => $rank['days'], 'net' => $rank['typical_low'],
+                'change_pct' => $hasReceipts && $rank['days'] >= 2 ? $this->change($net, $rank['typical_low']) : null],
             'same_payday_status' => $payMatched,
             'same_payday_and_weather' => $matched,
             'different_payday_status' => $this->summarize($differentPayday, $sales),
@@ -153,35 +172,10 @@ class OperatingInsights
         ];
     }
 
-    private function paydayLift(array $history, array $values): ?float
-    {
-        $regular = [];
-        foreach ($history as $date) {
-            $day = $this->date($date);
-            if (isset($values[$date]) && !$this->payday($day)) {
-                $regular[$day->dayOfWeekIso][] = $values[$date];
-            }
-        }
-
-        $ratios = [];
-        foreach ($history as $date) {
-            $day = $this->date($date);
-            $peerValues = $regular[$day->dayOfWeekIso] ?? [];
-            if (isset($values[$date]) && $this->payday($day) && count($peerValues) >= 2) {
-                $median = $this->median($peerValues);
-                if ($median > 0) {
-                    $ratios[] = max(0, $values[$date]) / $median;
-                }
-            }
-        }
-
-        return count($ratios) >= 3 ? $this->median($ratios) : null;
-    }
-
-    private function sales(CarbonImmutable $from, CarbonImmutable $until): array
+    private function sales(CarbonImmutable $until): array
     {
         return DB::table('financial_transactions')->where('type', 'payment')
-            ->where('transacted_at', '>=', $from)->where('transacted_at', '<', $until)
+            ->where('transacted_at', '<', $until)
             ->selectRaw('DATE(transacted_at) as day, SUM(amount) as net, SUM(CASE WHEN amount > 0 THEN 1 ELSE 0 END) as receipts')
             ->groupByRaw('DATE(transacted_at)')->get()
             ->mapWithKeys(fn ($row) => [$row->day => ['net' => round((float) $row->net, 2), 'receipts' => (int) $row->receipts]])->all();

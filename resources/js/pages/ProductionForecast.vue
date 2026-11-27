@@ -7,7 +7,10 @@ defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard'
 
 type Day = {
     date: string; payday: boolean; rain_chance: number | null; sample_days: number;
-    basis: 'weekday' | 'weekday_payday' | 'weekday_payday_weather' | 'weekday_payday_adjusted';
+    basis: 'typical_range' | 'weekday_fallback' | 'rain_away_matched' | 'lower_range';
+    near_payday: boolean; payday_distance: number; lower_demand_signal: boolean;
+    orders: number | null; typical_orders: number | null;
+    weekday_rank: { days: number; lowest: number | null; typical_low: number | null; typical_high: number | null };
     units: number | null; weekday_units: number | null; net_sales: number | null;
     products: { id: number; name: string; suggested: number; busy: number }[];
 };
@@ -20,13 +23,14 @@ const scope = new AbortController();
 const pesos = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' });
 const dateLabel = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const basis = {
-    weekday: 'Same weekday. Weather and payday samples were too limited for a closer match.',
-    weekday_payday: 'Same weekday and payday status. Weather samples were too limited for a closer match.',
-    weekday_payday_adjusted: 'Typical sales for this weekday, adjusted using past paydays across Friday–Sunday. Weather was not used in this estimate.',
-    weekday_payday_weather: 'Same weekday, payday status and comparable trading-hour weather.',
+    typical_range: 'Stock targets use dates in the typical sales range for this weekday.',
+    weekday_fallback: 'The typical range had fewer than two dates, so the estimate uses all recorded dates on this weekday.',
+    rain_away_matched: 'Stock targets use lower-sales dates with recorded rain and similar distance from payday.',
+    lower_range: 'Too few lower-sales dates matched both conditions. Stock targets use the lower half of sales for this weekday.',
 };
 
 function plan(day: Day) {
+    if (day.lower_demand_signal) return 'Plan for fewer orders';
     if (day.units === null || !day.weekday_units) return 'Collect more sales history';
     if (day.units >= day.weekday_units * 1.15) return 'Prep above typical';
     if (day.units <= day.weekday_units * 0.85) return 'Prep below typical';
@@ -74,14 +78,19 @@ onUnmounted(() => scope.abort());
             <section :key="day.date" class="grid gap-3 rounded-lg border border-[#ded7cb] bg-[#fffcf6] p-4">
                 <div class="flex flex-wrap items-baseline justify-between gap-2">
                     <h2 class="text-lg font-bold">{{ dateLabel(day.date) }} · {{ plan(day) }}</h2>
-                    <strong class="text-sm text-[#ad3b19]">{{ day.payday ? 'Scheduled payday' : 'Regular date' }}</strong>
+                    <strong class="text-sm text-[#ad3b19]">{{ day.payday ? 'Scheduled payday' : day.near_payday ? 'Near payday' : `${day.payday_distance} days from payday` }}</strong>
                 </div>
                 <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Estimated units</dt><dd class="text-lg font-bold">{{ day.units === null ? '—' : Math.ceil(day.units) }}</dd></div>
-                    <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Typical weekday</dt><dd class="text-lg font-bold">{{ day.weekday_units === null ? '—' : Math.ceil(day.weekday_units) }}</dd></div>
+                    <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Estimated paid orders</dt><dd class="text-lg font-bold">{{ day.orders === null ? '—' : Math.round(day.orders) }} <span v-if="day.typical_orders !== null" class="block text-xs font-normal">Typical: {{ Math.round(day.typical_orders) }}</span></dd></div>
                     <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Estimated net sales</dt><dd class="text-lg font-bold">{{ day.net_sales === null ? '—' : pesos.format(day.net_sales) }}</dd></div>
                     <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Peak hourly rain chance</dt><dd class="text-lg font-bold">{{ day.rain_chance === null ? 'Unavailable' : `${Math.round(day.rain_chance)}%` }}</dd></div>
                 </dl>
+                <p v-if="day.lower_demand_signal" class="text-sm font-semibold text-[#ad3b19]">Rain is likely during trading and payday is more than 3 days away.</p>
+                <p v-if="day.weekday_rank.days" class="text-sm text-[#68665f]">
+                    Typical net sales (80th–100th percentile): {{ pesos.format(day.weekday_rank.typical_low!) }} – {{ pesos.format(day.weekday_rank.typical_high!) }}.
+                    Recorded low: {{ pesos.format(day.weekday_rank.lowest!) }} across {{ day.weekday_rank.days }} same-weekday dates.
+                </p>
                 <p class="text-sm text-[#68665f]">{{ day.sample_days }} comparable dates. {{ basis[day.basis] }}</p>
                 <a v-if="day.rain_chance !== null" href="https://www.visualcrossing.com/" target="_blank" rel="noopener noreferrer" class="w-fit text-xs text-[#ad3b19] underline">Weather Data Provided by Visual Crossing</a>
             </section>

@@ -7,6 +7,8 @@ type Weather = { rainy: boolean | null; rain_mm: number | null };
 type Review = {
     date: string; weekday: string; net_sales: number; has_receipts: boolean; payday: boolean; weather: Weather;
     previous_week: { date: string; net_sales: number | null; change_pct: number | null; payday: boolean; weather: Weather; headcount: number | null; staff_hours: number | null };
+    near_payday: boolean; payday_distance: number; lower_demand_signal: boolean;
+    weekday_rank: { days: number; rank: number | null; lowest: number | null; is_lowest: boolean; typical_high: number | null };
     typical: Sample & { change_pct: number | null };
     same_payday_status: Sample; different_payday_status: Sample;
     same_payday_and_weather: Sample; different_weather_same_payday: Sample;
@@ -36,10 +38,10 @@ const money = (n: number | null) => n === null ? '—' : moneyFormat.format(n);
 const rain = (weather: Weather) => weather.rainy === null ? 'Weather unavailable' : weather.rainy ? 'Rain observed' : 'Dry';
 const difference = (n: number | null) => n === null ? '—' : `${n > 0 ? '+' : ''}${n.toFixed(1)}%`;
 const direction = computed(() => {
+    if (report.value?.weekday_rank.is_lowest) return `Lowest recorded ${report.value.weekday}`;
     const pct = report.value?.typical.change_pct;
     if (pct == null) return 'Limited comparable sales history';
-    if (pct === 0) return 'In line with typical sales';
-    return pct > 0 ? 'Above typical sales' : 'Below typical sales';
+    return pct >= 0 ? 'Within the typical range' : 'Below the typical range';
 });
 const scale = computed(() => Math.max(1, Math.abs(report.value?.net_sales ?? 0),
     Math.abs(report.value?.previous_week.net_sales ?? 0), Math.abs(report.value?.typical.net ?? 0)));
@@ -55,22 +57,22 @@ const observations = computed(() => {
     }
 
     return [
-        compare(data.payday ? data.same_payday_status : data.different_payday_status,
-            data.payday ? data.different_payday_status : data.same_payday_status, 'Paydays compared with regular dates'),
+        compare(data.near_payday ? data.same_payday_status : data.different_payday_status,
+            data.near_payday ? data.different_payday_status : data.same_payday_status, 'Dates near payday compared with dates farther away'),
         data.weather.rainy === null ? null : compare(
             data.weather.rainy ? data.same_payday_and_weather : data.different_weather_same_payday,
             data.weather.rainy ? data.different_weather_same_payday : data.same_payday_and_weather,
-            'Rainy dates compared with dry dates of the same payday status'),
+            'Rainy dates compared with dry dates of the same payday proximity'),
     ].filter(text => text !== null);
 });
 const contexts = computed(() => {
     const data = report.value;
     if (!data) return [];
     return [
-        { label: 'Same payday status', value: data.same_payday_status },
-        { label: 'Opposite payday status', value: data.different_payday_status },
-        { label: 'Same payday status and weather', value: data.same_payday_and_weather },
-        { label: 'Same payday status, different weather', value: data.different_weather_same_payday },
+        { label: 'Same payday proximity', value: data.same_payday_status },
+        { label: 'Different payday proximity', value: data.different_payday_status },
+        { label: 'Same payday proximity and weather', value: data.same_payday_and_weather },
+        { label: 'Same payday proximity, different weather', value: data.different_weather_same_payday },
     ];
 });
 
@@ -131,7 +133,7 @@ async function saveStaffing() {
                         <h3 class="text-sm font-semibold">Selected day</h3>
                         <p class="text-xl font-bold">{{ money(report.net_sales) }}</p>
                         <div aria-hidden="true" class="my-1 h-1 w-full rounded bg-[#ded7cb]"><div class="h-full rounded bg-[#ad3b19]" :style="{ width: barWidth(report.net_sales) }"></div></div>
-                        <p class="text-xs text-muted-foreground">{{ report.payday ? 'Payday' : 'Regular date' }} · {{ rain(report.weather) }}</p>
+                        <p class="text-xs text-muted-foreground">{{ report.payday ? 'Payday' : report.near_payday ? 'Near payday' : 'Away from payday' }} · {{ rain(report.weather) }}</p>
                         <p v-if="!report.has_receipts" class="text-xs text-muted-foreground">No positive payments recorded.</p>
                     </article>
                     <article class="rounded-md bg-muted p-3">
@@ -143,14 +145,16 @@ async function saveStaffing() {
                     </article>
                     <article class="rounded-md bg-muted p-3">
                         <h3 class="text-sm font-semibold">Typical {{ report.weekday }}</h3>
-                        <p class="text-xl font-bold">{{ money(report.typical.net) }}</p>
+                        <p class="text-xl font-bold">{{ money(report.typical.net) }} – {{ money(report.weekday_rank.typical_high) }}</p>
                         <div aria-hidden="true" class="my-1 h-1 w-full rounded bg-[#ded7cb]"><div class="h-full rounded bg-[#ad3b19]" :style="{ width: barWidth(report.typical.net) }"></div></div>
-                        <p class="text-xs text-muted-foreground">{{ difference(report.typical.change_pct) }} change · {{ report.typical.days }} prior dates</p>
+                        <p class="text-xs text-muted-foreground">{{ difference(report.typical.change_pct) }} vs. start of range · {{ report.typical.days }} dates</p>
                     </article>
                 </div>
                 <div>
                     <h3 class="font-bold">{{ direction }}</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">Net sales are payment collections after refunds. Each comparison uses the median of prior dates with recorded sales, up to 12 weeks back.</p>
+                    <p class="mt-1 text-sm text-muted-foreground">Net sales are payment collections after refunds. The typical range uses the 80th–100th percentile of all completed dates with sales on the same weekday.</p>
+                    <p v-if="report.weekday_rank.rank !== null" class="mt-2 text-sm">Ranked {{ report.weekday_rank.rank }} of {{ report.weekday_rank.days }} from lowest. Recorded low {{ money(report.weekday_rank.lowest) }}.</p>
+                    <p v-if="report.lower_demand_signal" class="mt-2 text-sm font-semibold text-[#ad3b19]">Lower-demand conditions · Trading-hour rain and {{ report.payday_distance }} days from payday.</p>
                     <dl class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <div v-for="context in contexts" :key="context.label" class="rounded-md border p-2 text-sm">
                             <dt>{{ context.label }}</dt><dd class="font-bold">{{ money(context.value.net) }} <span class="font-normal text-muted-foreground">· {{ context.value.days }} dates</span></dd>

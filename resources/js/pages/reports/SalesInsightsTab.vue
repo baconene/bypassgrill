@@ -7,6 +7,8 @@ type Insights = {
     paid_sales: number;
     payments: number;
     through: string | null;
+    weekday_rank: { days: number; rank: number | null; lowest: number | null; is_lowest: boolean; typical_low: number | null; typical_high: number | null; change_pct: number | null };
+    near_payday: boolean; payday_distance: number; lower_demand_signal: boolean;
     payday: { is_payday: boolean; weekday: string; baseline_days: number; baseline_sales: number | null; change_pct: number | null };
     weather: { hours: Hour[]; wet_hours: number; dry_hours: number; wet_avg: number | null; dry_avg: number | null };
 };
@@ -71,15 +73,16 @@ watch([date, attempt], async ([day], _last, onCleanup) => {
             </article>
 
             <article class="rounded-lg border bg-card p-4">
-                <h3 class="font-bold">{{ report.payday.is_payday ? 'Scheduled payday' : 'Regular date' }}</h3>
-                <p class="mt-1 text-sm text-muted-foreground">Paydays are marked on the 15th and 30th.</p>
+                <h3 class="font-bold">{{ report.weekday_rank.is_lowest ? `Lowest recorded ${report.payday.weekday}` : report.payday.is_payday ? 'Scheduled payday' : report.near_payday ? 'Near payday' : 'Away from payday' }}</h3>
+                <p class="mt-1 text-sm text-muted-foreground">{{ report.payday_distance }} days from the nearest scheduled payday.</p>
                 <dl class="mt-3 grid grid-cols-2 gap-3 border-t pt-3 text-sm">
-                    <div><dt>Typical {{ report.payday.weekday }}</dt><dd class="font-bold tabular-nums">{{ money(report.payday.baseline_sales) }}</dd></div>
-                    <div><dt>Difference</dt><dd class="font-bold tabular-nums">{{ report.payday.change_pct === null ? '—' : percentage(report.payday.change_pct) }}</dd></div>
+                    <div><dt>Typical {{ report.payday.weekday }}</dt><dd class="font-bold tabular-nums">{{ money(report.weekday_rank.typical_low) }} – {{ money(report.weekday_rank.typical_high) }}</dd></div>
+                    <div><dt>Recorded low</dt><dd class="font-bold tabular-nums">{{ money(report.weekday_rank.lowest) }}</dd></div>
+                    <div v-if="report.weekday_rank.rank !== null"><dt>Rank from lowest</dt><dd class="font-bold">{{ report.weekday_rank.rank }} of {{ report.weekday_rank.days }}</dd></div>
+                    <div v-if="report.weekday_rank.change_pct !== null"><dt>Vs. start of typical range</dt><dd class="font-bold">{{ percentage(report.weekday_rank.change_pct) }}</dd></div>
                 </dl>
-                <p class="mt-2 text-xs text-muted-foreground">
-                    {{ report.payday.baseline_days }} non-payday {{ report.payday.weekday }} dates with payments in the last 12 weeks{{ report.through ? ', through the same hour' : '' }}.
-                </p>
+                <p class="mt-2 text-xs text-muted-foreground">{{ report.weekday_rank.days }} completed {{ report.payday.weekday }} dates with payments. Typical is the 80th–100th percentile{{ report.through ? ' through the same hour' : '' }}.</p>
+                <p v-if="report.lower_demand_signal" class="mt-2 text-sm font-semibold text-[#ad3b19]">Lower-demand conditions · Trading-hour rain and more than 3 days from payday.</p>
             </article>
 
             <article class="min-w-0 rounded-lg border bg-card p-4 lg:col-span-2">
