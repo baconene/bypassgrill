@@ -38,11 +38,16 @@ class ReportService
         // the daily chart uses, so the two numbers always match for the same date.
         $paymentTxs = FinancialTransaction::where('type', 'payment')
             ->whereDate('transacted_at', $date->toDateString())
-            ->get(['order_id', 'amount']);
+            ->get(['order_id', 'amount', 'transacted_at']);
 
         $totalRevenue = (float) $paymentTxs->sum('amount');
         $orderIds = $paymentTxs->whereNotNull('order_id')->pluck('order_id')->unique()->values();
         $orders = Order::whereIn('id', $orderIds)->get();
+        $byHour = $paymentTxs->groupBy(fn ($payment) => $payment->transacted_at->hour);
+        $hourlySales = array_map(fn (int $hour) => [
+            'hour' => $hour,
+            'sales' => (float) ($byHour->get($hour)?->sum('amount') ?? 0),
+        ], range(0, 23));
 
         return [
             'date' => $date->toDateString(),
@@ -51,6 +56,7 @@ class ReportService
             'total_discount' => (float) $orders->sum('discount_amount'),
             'total_tax' => (float) $orders->sum('tax_amount'),
             'orders' => $orders,
+            'hourly_sales' => $hourlySales,
         ];
     }
 
@@ -63,7 +69,21 @@ class ReportService
             ->where('payment_status', 'paid')
             ->get();
 
+        $byDate = $orders->groupBy(fn ($order) => $order->created_at->toDateString());
+        $lastDay = $start->isCurrentMonth() ? Carbon::today()->day : $end->day;
+        $dailySales = array_map(function (int $day) use ($start, $byDate) {
+            $date = $start->copy()->day($day)->toDateString();
+            $dayOrders = $byDate->get($date);
+
+            return [
+                'date' => $date,
+                'sales' => (float) ($dayOrders?->sum('total_amount') ?? 0),
+                'orders' => $dayOrders?->count() ?? 0,
+            ];
+        }, range(1, $lastDay));
+
         return [
+            'daily_sales' => $dailySales,
             'month' => $start->format('Y-m'),
             'total_orders' => $orders->count(),
             'total_sales' => $orders->sum('total_amount'),

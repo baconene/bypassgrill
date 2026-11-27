@@ -6,7 +6,7 @@ on:
     paths: ['android-app/**','.github/workflows/android-apk.yml']
 concurrency:
   group: android-pos-apk-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -22,6 +22,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Set the Android build number
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = require('./app.json');
+          config.expo.android.versionCode = 1000 + Number(process.env.RUN_NUMBER);
+          fs.writeFileSync('app.json', JSON.stringify(config));
+          NODE
       - run: npm install
       - run: npx expo prebuild --platform android --non-interactive
       - uses: actions/setup-java@v4
@@ -47,6 +57,27 @@ jobs:
           path: android-app/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
+      - name: Create update manifest for the verified APK
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const { expo } = require('./app.json');
+          const metadata = require('./android/app/build/outputs/apk/release/output-metadata.json');
+          const apk = metadata.elements.find(element => element.outputFile === 'app-release.apk');
+          if (apk?.versionCode !== expo.android.versionCode || apk?.versionName !== expo.version) {
+            throw new Error('The APK version does not match the Expo build configuration');
+          }
+          fs.writeFileSync('update.json', JSON.stringify({
+            version: apk.versionName,
+            versionCode: apk.versionCode,
+          }) + '\n');
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bypass-grill-pos-update-manifest
+          path: android-app/update.json
+          if-no-files-found: error
+
   publish:
     if: github.repository == 'baconene/bypassgrill' && github.ref == 'refs/heads/feature/android-pos-app'
     needs: build
@@ -58,7 +89,11 @@ jobs:
         with:
           name: bypass-grill-pos-release-apk
           path: apk
-      - name: Publish the direct APK download
+      - uses: actions/download-artifact@v4
+        with:
+          name: bypass-grill-pos-update-manifest
+          path: apk
+      - name: Publish the direct APK download and update manifest
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -66,9 +101,19 @@ jobs:
         run: |
           mv apk/app-release.apk apk/bypass-grill-pos.apk
           if gh release view android-pos > /dev/null 2>&1; then
+            current_code=0
+            if gh release download android-pos --pattern update.json --output current-update.json 2>/dev/null; then
+              current_code=$(jq -er '.versionCode | numbers' current-update.json)
+            fi
+            new_code=$(jq -er '.versionCode | numbers' apk/update.json)
+            if [ "$current_code" -ge "$new_code" ]; then
+              echo "Build $current_code is already published."
+              exit 0
+            fi
             gh release upload android-pos apk/bypass-grill-pos.apk --clobber
+            gh release upload android-pos apk/update.json --clobber
           else
-            gh release create android-pos apk/bypass-grill-pos.apk \
+            gh release create android-pos apk/bypass-grill-pos.apk apk/update.json \
               --target "$BUILD_SHA" --title "Bypass Grill Android POS" \
               --notes "Latest verified Android POS build from the Android POS APK workflow." \
               --prerelease --latest=false
