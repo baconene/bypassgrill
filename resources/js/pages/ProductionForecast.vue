@@ -2,44 +2,30 @@
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import api from '@/utils/api';
+import ForecastHistoryChart from '@/pages/reports/ForecastHistoryChart.vue';
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard' }, { title: 'Production forecast', href: '/production-forecast' }] } });
 
 type Day = {
     date: string; payday: boolean; rain_chance: number | null; sample_days: number;
-    basis: 'typical_range' | 'weekday_fallback' | 'rain_away_matched' | 'lower_range';
-    near_payday: boolean; payday_distance: number; lower_demand_signal: boolean;
+    near_payday: boolean; payday_distance: number;
     orders: number | null; typical_orders: number | null;
     weekday_rank: { days: number; lowest: number | null; typical_low: number | null; typical_high: number | null };
     units: number | null; weekday_units: number | null; net_sales: number | null;
-    net_sales_samples: { date: string; net_sales: number }[];
+    net_sales_samples: { date: string; net_sales: number; condition: 'clear' | 'cloud' | 'rain' | null; rain_mm: number | null; rainy_hours: number | null; near_payday: boolean }[];
     products: { id: number; name: string; suggested: number; busy: number }[];
 };
 
+type Model = { training_days: number; weather_days: number; test_days: number; weekday_mae: number | null; context_mae: number | null; use_context: boolean };
 const days = ref<Day[]>([]);
+const model = ref<Model>();
 const selected = ref(0);
 const day = computed(() => days.value[selected.value]);
 const state = ref<'loading' | 'error' | 'ready'>('loading');
 const scope = new AbortController();
 const pesos = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' });
-const historyDate = new Intl.DateTimeFormat('en-PH', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-const chartScale = computed(() => {
-    const values = day.value?.net_sales_samples?.map(sample => sample.net_sales) ?? [];
-    const min = Math.min(0, ...values);
-    const max = Math.max(0, ...values);
-    return { min, span: max - min || 1 };
-});
-const chartPosition = (amount: number) => (amount - chartScale.value.min) / chartScale.value.span * 100;
 const dateLabel = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
-const basis = {
-    typical_range: 'Stock targets use dates in the typical sales range for this weekday.',
-    weekday_fallback: 'The typical range had fewer than two dates, so the estimate uses all recorded dates on this weekday.',
-    rain_away_matched: 'Stock targets use lower-sales dates with recorded rain and similar distance from payday.',
-    lower_range: 'Too few lower-sales dates matched both conditions. Stock targets use the lower half of sales for this weekday.',
-};
-
 function plan(day: Day) {
-    if (day.lower_demand_signal) return 'Plan for fewer orders';
     if (day.units === null || !day.weekday_units) return 'Collect more sales history';
     if (day.units >= day.weekday_units * 1.15) return 'Prep above typical';
     if (day.units <= day.weekday_units * 0.85) return 'Prep below typical';
@@ -49,8 +35,9 @@ function plan(day: Day) {
 async function load() {
     state.value = 'loading';
     try {
-        const { data } = await api.get<{ days: Day[] }>('/api/v1/reports/production-forecast', { signal: scope.signal, timeout: 26000 });
+        const { data } = await api.get<{ days: Day[]; model: Model }>('/api/v1/reports/production-forecast', { signal: scope.signal, timeout: 26000 });
         days.value = data.days;
+        model.value = data.model;
         state.value = 'ready';
     } catch {
         if (!scope.signal.aborted) state.value = 'error';
@@ -95,42 +82,22 @@ onUnmounted(() => scope.abort());
                     <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Estimated net sales</dt><dd class="text-lg font-bold">{{ day.net_sales === null ? '—' : pesos.format(day.net_sales) }}</dd></div>
                     <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Peak hourly rain chance</dt><dd class="text-lg font-bold">{{ day.rain_chance === null ? 'Unavailable' : `${Math.round(day.rain_chance)}%` }}</dd></div>
                 </dl>
-                <p v-if="day.lower_demand_signal" class="text-sm font-semibold text-[#ad3b19]">Rain is likely during trading and payday is more than 3 days away.</p>
                 <p v-if="day.weekday_rank.days" class="text-sm text-[#68665f]">
                     Typical net sales (80th–100th percentile): {{ pesos.format(day.weekday_rank.typical_low!) }} – {{ pesos.format(day.weekday_rank.typical_high!) }}.
                     Recorded low: {{ pesos.format(day.weekday_rank.lowest!) }} across {{ day.weekday_rank.days }} same-weekday dates.
                 </p>
-                <p class="text-sm text-[#68665f]">{{ day.sample_days }} comparable dates. {{ basis[day.basis] }}</p>
+                <div v-if="model" class="text-sm text-[#68665f]">
+                    <p>{{ model.training_days }} service dates in training · {{ model.weather_days }} with observed weather · {{ day.sample_days }} matching this weekday.</p>
+                    <p>{{ model.use_context ? 'Weather and payday matching are active.' : 'Using the weekday baseline.' }}</p>
+                    <p v-if="model.test_days && model.weekday_mae !== null && model.context_mae !== null">
+                        Average backtest error over {{ model.test_days }} dates · Weekday {{ pesos.format(model.weekday_mae) }} · Weather + payday {{ pesos.format(model.context_mae) }}
+                    </p>
+                    <p v-if="model.weather_days < model.training_days">Historical weather is loaded in batches. Dates with missing weather still count toward the sales forecast.</p>
+                </div>
                 <a v-if="day.rain_chance !== null" href="https://www.visualcrossing.com/" target="_blank" rel="noopener noreferrer" class="w-fit text-xs text-[#ad3b19] underline">Weather Data Provided by Visual Crossing</a>
             </section>
 
-            <section aria-labelledby="forecast-sales-history" class="min-w-0 rounded-lg border border-[#ded7cb] bg-[#fffcf6] p-4">
-                <h2 id="forecast-sales-history" class="text-lg font-bold">Sales behind the estimate</h2>
-                <p v-if="day.net_sales !== null" class="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-[#68665f]">
-                    <span aria-hidden="true" class="w-5 border-t-2 border-dashed border-[#24231e]"></span>
-                    Estimate: {{ pesos.format(day.net_sales) }} · median of the dates below
-                </p>
-                <p v-else class="mt-1 text-sm text-[#68665f]">At least two comparable dates are needed for a net sales estimate.</p>
-
-                <ul v-if="day.net_sales_samples?.length" :key="day.date"
-                    aria-label="Comparable dates and actual net sales" tabindex="0"
-                    class="mt-3 grid max-h-96 gap-3 overflow-y-auto rounded-sm pr-1 focus-visible:outline-2 focus-visible:outline-[#ad3b19]">
-                    <li v-for="sample in day.net_sales_samples" :key="sample.date" class="grid gap-1">
-                        <div class="flex flex-wrap justify-between gap-x-3 text-sm">
-                            <time :datetime="sample.date">{{ historyDate.format(new Date(sample.date + 'T00:00:00Z')) }}</time>
-                            <strong class="tabular-nums">{{ pesos.format(sample.net_sales) }}</strong>
-                        </div>
-                        <div aria-hidden="true" class="relative h-4 rounded bg-[#eee6d9]">
-                            <span class="absolute inset-y-0 rounded-sm" :class="sample.net_sales < 0 ? 'bg-[#775066]' : 'bg-[#ad3b19]'"
-                                :style="{ left: chartPosition(Math.min(0, sample.net_sales)) + '%', width: Math.abs(chartPosition(sample.net_sales) - chartPosition(0)) + '%' }"></span>
-                            <span v-if="chartScale.min < 0" class="absolute inset-y-0 border-l border-[#68665f]" :style="{ left: chartPosition(0) + '%' }"></span>
-                            <span v-if="day.net_sales !== null" class="absolute inset-y-0 border-l-2 border-dashed border-[#24231e]"
-                                :style="{ left: 'min(' + chartPosition(day.net_sales) + '%, calc(100% - 2px))' }"></span>
-                        </div>
-                    </li>
-                </ul>
-                <p v-else class="mt-3 text-sm text-[#68665f]">No comparable sales dates found.</p>
-            </section>
+            <ForecastHistoryChart :key="day.date" :samples="day.net_sales_samples" />
 
             <section class="rounded-lg border border-[#ded7cb] bg-[#fffcf6] p-4">
                 <h2 class="text-lg font-bold">Suggested stock by product</h2>

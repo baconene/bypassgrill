@@ -52,7 +52,15 @@ class StoreWeather
             fn () => $this->fetch('', 'current,hours'));
     }
 
-    public function serviceWeather(array $dates, CarbonImmutable $now, bool $forecast = false): array
+    public function trainingWeather(array $dates, CarbonImmutable $now): array
+    {
+        $key = 'pos-weather:training:'.config('services.store_weather.coordinates');
+        $fetchLimit = $dates !== [] && Cache::add($key, true, 600) ? 12 : 0;
+
+        return $this->serviceWeather($dates, $now, fetchLimit: $fetchLimit);
+    }
+
+    public function serviceWeather(array $dates, CarbonImmutable $now, bool $forecast = false, ?int $fetchLimit = null): array
     {
         $hours = [];
         $missing = [];
@@ -70,6 +78,9 @@ class StoreWeather
             }
         }
 
+        if ($fetchLimit !== null) {
+            $missing = array_slice($missing, 0, $fetchLimit);
+        }
         if ($missing !== []) {
             $responses = Http::pool(fn (Pool $pool) => array_map(fn ($date) => $pool->as($date)
                 ->acceptJson()->withOptions(['decode_content' => 'gzip'])->connectTimeout(3)->timeout(6)
@@ -88,20 +99,28 @@ class StoreWeather
             $open = (int) config('services.store_weather.opens_hour');
             $close = (int) config('services.store_weather.closes_hour');
             $values = [];
+            $clearHours = $conditionHours = 0;
             for ($h = $open; $h < $close; $h++) {
                 $hour = $hours[$date][$day->addHours($h)->timestamp] ?? [];
                 $value = $hour[$forecast ? 'rain_chance' : 'rain_mm'] ?? null;
                 if ($value !== null) {
                     $values[] = $value;
+                    $condition = strtolower(trim($hour['conditions'] ?? ''));
+                    $conditionHours += $condition !== '' ? 1 : 0;
+                    $clearHours += $condition === 'clear' ? 1 : 0;
                 }
             }
 
             // Enough coverage to label a whole shift, rather than one isolated hour.
             $known = count($values) >= max(1, (int) ceil(($close - $open) / 2));
+            $rainy = $known ? max($values) >= ($forecast ? 60 : 0.1) : null;
+            $condition = $conditionHours > 0 ? ($clearHours > $conditionHours / 2 ? 'clear' : 'cloud') : null;
             $result[$date] = [
-                'rainy' => $known ? max($values) >= ($forecast ? 60 : 0.1) : null,
+                'rainy' => $rainy,
+                'condition' => $known ? ($rainy ? 'rain' : $condition) : null,
+                'rainy_hours' => !$forecast && $known ? count(array_filter($values, fn ($value) => $value >= 0.1)) : null,
                 'rain_chance' => $forecast && $values !== [] ? max($values) : null,
-                'rain_mm' => !$forecast && $values !== [] ? round(array_sum($values), 2) : null,
+                'rain_mm' => !$forecast && $known ? round(array_sum($values), 2) : null,
             ];
         }
 
@@ -122,7 +141,7 @@ class StoreWeather
 
     private function cacheObservations(string $date, array $hours, CarbonImmutable $now): void
     {
-        $ttl = $hours === [] ? 900 : ($date < $now->subDays(2)->toDateString() ? 30 * 86400 : 1800);
+        $ttl = $hours === [] ? 900 : ($date < $now->subDays(2)->toDateString() ? 365 * 86400 : 1800);
         Cache::put($this->observedKey($date), $hours, $ttl);
     }
 

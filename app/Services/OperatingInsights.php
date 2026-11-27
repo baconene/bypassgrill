@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 
 class OperatingInsights
 {
-    public function __construct(private StoreWeather $weather) {}
+    public function __construct(private StoreWeather $weather, private ProductionDemandModel $model) {}
 
     public function forecast(CarbonImmutable $now): array
     {
@@ -31,50 +31,50 @@ class OperatingInsights
             ->where('payment_status', 'paid')->where('status', '!=', 'cancelled')
             ->selectRaw('DATE(created_at) as day, COUNT(*) as orders')->groupByRaw('DATE(created_at)')
             ->pluck('orders', 'day')->all();
-        $history = array_values(array_filter($items->keys()->all(), fn ($date) => $this->date($date)->dayOfWeekIso >= 5));
-        rsort($history);
+        $salesHistory = $this->productionSales($sales);
         $forecast = $this->weather->serviceWeather($nextDays, $now, forecast: true);
-        $weatherHistory = $this->weather->serviceWeather(array_slice($history, 0, 12), $now);
+        $weatherHistory = $this->weather->trainingWeather(array_reverse(array_keys($salesHistory)), $now);
+        $training = [];
+        foreach ($salesHistory as $date => $netSales) {
+            $day = $this->date($date);
+            $training[$date] = [
+                'date' => $date, 'weekday' => $day->dayOfWeekIso, 'net_sales' => $netSales,
+                'near_payday' => WeekdaySalesRank::nearPayday($day),
+                'rainy' => $weatherHistory[$date]['rainy'],
+                'condition' => $weatherHistory[$date]['condition'],
+                'rain_mm' => $weatherHistory[$date]['rain_mm'],
+                'rainy_hours' => $weatherHistory[$date]['rainy_hours'],
+            ];
+        }
+        $validation = $this->model->validate($training);
         $unitHistory = $items->map(fn ($rows) => (int) $rows->sum('units'))->all();
-        $salesHistory = array_map(fn ($day) => $day['net'], array_filter($sales, fn ($day) => $day['receipts'] > 0));
-
 
         $result = [];
         foreach ($nextDays as $date) {
             $target = $this->date($date);
             $payday = $this->payday($target);
             $weather = $forecast[$date];
-            $weekday = array_values(array_filter($history, fn ($d) => $this->date($d)->dayOfWeekIso === $target->dayOfWeekIso));
             $nearPayday = WeekdaySalesRank::nearPayday($target);
-            $lowerDemand = !$nearPayday && $weather['rainy'] === true;
-            $weekdaySales = array_intersect_key($salesHistory, array_flip($weekday));
-            $typical = WeekdaySalesRank::typicalDates($weekdaySales);
+            $weekday = array_filter($training, fn ($day) => $day['weekday'] === $target->dayOfWeekIso);
+            $weekdaySales = array_column($weekday, 'net_sales', 'date');
             $rank = WeekdaySalesRank::summarize($weekdaySales, $date);
-            $ranked = array_keys($weekdaySales);
-            usort($ranked, fn ($a, $b) => $weekdaySales[$a] <=> $weekdaySales[$b] ?: strcmp($b, $a));
-            $matches = $typical;
-            $basis = 'typical_range';
-
-            if ($lowerDemand) {
-                $lowerHalf = array_slice($ranked, 0, max(2, (int) ceil(count($ranked) / 2)));
-                $rainPeers = array_values(array_filter($lowerHalf, fn ($d) =>
-                    ($weatherHistory[$d]['rainy'] ?? null) === true && !WeekdaySalesRank::nearPayday($this->date($d))));
-                $matches = count($rainPeers) >= 2 ? $rainPeers : $lowerHalf;
-                $basis = count($rainPeers) >= 2 ? 'rain_away_matched' : 'lower_range';
-            } elseif (count($matches) < 2) {
-                $matches = $ranked;
-                $basis = 'weekday_fallback';
-            }
-
-            $baselineUnits = $this->median(array_map(fn ($d) => $unitHistory[$d], $typical));
-            $units = count($matches) >= 2 ? $this->median(array_map(fn ($d) => $unitHistory[$d], $matches)) : null;
+            $weights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => $weather['rainy']], $validation['use_context']);
+            $baseline = array_fill_keys(array_keys($weekday), 1);
+            $stockWeights = array_intersect_key($weights, $unitHistory);
+            $baselineUnits = $this->model->estimate($unitHistory, array_intersect_key($baseline, $unitHistory));
+            $units = count($stockWeights) >= 2 ? $this->model->estimate($unitHistory, $stockWeights) : null;
+            $ordered = array_intersect_key($orders, $weights);
+            $projectedOrders = count($ordered) >= 2 ? $this->model->estimate($ordered, $weights) : null;
+            $baselineOrders = count($ordered) >= 2 ? $this->model->estimate($ordered, $baseline) : null;
             $products = [];
             if ($units !== null) {
-                $lines = collect($matches)->flatMap(fn ($d) => $items[$d]->map(fn ($item) => [$d, $item]))->groupBy(fn ($line) => $line[1]->id);
+                $lines = collect(array_keys($stockWeights))->flatMap(fn ($d) => $items[$d]->map(fn ($item) => [$d, $item]))->groupBy(fn ($line) => $line[1]->id);
                 foreach ($lines as $group) {
-                    $byDay = $group->mapWithKeys(fn ($line) => [$line[0] => (int) $line[1]->units]);
-                    $daily = array_map(fn ($d) => $byDay->get($d, 0), $matches);
-                    $suggested = (int) ceil($this->median($daily));
+                    $byDay = $group->mapWithKeys(fn ($line) => [$line[0] => (int) $line[1]->units])->all();
+                    $firstSale = min(array_keys($byDay));
+                    $productWeights = array_filter($stockWeights, fn ($d) => $d >= $firstSale, ARRAY_FILTER_USE_KEY);
+                    $daily = array_replace(array_fill_keys(array_keys($productWeights), 0), $byDay);
+                    $suggested = (int) ceil($this->model->estimate($daily, $productWeights));
                     if ($suggested > 0) {
                         sort($daily);
                         $products[] = [
@@ -88,30 +88,44 @@ class OperatingInsights
                 usort($products, fn ($a, $b) => $b['suggested'] <=> $a['suggested'] ?: strcmp($a['name'], $b['name']));
             }
 
-            $matchedSales = array_intersect_key($weekdaySales, array_flip($matches));
-            ksort($matchedSales, SORT_STRING);
-            $salesSamples = [];
-            foreach ($matchedSales as $sampleDate => $netSales) {
-                $salesSamples[] = ['date' => $sampleDate, 'net_sales' => $netSales];
-            }
-
             $result[] = [
                 'date' => $date, 'payday' => $payday, 'rain_chance' => $weather['rain_chance'],
-                'basis' => $basis, 'sample_days' => count($matches), 'units' => $units,
+                'sample_days' => count($weekday), 'units' => $units,
                 'weekday_units' => $baselineUnits,
                 'weekday_rank' => $rank,
                 'payday_distance' => WeekdaySalesRank::paydayDistance($target),
                 'near_payday' => $nearPayday,
-                'lower_demand_signal' => $lowerDemand,
-                'orders' => $units === null ? null : $this->median(array_map(fn ($d) => (int) ($orders[$d] ?? 0), $matches)),
-                'typical_orders' => $this->median(array_map(fn ($d) => (int) ($orders[$d] ?? 0), $typical)),
-                'net_sales' => $units === null ? null : $this->median($matchedSales),
-                'net_sales_samples' => $salesSamples,
+                'orders' => $projectedOrders,
+                'typical_orders' => $baselineOrders,
+                'net_sales' => count($weekday) >= 2 ? $this->model->estimate($weekdaySales, $weights) : null,
+                'net_sales_samples' => array_values($weekday),
                 'products' => $products,
             ];
         }
 
-        return ['days' => $result];
+        return ['days' => $result, 'model' => $validation + [
+            'training_days' => count($training),
+            'weather_days' => count(array_filter($training, fn ($day) => $day['rainy'] !== null)),
+        ]];
+    }
+
+    public function warmForecastWeather(CarbonImmutable $now): void
+    {
+        $history = $this->productionSales($this->sales($now->startOfDay()));
+        $this->weather->trainingWeather(array_reverse(array_keys($history)), $now);
+    }
+
+    private function productionSales(array $sales): array
+    {
+        $history = [];
+        foreach ($sales as $date => $day) {
+            if ($day['receipts'] > 0 && $this->date($date)->dayOfWeekIso >= 5) {
+                $history[$date] = $day['net'];
+            }
+        }
+        ksort($history);
+
+        return $history;
     }
 
     public function review(CarbonImmutable $date, CarbonImmutable $now): array

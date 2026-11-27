@@ -29,7 +29,7 @@ class OperatingInsightsTest extends TestCase
         $this->travelTo(CarbonImmutable::parse('2026-11-27 10:00', 'Asia/Manila'));
     }
 
-    public function test_forecast_uses_all_weekday_history_and_plans_lower_for_rain_far_from_payday(): void
+    public function test_forecast_uses_all_weekday_sales_and_falls_back_when_backtest_is_too_small(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-11-20 10:00', 'Asia/Manila'));
         $category = Category::create(['name' => 'Grill', 'slug' => 'grill']);
@@ -47,19 +47,56 @@ class OperatingInsightsTest extends TestCase
         $this->getJson('/api/v1/reports/production-forecast')->assertOk()
             ->assertJsonPath('days.0.date', '2026-11-20')->assertJsonPath('days.1.date', '2026-11-21')
             ->assertJsonPath('days.2.date', '2026-11-22')
-            ->assertJsonPath('days.0.basis', 'rain_away_matched')
-            ->assertJsonPath('days.0.lower_demand_signal', true)
+            ->assertJsonPath('model.training_days', 5)->assertJsonPath('model.weather_days', 5)
+            ->assertJsonPath('model.use_context', false)
             ->assertJsonPath('days.0.weekday_rank.days', 5)->assertJsonPath('days.0.weekday_rank.lowest', 1000)
             ->assertJsonPath('days.0.weekday_rank.typical_low', 7000)->assertJsonPath('days.0.weekday_rank.typical_high', 9000)
-            ->assertJsonPath('days.0.units', 15)->assertJsonPath('days.0.weekday_units', 80)
-            ->assertJsonPath('days.0.rain_chance', 80)->assertJsonPath('days.0.products.0.suggested', 15)
-            ->assertJsonPath('days.0.products.0.busy', 20)
-            ->assertJsonPath('days.0.net_sales', 1500)
-            ->assertJsonPath('days.0.net_sales_samples', [
-                ['date' => '2026-10-23', 'net_sales' => 2000],
-                ['date' => '2026-11-06', 'net_sales' => 1000],
-            ])
+            ->assertJsonPath('days.0.units', 48)->assertJsonPath('days.0.weekday_units', 48)
+            ->assertJsonPath('days.0.rain_chance', 80)->assertJsonPath('days.0.products.0.suggested', 48)
+            ->assertJsonPath('days.0.products.0.busy', 70)
+            ->assertJsonPath('days.0.net_sales', 4800)->assertJsonCount(5, 'days.0.net_sales_samples')
+            ->assertJsonPath('days.0.net_sales_samples.0.date', '2026-07-24')
+            ->assertJsonPath('days.0.net_sales_samples.0.condition', 'clear')
+            ->assertJsonPath('days.0.net_sales_samples.2.condition', 'rain')
+            ->assertJsonPath('days.0.net_sales_samples.2.rain_mm', 7)
             ->assertJsonPath('days.1.units', null)->assertJsonPath('days.1.net_sales_samples', []);
+    }
+
+    public function test_weather_backfill_keeps_every_sale_with_or_without_weather(): void
+    {
+        $start = CarbonImmutable::parse('2026-11-20', 'Asia/Manila');
+        for ($week = 0; $week < 14; $week++) {
+            $this->ledger($start->subWeeks($week)->toDateString(), 6000);
+        }
+        $this->fakeWeather();
+        $url = '/api/v1/reports/production-forecast';
+        $this->getJson($url)->assertOk()->assertJsonPath('model.training_days', 14)
+            ->assertJsonPath('model.weather_days', 12)->assertJsonPath('model.use_context', false)
+            ->assertJsonPath('days.0.net_sales', 6000)
+            ->assertJsonPath('days.0.net_sales_samples.0.rain_mm', null);
+        $this->travel(11)->minutes();
+        $this->getJson($url)->assertOk()->assertJsonPath('model.training_days', 14)
+            ->assertJsonPath('model.weather_days', 14)->assertJsonPath('days.0.net_sales', 6000);
+    }
+
+    public function test_matching_is_used_only_after_it_beats_the_weekday_backtest(): void
+    {
+        $model = app(\App\Services\ProductionDemandModel::class);
+        $history = [];
+        for ($i = 0; $i < 10; $i++) {
+            $rainy = $i % 2 === 0;
+            $date = CarbonImmutable::parse('2026-07-04')->addWeeks($i)->toDateString();
+            $history[$date] = [
+                'date' => $date, 'weekday' => 6, 'rainy' => $rainy,
+                'near_payday' => false, 'net_sales' => $rainy ? 1000 : 10000,
+            ];
+        }
+        $result = $model->validate($history);
+        $this->assertTrue($result['use_context']);
+        $this->assertLessThan($result['weekday_mae'], $result['context_mae']);
+        $dryWeights = $model->weights($history, ['rainy' => false, 'near_payday' => false], true);
+        $this->assertCount(10, $dryWeights);
+        $this->assertGreaterThan(5500, $model->estimate(array_column($history, 'net_sales', 'date'), $dryWeights));
     }
 
     public function test_review_reconciles_signed_payments_and_compares_staffing(): void
@@ -127,6 +164,7 @@ class OperatingInsightsTest extends TestCase
                     'precip' => in_array($date, ['2026-11-20', '2026-11-13', '2026-11-06', '2026-10-23']) ? 1 : 0,
                     'precipprob' => $forecast ? 80 : 0,
                     'source' => $forecast ? 'fcst' : 'obs',
+                    'conditions' => 'Clear',
                 ], range(15, 21))], $days)]);
         }]);
     }
