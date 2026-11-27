@@ -3,8 +3,6 @@ import { Head } from '@inertiajs/vue3';
 import { Download } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 
-defineProps<{ buildsUrl: string }>();
-
 defineOptions({
     layout: {
         breadcrumbs: [
@@ -25,24 +23,18 @@ defineOptions({
                 Install the latest POS build on your Android device.
             </p>
         </div>
-        <div class="flex flex-wrap items-center gap-3">
-            <Button as-child>
-                <a href="/settings/mobile-app/download">
-                    <Download class="size-4" aria-hidden="true" />
-                    Download Android app
-                </a>
-            </Button>
-            <a
-                :href="buildsUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-sm font-medium underline underline-offset-4"
-                >View build history</a
-            >
-        </div>
+        <Button as-child>
+            <a href="/settings/mobile-app/download">
+                <Download class="size-4" aria-hidden="true" />
+                Download APK
+            </a>
+        </Button>
         <p class="text-sm text-muted-foreground">
-            Sign in to GitHub to download the ZIP, then extract and open
-            <span class="font-medium text-foreground">app-release.apk</span>.
+            Open
+            <span class="font-medium text-foreground"
+                >bypass-grill-pos.apk</span
+            >
+            on your Android device to install it.
         </p>
     </div>
 </template>

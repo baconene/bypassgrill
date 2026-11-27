@@ -4,6 +4,13 @@ on:
   push:
     branches: [feature/android-pos-app]
     paths: ['android-app/**','.github/workflows/android-apk.yml']
+concurrency:
+  group: android-pos-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -39,3 +46,30 @@ jobs:
           name: bypass-grill-pos-release-apk
           path: android-app/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+  publish:
+    if: github.repository == 'baconene/bypassgrill' && github.ref == 'refs/heads/feature/android-pos-app'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: bypass-grill-pos-release-apk
+          path: apk
+      - name: Publish the direct APK download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          mv apk/app-release.apk apk/bypass-grill-pos.apk
+          if gh release view android-pos > /dev/null 2>&1; then
+            gh release upload android-pos apk/bypass-grill-pos.apk --clobber
+          else
+            gh release create android-pos apk/bypass-grill-pos.apk \
+              --target "$BUILD_SHA" --title "Bypass Grill Android POS" \
+              --notes "Latest verified Android POS build from the Android POS APK workflow." \
+              --prerelease --latest=false
+          fi
