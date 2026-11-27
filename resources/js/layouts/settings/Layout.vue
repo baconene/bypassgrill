@@ -3,6 +3,7 @@ import { usePage } from '@inertiajs/vue3';
 import {
     Calculator,
     CalendarClock,
+    CalendarDays,
     ChefHat,
     ChevronsUpDown,
     CreditCard,
@@ -95,6 +96,12 @@ const groups = [
                 title: 'Accounting',
                 href: '/settings/accounting',
                 icon: Calculator,
+            },
+            {
+                title: 'Holidays',
+                href: '/settings/holidays',
+                icon: CalendarDays,
+                keywords: 'philippine holidays long weekend payday forecast',
             },
         ],
     },

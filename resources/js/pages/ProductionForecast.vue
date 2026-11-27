@@ -11,6 +11,7 @@ defineOptions({ layout: { breadcrumbs: [{ title: 'Dashboard', href: '/dashboard'
 type Day = {
     date: string; payday: boolean; rain_chance: number | null; sample_days: number;
     near_payday: boolean; payday_distance: number;
+    special_day: SpecialDay | null; holiday: string | null; uplift: number | null;
     orders: number | null; typical_orders: number | null;
     weekday_rank: { days: number; lowest: number | null; typical_low: number | null; typical_high: number | null };
     units: number | null; weekday_units: number | null; net_sales: number | null;
@@ -18,7 +19,17 @@ type Day = {
     products: { id: number; name: string; suggested: number; busy: number }[];
 };
 
-type Model = { training_days: number; weather_days: number; test_days: number; weekday_mae: number | null; context_mae: number | null; use_context: boolean };
+type SpecialDay = 'payday_long_weekend' | 'long_weekend' | 'holiday' | 'near_payday';
+type Model = {
+    training_days: number; weather_days: number; test_days: number; weekday_mae: number | null; context_mae: number | null;
+    factor_mae: number | null; use_context: boolean; mode: 'baseline' | 'context' | 'factors'; bias: number;
+};
+const specialLabel: Record<SpecialDay, string> = {
+    payday_long_weekend: 'Payday + long weekend', long_weekend: 'Long weekend', holiday: 'Holiday', near_payday: 'Near payday',
+};
+const pct = (uplift: number) => `${uplift >= 1 ? '+' : '−'}${Math.round(Math.abs(uplift - 1) * 100)}%`;
+const modelLabel = { baseline: 'Using the weekday baseline.', context: 'Weather and payday matching are active.',
+    factors: 'Special-day factors are active: holidays, long weekends and paydays, with recent weeks counting more.' };
 type Month = InstanceType<typeof MonthlyForecastChart>['$props']['days'];
 type Accuracy = InstanceType<typeof ForecastAccuracy>['$props']['accuracy'];
 const days = ref<Day[]>([]);
@@ -78,6 +89,8 @@ onUnmounted(() => scope.abort());
                     @click="selected = i">
                     <span class="block font-bold">{{ dateLabel(entry.date) }}</span>
                     <span class="block text-sm text-[#68665f]">{{ plan(entry) }}<span v-if="entry.payday"> · Payday</span></span>
+                    <span v-if="entry.special_day && entry.special_day !== 'near_payday'" class="mt-1 inline-block rounded bg-[#f2e5d8] px-1.5 py-0.5 text-xs font-bold text-[#ad3b19]">
+                        {{ specialLabel[entry.special_day] }}<template v-if="entry.uplift !== null">{{ ' ' + pct(entry.uplift) }}</template></span>
                 </button>
             </nav>
 
@@ -86,6 +99,12 @@ onUnmounted(() => scope.abort());
                     <h2 class="text-lg font-bold">{{ dateLabel(day.date) }} · {{ plan(day) }}</h2>
                     <strong class="text-sm text-[#ad3b19]">{{ day.payday ? 'Scheduled payday' : day.near_payday ? 'Near payday' : `${day.payday_distance} days from payday` }}</strong>
                 </div>
+                <p v-if="day.special_day && day.special_day !== 'near_payday'" class="rounded-md border border-[#e4c4ab] bg-[#f2e5d8] p-3 text-sm">
+                    <strong>{{ specialLabel[day.special_day] }}<template v-if="day.holiday"> · {{ day.holiday }}</template>.</strong>
+                    <template v-if="day.uplift !== null && day.uplift > 1"> Past days like this sold about {{ pct(day.uplift) }} more, so sales and prep below are raised to match.</template>
+                    <template v-else-if="day.uplift !== null && day.uplift < 1"> Past days like this sold about {{ pct(day.uplift) }} less, so sales and prep below are lowered to match.</template>
+                    <template v-else> Not enough past days like this yet to adjust the estimate. Watch for a busier shift.</template>
+                </p>
                 <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Estimated units</dt><dd class="text-lg font-bold">{{ day.units === null ? '—' : Math.ceil(day.units) }}</dd></div>
                     <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Estimated paid orders</dt><dd class="text-lg font-bold">{{ day.orders === null ? '—' : Math.round(day.orders) }} <span v-if="day.typical_orders !== null" class="block text-xs font-normal">Typical: {{ Math.round(day.typical_orders) }}</span></dd></div>
@@ -98,9 +117,9 @@ onUnmounted(() => scope.abort());
                 </p>
                 <div v-if="model" class="text-sm text-[#68665f]">
                     <p>{{ model.training_days }} service dates in training · {{ model.weather_days }} with observed weather · {{ day.sample_days }} matching this weekday.</p>
-                    <p>{{ model.use_context ? 'Weather and payday matching are active.' : 'Using the weekday baseline.' }}</p>
+                    <p>{{ modelLabel[model.mode ?? (model.use_context ? 'context' : 'baseline')] }}</p>
                     <p v-if="model.test_days && model.weekday_mae !== null && model.context_mae !== null">
-                        Average backtest error over {{ model.test_days }} dates · Weekday {{ pesos.format(model.weekday_mae) }} · Weather + payday {{ pesos.format(model.context_mae) }}
+                        Average backtest error over {{ model.test_days }} dates · Weekday {{ pesos.format(model.weekday_mae) }} · Weather + payday {{ pesos.format(model.context_mae) }}<template v-if="model.factor_mae !== null"> · Special-day factors {{ pesos.format(model.factor_mae) }}</template>
                     </p>
                     <p v-if="model.weather_days < model.training_days">Historical weather is loaded in batches. Dates with missing weather still count toward the sales forecast.</p>
                 </div>

@@ -101,8 +101,14 @@ class ForecastSnapshots
             'captured_at' => $now,
             'estimated_net_sales' => $day['net_sales'],
             'weekday_baseline' => $day['weekday_baseline'],
-            'model_version' => 'weekday-context-v1',
+            'model_version' => match ($forecast['model']['mode'] ?? 'context') {
+                'factors' => 'weekday-factors-v2',
+                'baseline' => 'weekday-baseline-v1',
+                default => 'weekday-context-v1',
+            },
             'used_context' => $forecast['model']['use_context'],
+            'special_day' => $day['special_day'] ?? null,
+            'uplift' => $day['uplift'] ?? null,
             'sample_days' => $day['sample_days'],
             'payday_distance' => $day['payday_distance'],
             'weather_source' => $day['weather_source'],
@@ -147,6 +153,7 @@ class ForecastSnapshots
             SUM(CASE WHEN result = 'miss' THEN 1 ELSE 0 END) as misses,
             SUM(CASE WHEN result = 'no_estimate' THEN 1 ELSE 0 END) as no_estimate,
             AVG(ABS(sales_error)) as mean_error,
+            AVG(sales_error) as mean_bias,
             AVG(CASE WHEN sales_error IS NOT NULL THEN ABS(baseline_error) END) as baseline_mean_error
         ")->first();
         $runs = DB::table('production_forecast_snapshots')->where('run_type', $type);
@@ -158,6 +165,8 @@ class ForecastSnapshots
             'misses' => (int) $stats->misses,
             'no_estimate' => (int) $stats->no_estimate,
             'mean_error' => $stats->mean_error === null ? null : round((float) $stats->mean_error, 2),
+            // Positive: sales usually came in above the forecast (it runs low)
+            'mean_bias' => $stats->mean_bias === null ? null : round((float) $stats->mean_bias, 2),
             'baseline_mean_error' => $stats->baseline_mean_error === null ? null : round((float) $stats->baseline_mean_error, 2),
             'first_run' => (clone $runs)->min('forecast_as_of'),
             'last_run' => (clone $runs)->max('forecast_as_of'),
@@ -179,6 +188,9 @@ class ForecastSnapshots
             'result' => $row->result,
             'sample_days' => (int) $row->sample_days,
             'payday_distance' => (int) $row->payday_distance,
+            'special_day' => $row->special_day ?? null,
+            'uplift' => isset($row->uplift) ? (float) $row->uplift : null,
+            'model_version' => $row->model_version,
             'weather_source' => $row->weather_source,
             'rain_chance' => $row->rain_chance === null ? null : (float) $row->rain_chance,
             'observed_rain_mm' => $row->observed_rain_mm === null ? null : (float) $row->observed_rain_mm,

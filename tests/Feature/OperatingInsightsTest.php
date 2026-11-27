@@ -152,6 +152,10 @@ class OperatingInsightsTest extends TestCase
         $this->assertDatabaseHas('production_forecast_snapshots', [
             'run_type' => 'replay', 'forecast_as_of' => '2026-11-28', 'service_date' => '2026-11-28', 'result' => 'pending',
         ]);
+        // Bonifacio Day long weekend on the Nov 30 payday
+        $this->assertDatabaseHas('production_forecast_snapshots', [
+            'run_type' => 'replay', 'forecast_as_of' => '2026-11-28', 'service_date' => '2026-11-28', 'special_day' => 'payday_long_weekend',
+        ]);
         Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'include=current'));
         $number = \Illuminate\Support\Facades\DB::table('production_forecast_snapshots')->count();
         $this->artisan('forecast:replay')->assertSuccessful();

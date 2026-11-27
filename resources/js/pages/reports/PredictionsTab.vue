@@ -7,10 +7,12 @@ type Prediction = {
     error: number | null; baseline_error: number | null; sample_days: number;
     result: 'hit' | 'miss' | 'no_sales_record' | 'no_estimate' | 'pending';
     payday_distance: number; rain_chance: number | null;
+    special_day: SpecialDay | null; uplift: number | null; model_version: string;
     observed_rain_mm: number | null; weather_source: 'forecast' | 'history' | 'unavailable';
 };
+type SpecialDay = 'payday_long_weekend' | 'long_weekend' | 'holiday' | 'near_payday';
 type Report = {
-    hits: number; misses: number; no_estimate: number; mean_error: number | null; baseline_mean_error: number | null;
+    hits: number; misses: number; no_estimate: number; mean_error: number | null; mean_bias: number | null; baseline_mean_error: number | null;
     first_run: string | null; last_run: string | null; run_days: number; tolerance_pct: number; can_run_replay: boolean;
     predictions: { data: Prediction[]; current_page: number; last_page: number };
 };
@@ -27,6 +29,10 @@ const pesos = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP
 const money = (value: number | null) => value === null ? '—' : pesos.format(value);
 const monthDay = new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const dayLabel = (date: string) => monthDay.format(new Date(date + 'T00:00:00Z'));
+const specialLabel: Record<SpecialDay, string> = {
+    payday_long_weekend: 'Payday + long weekend', long_weekend: 'Long weekend', holiday: 'Holiday', near_payday: 'Near payday',
+};
+const pct = (uplift: number) => `${uplift >= 1 ? '+' : '−'}${Math.round(Math.abs(uplift - 1) * 100)}%`;
 const status = { hit: 'Hit', miss: 'Miss', no_sales_record: 'No sales record', no_estimate: 'No estimate', pending: 'Pending' };
 
 watch([type, asOf, page, refresh], async ([mode, date, current], _old, onCleanup) => {
@@ -129,11 +135,16 @@ function trace(name: 'estimate' | 'actual') {
         </div>
 
         <template v-if="report">
-            <dl class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <dl class="grid grid-cols-2 gap-2 sm:grid-cols-5">
                 <div class="rounded border bg-card p-3"><dt class="text-sm">Hits</dt><dd class="text-lg font-bold">{{ report.hits }} / {{ report.hits + report.misses }}</dd></div>
                 <div class="rounded border bg-card p-3"><dt class="text-sm">Misses</dt><dd class="text-lg font-bold">{{ report.misses }}</dd></div>
                 <div class="rounded border bg-card p-3"><dt class="text-sm">Average absolute error</dt><dd class="text-lg font-bold">{{ money(report.mean_error) }}</dd></div>
                 <div class="rounded border bg-card p-3"><dt class="text-sm">Weekday baseline error</dt><dd class="text-lg font-bold">{{ money(report.baseline_mean_error) }}</dd></div>
+                <div class="col-span-2 rounded border bg-card p-3 sm:col-span-1"><dt class="text-sm">Average bias</dt>
+                    <dd class="text-lg font-bold">{{ money(report.mean_bias) }}</dd>
+                    <dd v-if="report.mean_bias" class="text-xs text-muted-foreground">
+                        {{ report.mean_bias > 0 ? 'Forecasts usually run low' : 'Forecasts usually run high' }}</dd>
+                </div>
             </dl>
             <p v-if="asOf && !report.hits && !report.misses && !report.no_estimate" role="note"
                 class="rounded border border-dashed p-3 text-sm text-muted-foreground">
@@ -164,7 +175,9 @@ function trace(name: 'estimate' | 'actual') {
             <div v-if="report.predictions.data.length" class="grid gap-2 sm:grid-cols-2">
                 <article v-for="row in report.predictions.data" :key="row.date" class="rounded border bg-card p-3 text-sm">
                     <div class="flex flex-wrap items-start justify-between gap-2">
-                        <strong>{{ row.date }}</strong>
+                        <strong>{{ row.date }}
+                            <span v-if="row.special_day" class="ml-1 rounded bg-[#f2e5d8] px-1.5 py-0.5 text-xs font-bold text-[#ad3b19]">
+                                {{ specialLabel[row.special_day] }}<template v-if="row.uplift !== null">{{ ' ' + pct(row.uplift) }}</template></span></strong>
                         <span class="font-semibold" :class="row.result === 'hit' ? 'text-emerald-800' : row.result === 'miss' ? 'text-[#ad3b19]' : 'text-muted-foreground'">{{ status[row.result] }}</span>
                     </div>
                     <p class="text-xs text-muted-foreground">As of {{ row.as_of }} · {{ row.sample_days }} training dates for this weekday</p>

@@ -76,6 +76,15 @@ Route::middleware(['auth'])->group(function () {
         ->name('settings.hris.update')
         ->middleware('role:admin');
 
+    Route::get('settings/holidays', [\App\Http\Controllers\Settings\HolidaySettingsController::class, 'index'])
+        ->name('settings.holidays')->middleware('role:admin');
+    Route::post('settings/holidays', [\App\Http\Controllers\Settings\HolidaySettingsController::class, 'store'])
+        ->name('settings.holidays.store')->middleware('role:admin');
+    Route::patch('settings/holidays/{holiday}', [\App\Http\Controllers\Settings\HolidaySettingsController::class, 'update'])
+        ->name('settings.holidays.update')->middleware('role:admin');
+    Route::delete('settings/holidays/{holiday}', [\App\Http\Controllers\Settings\HolidaySettingsController::class, 'destroy'])
+        ->name('settings.holidays.destroy')->middleware('role:admin');
+
     Route::get('settings/accounting', [\App\Http\Controllers\Settings\AccountingSettingsController::class, 'edit'])
         ->name('settings.accounting')
         ->middleware('role:admin');

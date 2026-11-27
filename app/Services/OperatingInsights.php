@@ -7,7 +7,11 @@ use Illuminate\Support\Facades\DB;
 
 class OperatingInsights
 {
-    public function __construct(private StoreWeather $weather, private ProductionDemandModel $model) {}
+    public function __construct(
+        private StoreWeather $weather,
+        private ProductionDemandModel $model,
+        private HolidayCalendar $calendar,
+    ) {}
 
     public function forecast(CarbonImmutable $now): array
     {
@@ -30,6 +34,7 @@ class OperatingInsights
         $weatherHistory = $this->weather->trainingWeather(array_reverse(array_keys($salesHistory)), $now);
         $training = $this->training($salesHistory, $weatherHistory);
         $validation = $this->model->validate($training);
+        $fit = $validation + ['uplifts' => $this->model->uplifts($training)];
         $unitHistory = $items->map(fn ($rows) => (int) $rows->sum('units'))->all();
 
         $result = $month = [];
@@ -43,7 +48,7 @@ class OperatingInsights
             $rank = WeekdaySalesRank::summarize($weekdaySales, $date);
             $weights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => $weather['rainy']], $validation['use_context']);
             $baseline = array_fill_keys(array_keys($weekday), 1);
-            $point = $this->estimateDay($target, $weekday, $weather, $validation['use_context'], $weights, $baseline);
+            $point = $this->estimateDay($target, $weekday, $weather, $fit, $weights, $baseline);
             $month[] = $point;
             $salesEstimate = $point['net_sales'];
 
@@ -51,9 +56,11 @@ class OperatingInsights
                 continue;
             }
 
+            // Busier kinds of day need more stock: scale prep by the same learned uplift as sales
+            $scale = $point['uplift'] ?? 1.0;
             $stockWeights = array_intersect_key($weights, $unitHistory);
             $baselineUnits = $this->model->estimate($unitHistory, array_intersect_key($baseline, $unitHistory));
-            $units = count($stockWeights) >= 2 ? $this->model->estimate($unitHistory, $stockWeights) : null;
+            $units = count($stockWeights) >= 2 ? round($this->model->estimate($unitHistory, $stockWeights) * $scale, 2) : null;
             $ordered = array_intersect_key($orders, $weights);
             $projectedOrders = count($ordered) >= 2 ? $this->model->estimate($ordered, $weights) : null;
             $baselineOrders = count($ordered) >= 2 ? $this->model->estimate($ordered, $baseline) : null;
@@ -65,7 +72,7 @@ class OperatingInsights
                     $firstSale = min(array_keys($byDay));
                     $productWeights = array_filter($stockWeights, fn ($d) => $d >= $firstSale, ARRAY_FILTER_USE_KEY);
                     $daily = array_replace(array_fill_keys(array_keys($productWeights), 0), $byDay);
-                    $suggested = (int) ceil($this->model->estimate($daily, $productWeights));
+                    $suggested = (int) ceil($this->model->estimate($daily, $productWeights) * $scale);
                     if ($suggested > 0) {
                         sort($daily);
                         $products[] = [
@@ -89,12 +96,16 @@ class OperatingInsights
                 'orders' => $projectedOrders,
                 'typical_orders' => $baselineOrders,
                 'net_sales' => $salesEstimate,
+                'special_day' => $point['special_day'],
+                'holiday' => $point['holiday'],
+                'uplift' => $point['uplift'],
                 'net_sales_samples' => array_values($weekday),
                 'products' => $products,
             ];
         }
 
         return ['days' => $result, 'month' => $month, 'model' => $validation + [
+            'uplifts' => $fit['uplifts'],
             'training_days' => count($training),
             'weather_days' => count(array_filter($training, fn ($day) => $day['rainy'] !== null)),
         ]];
@@ -122,6 +133,7 @@ class OperatingInsights
     {
         $training = array_filter($history, fn ($row) => $row['date'] < $asOf->toDateString());
         $validation = $this->model->validate($training);
+        $fit = $validation + ['uplifts' => $this->model->uplifts($training)];
         $month = [];
         foreach ($this->forecastDates($asOf) as $date) {
             $target = $this->date($date);
@@ -131,7 +143,7 @@ class OperatingInsights
             $weather = ['rainy' => null, 'rain_chance' => null, 'condition' => null];
             $weights = $this->model->weights($weekday,
                 ['near_payday' => WeekdaySalesRank::nearPayday($target), 'rainy' => null], $validation['use_context']);
-            $month[] = $this->estimateDay($target, $weekday, $weather, $validation['use_context'],
+            $month[] = $this->estimateDay($target, $weekday, $weather, $fit,
                 $weights, array_fill_keys(array_keys($weekday), 1));
         }
 
@@ -160,6 +172,7 @@ class OperatingInsights
             $training[$date] = [
                 'date' => $date, 'weekday' => $day->dayOfWeekIso, 'net_sales' => $netSales,
                 'near_payday' => WeekdaySalesRank::nearPayday($day),
+                'special' => $this->calendar->specialDay($day),
                 'rainy' => $weatherHistory[$date]['rainy'],
                 'condition' => $weatherHistory[$date]['condition'],
                 'rain_mm' => $weatherHistory[$date]['rain_mm'],
@@ -170,14 +183,27 @@ class OperatingInsights
         return $training;
     }
 
-    private function estimateDay(CarbonImmutable $target, array $weekday, array $weather, bool $useContext, array $weights, array $baseline): array
+    private function estimateDay(CarbonImmutable $target, array $weekday, array $weather, array $fit, array $weights, array $baseline): array
     {
+        $useContext = $fit['mode'] === 'context';
         $weekdaySales = array_column($weekday, 'net_sales', 'date');
         $nearPayday = WeekdaySalesRank::nearPayday($target);
         $hasLiveWeather = $weather['rainy'] !== null;
         $historicalRain = $hasLiveWeather ? null : $this->historicalRainChance($weekday, $target);
-        $salesEstimate = count($weekday) >= 2 ? $this->model->estimate($weekdaySales, $weights) : null;
-        if ($salesEstimate !== null && $historicalRain !== null && $useContext) {
+        $special = $this->calendar->specialDay($target);
+        $uplift = null;
+        $salesEstimate = count($weekday) >= 2
+            ? $this->model->estimate($weekdaySales, $fit['mode'] === 'baseline' ? $baseline : $weights)
+            : null;
+        if ($salesEstimate !== null && $fit['mode'] === 'factors') {
+            $factor = fn (?bool $rainy) => $this->model->factorEstimate($weekday, $target->toDateString(), $special, $fit['uplifts'], $rainy);
+            $chance = $historicalRain === null ? null : $historicalRain / 100;
+            $point = $factor($hasLiveWeather ? $weather['rainy'] : null);
+            $salesEstimate = $chance === null ? $point['estimate']
+                : $chance * $factor(true)['estimate'] + (1 - $chance) * $factor(false)['estimate'];
+            $salesEstimate = round($salesEstimate * $fit['bias'], 2);
+            $uplift = $special === null ? null : $point['uplift'];
+        } elseif ($salesEstimate !== null && $historicalRain !== null && $useContext) {
             $rainyWeights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => true], true);
             $dryWeights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => false], true);
             $chance = $historicalRain / 100;
@@ -194,6 +220,10 @@ class OperatingInsights
             'condition' => $hasLiveWeather ? $weather['condition'] : null,
             'payday_distance' => WeekdaySalesRank::paydayDistance($target),
             'sample_days' => count($weekday),
+            'special_day' => $special,
+            'holiday' => $this->calendar->holiday($target),
+            'uplift' => $uplift,
+            'model' => $fit['mode'],
         ];
     }
 

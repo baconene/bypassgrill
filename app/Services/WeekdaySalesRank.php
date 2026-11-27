@@ -17,6 +17,11 @@ class WeekdaySalesRank
         return $distance;
     }
 
+    public static function isPayday(CarbonImmutable $date): bool
+    {
+        return in_array($date->day, [15, 30], true);
+    }
+
     public static function nearPayday(CarbonImmutable $date): bool
     {
         return self::paydayDistance($date) <= 3;

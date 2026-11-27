@@ -1,6 +1,21 @@
 # Prediction factors plan
 
-Status: **saved for later, not built yet.** Requested November 27, 2026.
+Status: **built November 29, 2026** (forecast model `weekday-factors-v2`). Requested November 27, 2026.
+
+What shipped:
+
+- `holidays` table seeded with 2026 and 2027 (dates set by proclamation marked unconfirmed), editable in
+  **Settings → Holidays**. `HolidayCalendar` tags each date: payday + long weekend, long weekend (incl. its
+  eve), holiday, near payday, or regular.
+- `ProductionDemandModel`: learned uplift per kind of day (shrunk toward 1 while examples are few), recent
+  weeks weighted more (6-week half-life), extreme days capped, and a bias correction. A back-test picks the
+  weekday average, the old payday/rain matching, or the factor model, whichever has the lowest recent error.
+- Stock suggestions scale with the uplift; the Production Forecast page and Predictions report show the
+  special-day tag, the uplift, and the average bias.
+
+Still open: tagging unusual days (catering, short hours) so they are left out; the February/previous
+working day payday rule (below); importing older sales history; tuning the half-life and shrink settings
+with the replay.
 
 ## Why
 
