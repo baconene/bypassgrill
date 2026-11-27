@@ -126,6 +126,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/weather', fn (StoreWeather $weather) => response()->json(
             $weather->forecast(CarbonImmutable::now(StoreWeather::TIMEZONE)),
         ));
+        Route::get('/reports/predictions', [ReportController::class, 'predictions']);
+        Route::post('/reports/predictions/replay', [ReportController::class, 'replayPredictions'])->middleware('throttle:2,10');
         Route::get('/reports/production-forecast', [ReportController::class, 'productionForecast']);
         Route::get('/reports/operating-review', [ReportController::class, 'operatingReview']);
         Route::put('/reports/operating-staffing', [ReportController::class, 'storeOperatingStaffing']);

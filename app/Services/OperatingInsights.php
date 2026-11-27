@@ -12,14 +12,7 @@ class OperatingInsights
     public function forecast(CarbonImmutable $now): array
     {
         $today = $now->startOfDay();
-        $serviceDates = [];
-        $until = $today->addDays(30);
-        for ($day = $today; $day->lt($until); $day = $day->addDay()) {
-            if ($day->dayOfWeekIso >= 5 && $day->addHours((int) config('services.store_weather.opens_hour'))->gt($now)) {
-                $serviceDates[] = $day->toDateString();
-            }
-        }
-
+        $serviceDates = $this->forecastDates($now);
         $sales = $this->sales($today);
         $items = DB::table('order_items as i')->join('orders as o', 'i.order_id', '=', 'o.id')
             ->join('products as p', 'i.product_id', '=', 'p.id')
@@ -35,18 +28,7 @@ class OperatingInsights
         $salesHistory = $this->productionSales($sales);
         $forecast = $this->weather->serviceWeather($serviceDates, $now, forecast: true);
         $weatherHistory = $this->weather->trainingWeather(array_reverse(array_keys($salesHistory)), $now);
-        $training = [];
-        foreach ($salesHistory as $date => $netSales) {
-            $day = $this->date($date);
-            $training[$date] = [
-                'date' => $date, 'weekday' => $day->dayOfWeekIso, 'net_sales' => $netSales,
-                'near_payday' => WeekdaySalesRank::nearPayday($day),
-                'rainy' => $weatherHistory[$date]['rainy'],
-                'condition' => $weatherHistory[$date]['condition'],
-                'rain_mm' => $weatherHistory[$date]['rain_mm'],
-                'rainy_hours' => $weatherHistory[$date]['rainy_hours'],
-            ];
-        }
+        $training = $this->training($salesHistory, $weatherHistory);
         $validation = $this->model->validate($training);
         $unitHistory = $items->map(fn ($rows) => (int) $rows->sum('units'))->all();
 
@@ -61,26 +43,9 @@ class OperatingInsights
             $rank = WeekdaySalesRank::summarize($weekdaySales, $date);
             $weights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => $weather['rainy']], $validation['use_context']);
             $baseline = array_fill_keys(array_keys($weekday), 1);
-            $hasLiveWeather = $weather['rainy'] !== null;
-            $historicalRain = $hasLiveWeather ? null : $this->historicalRainChance($weekday, $target);
-            $salesEstimate = count($weekday) >= 2 ? $this->model->estimate($weekdaySales, $weights) : null;
-            if ($salesEstimate !== null && $historicalRain !== null && $validation['use_context']) {
-                $rainyWeights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => true], true);
-                $dryWeights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => false], true);
-                $chance = $historicalRain / 100;
-                $salesEstimate = round($chance * $this->model->estimate($weekdaySales, $rainyWeights)
-                    + (1 - $chance) * $this->model->estimate($weekdaySales, $dryWeights), 2);
-            }
-            $month[] = [
-                'date' => $date,
-                'net_sales' => $salesEstimate,
-                'weekday_baseline' => count($weekday) >= 2 ? $this->model->estimate($weekdaySales, $baseline) : null,
-                'weather_source' => $hasLiveWeather ? 'forecast' : ($historicalRain !== null ? 'history' : 'unavailable'),
-                'rain_chance' => $hasLiveWeather ? $weather['rain_chance'] : $historicalRain,
-                'condition' => $hasLiveWeather ? $weather['condition'] : null,
-                'payday_distance' => WeekdaySalesRank::paydayDistance($target),
-                'sample_days' => count($weekday),
-            ];
+            $point = $this->estimateDay($target, $weekday, $weather, $validation['use_context'], $weights, $baseline);
+            $month[] = $point;
+            $salesEstimate = $point['net_sales'];
 
             if (count($month) > 3) {
                 continue;
@@ -133,6 +98,103 @@ class OperatingInsights
             'training_days' => count($training),
             'weather_days' => count(array_filter($training, fn ($day) => $day['rainy'] !== null)),
         ]];
+    }
+
+    public function replayData(CarbonImmutable $from, CarbonImmutable $now): array
+    {
+        $sales = $this->sales($now->startOfDay(), $from);
+        $history = $this->productionSales($sales);
+        $weather = $this->weather->trainingWeather(array_reverse(array_keys($history)), $now);
+
+        $transactionDay = 'DATE(transacted_at)';
+        $recordedDay = 'DATE(created_at)';
+        $availableDay = "CASE WHEN $recordedDay > $transactionDay THEN $recordedDay ELSE $transactionDay END";
+        $ledger = DB::table('financial_transactions')->where('type', 'payment')
+            ->where('transacted_at', '>=', $from)->where('transacted_at', '<', $now->startOfDay())
+            ->selectRaw("$transactionDay as day, $availableDay as available_day, SUM(amount) as net,
+                SUM(CASE WHEN amount > 0 THEN 1 ELSE 0 END) as receipts")
+            ->groupByRaw("$transactionDay, $availableDay")->orderBy('available_day')->get()->all();
+
+        return ['training' => $this->training($history, $weather), 'sales' => $sales, 'ledger' => $ledger];
+    }
+
+    public function replayForecast(CarbonImmutable $asOf, array $history): array
+    {
+        $training = array_filter($history, fn ($row) => $row['date'] < $asOf->toDateString());
+        $validation = $this->model->validate($training);
+        $month = [];
+        foreach ($this->forecastDates($asOf) as $date) {
+            $target = $this->date($date);
+            $weekday = array_filter($training, fn ($day) => $day['weekday'] === $target->dayOfWeekIso);
+            // A replay uses past observations to form a climatology. The target's observed
+            // weather is kept out of its prediction, and today's provider forecast is never queried.
+            $weather = ['rainy' => null, 'rain_chance' => null, 'condition' => null];
+            $weights = $this->model->weights($weekday,
+                ['near_payday' => WeekdaySalesRank::nearPayday($target), 'rainy' => null], $validation['use_context']);
+            $month[] = $this->estimateDay($target, $weekday, $weather, $validation['use_context'],
+                $weights, array_fill_keys(array_keys($weekday), 1));
+        }
+
+        return ['month' => $month, 'model' => $validation];
+    }
+
+    private function forecastDates(CarbonImmutable $now): array
+    {
+        $today = $now->startOfDay();
+        $serviceDates = [];
+        $until = $today->addDays(30);
+        for ($day = $today; $day->lt($until); $day = $day->addDay()) {
+            if ($day->dayOfWeekIso >= 5 && $day->addHours((int) config('services.store_weather.opens_hour'))->gt($now)) {
+                $serviceDates[] = $day->toDateString();
+            }
+        }
+
+        return $serviceDates;
+    }
+
+    private function training(array $salesHistory, array $weatherHistory): array
+    {
+        $training = [];
+        foreach ($salesHistory as $date => $netSales) {
+            $day = $this->date($date);
+            $training[$date] = [
+                'date' => $date, 'weekday' => $day->dayOfWeekIso, 'net_sales' => $netSales,
+                'near_payday' => WeekdaySalesRank::nearPayday($day),
+                'rainy' => $weatherHistory[$date]['rainy'],
+                'condition' => $weatherHistory[$date]['condition'],
+                'rain_mm' => $weatherHistory[$date]['rain_mm'],
+                'rainy_hours' => $weatherHistory[$date]['rainy_hours'],
+            ];
+        }
+
+        return $training;
+    }
+
+    private function estimateDay(CarbonImmutable $target, array $weekday, array $weather, bool $useContext, array $weights, array $baseline): array
+    {
+        $weekdaySales = array_column($weekday, 'net_sales', 'date');
+        $nearPayday = WeekdaySalesRank::nearPayday($target);
+        $hasLiveWeather = $weather['rainy'] !== null;
+        $historicalRain = $hasLiveWeather ? null : $this->historicalRainChance($weekday, $target);
+        $salesEstimate = count($weekday) >= 2 ? $this->model->estimate($weekdaySales, $weights) : null;
+        if ($salesEstimate !== null && $historicalRain !== null && $useContext) {
+            $rainyWeights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => true], true);
+            $dryWeights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => false], true);
+            $chance = $historicalRain / 100;
+            $salesEstimate = round($chance * $this->model->estimate($weekdaySales, $rainyWeights)
+                + (1 - $chance) * $this->model->estimate($weekdaySales, $dryWeights), 2);
+        }
+
+        return [
+            'date' => $target->toDateString(),
+            'net_sales' => $salesEstimate,
+            'weekday_baseline' => count($weekday) >= 2 ? $this->model->estimate($weekdaySales, $baseline) : null,
+            'weather_source' => $hasLiveWeather ? 'forecast' : ($historicalRain !== null ? 'history' : 'unavailable'),
+            'rain_chance' => $hasLiveWeather ? $weather['rain_chance'] : $historicalRain,
+            'condition' => $hasLiveWeather ? $weather['condition'] : null,
+            'payday_distance' => WeekdaySalesRank::paydayDistance($target),
+            'sample_days' => count($weekday),
+        ];
     }
 
     private function historicalRainChance(array $weekday, CarbonImmutable $target): ?float
@@ -235,10 +297,11 @@ class OperatingInsights
         ];
     }
 
-    private function sales(CarbonImmutable $until): array
+    private function sales(CarbonImmutable $until, ?CarbonImmutable $from = null): array
     {
         return DB::table('financial_transactions')->where('type', 'payment')
             ->where('transacted_at', '<', $until)
+            ->when($from, fn ($query) => $query->where('transacted_at', '>=', $from))
             ->selectRaw('DATE(transacted_at) as day, SUM(amount) as net, SUM(CASE WHEN amount > 0 THEN 1 ELSE 0 END) as receipts')
             ->groupByRaw('DATE(transacted_at)')->get()
             ->mapWithKeys(fn ($row) => [$row->day => ['net' => round((float) $row->net, 2), 'receipts' => (int) $row->receipts]])->all();

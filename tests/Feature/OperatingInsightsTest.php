@@ -116,6 +116,58 @@ class OperatingInsightsTest extends TestCase
             ->assertJsonPath('accuracy.days.2.result', 'hit');
     }
 
+    public function test_june_replay_starts_empty_and_uses_only_records_known_before_each_run(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-11-28 10:00', 'Asia/Manila'));
+        foreach ([
+            ['2026-05-29', '2026-05-29', 99999],
+            ['2026-06-05', '2026-06-05', 1000],
+            ['2026-06-12', '2026-06-12', 3000],
+            ['2026-06-19', '2026-06-19', 2000],
+            ['2026-06-26', '2026-06-26', 2200],
+            ['2026-06-05', '2026-06-25', -400],
+        ] as [$date, $entered, $amount]) {
+            $transaction = new FinancialTransaction([
+                'user_id' => $this->admin->id, 'type' => 'payment', 'amount' => $amount,
+                'description' => 'Replay fixture', 'transacted_at' => $date.' 16:00:00',
+            ]);
+            $transaction->created_at = $entered.' 16:00:00';
+            $transaction->save();
+        }
+        $this->fakeWeather();
+
+        $this->artisan('forecast:replay')->assertSuccessful();
+        $this->assertDatabaseHas('production_forecast_snapshots', [
+            'run_type' => 'replay', 'forecast_as_of' => '2026-06-01', 'service_date' => '2026-06-05',
+            'sample_days' => 0, 'estimated_net_sales' => null, 'actual_net_sales' => 600, 'result' => 'no_estimate',
+        ]);
+        $this->assertDatabaseHas('production_forecast_snapshots', [
+            'run_type' => 'replay', 'forecast_as_of' => '2026-06-19', 'service_date' => '2026-06-19',
+            'sample_days' => 2, 'estimated_net_sales' => 2000, 'actual_net_sales' => 2000, 'result' => 'hit',
+        ]);
+        $this->assertDatabaseHas('production_forecast_snapshots', [
+            'run_type' => 'replay', 'forecast_as_of' => '2026-06-26', 'service_date' => '2026-06-26',
+            'sample_days' => 3, 'estimated_net_sales' => 1866.67, 'actual_net_sales' => 2200, 'result' => 'miss',
+        ]);
+        $this->assertDatabaseHas('production_forecast_snapshots', [
+            'run_type' => 'replay', 'forecast_as_of' => '2026-11-28', 'service_date' => '2026-11-28', 'result' => 'pending',
+        ]);
+        Http::assertNotSent(fn (Request $request) => str_contains($request->url(), 'include=current'));
+        $number = \Illuminate\Support\Facades\DB::table('production_forecast_snapshots')->count();
+        $this->artisan('forecast:replay')->assertSuccessful();
+        $this->assertDatabaseCount('production_forecast_snapshots', $number);
+        $this->getJson('/api/v1/reports/predictions?type=replay')->assertOk()
+            ->assertJsonPath('run_days', 181)->assertJsonPath('first_run', '2026-06-01')
+            ->assertJsonPath('last_run', '2026-11-28')
+            ->assertJsonPath('hits', 1)->assertJsonPath('misses', 1)
+            ->assertJsonPath('no_estimate', 2);
+        $this->getJson('/api/v1/reports/predictions?type=replay&as_of=2026-06-01')->assertOk()
+            ->assertJsonPath('predictions.data.0.as_of', '2026-06-01');
+        $this->getJson('/api/v1/reports/predictions?type=live')->assertOk()
+            ->assertJsonPath('run_days', 0)->assertJsonPath('predictions.data', []);
+        $this->actingAs(User::factory()->create())->postJson('/api/v1/reports/predictions/replay')->assertForbidden();
+    }
+
     public function test_weather_backfill_keeps_every_sale_with_or_without_weather(): void
     {
         $start = CarbonImmutable::parse('2026-11-20', 'Asia/Manila');

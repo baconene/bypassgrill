@@ -44,6 +44,26 @@ class ReportController extends Controller
             + ['accuracy' => $snapshots->summary()]);
     }
 
+    public function predictions(Request $request, ForecastSnapshots $snapshots): JsonResponse
+    {
+        $this->checkPermission();
+        $data = $request->validate([
+            'type' => ['sometimes', 'in:replay,live'],
+            'as_of' => ['sometimes', 'date_format:Y-m-d'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+        ]);
+
+        return response()->json($snapshots->predictions($data['type'] ?? 'replay', $data['as_of'] ?? null)
+            + ['can_run_replay' => $request->user()->hasRole('admin')]);
+    }
+
+    public function replayPredictions(Request $request, ForecastSnapshots $snapshots): JsonResponse
+    {
+        abort_unless($request->user()->hasRole('admin'), 403);
+
+        return response()->json($snapshots->replay(CarbonImmutable::now(StoreWeather::TIMEZONE)));
+    }
+
     public function operatingReview(Request $request, OperatingInsights $insights): JsonResponse
     {
         $this->checkPermission();
