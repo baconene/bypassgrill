@@ -166,6 +166,22 @@ class OperatingInsightsTest extends TestCase
         $this->getJson('/api/v1/reports/predictions?type=live')->assertOk()
             ->assertJsonPath('run_days', 0)->assertJsonPath('predictions.data', []);
         $this->actingAs(User::factory()->create())->postJson('/api/v1/reports/predictions/replay')->assertForbidden();
+        $this->actingAs(User::factory()->create())->postJson('/api/v1/reports/predictions/replay', ['fresh' => true])->assertForbidden();
+
+        // Re-running rebuilds the saved replay instead of skipping it
+        $hit = fn () => \Illuminate\Support\Facades\DB::table('production_forecast_snapshots')
+            ->where(['run_type' => 'replay', 'forecast_as_of' => '2026-06-19', 'service_date' => '2026-06-19']);
+        $hit()->update(['estimated_net_sales' => 1, 'result' => 'miss']);
+        $this->artisan('forecast:replay', ['--fresh' => true])->assertSuccessful();
+        $this->assertEquals(2000, $hit()->value('estimated_net_sales'));
+        $this->assertSame('hit', $hit()->value('result'));
+        $this->assertDatabaseCount('production_forecast_snapshots', $number);
+
+        $hit()->update(['estimated_net_sales' => 1]);
+        $this->actingAs($this->admin)->postJson('/api/v1/reports/predictions/replay', ['fresh' => true])->assertOk()
+            ->assertJsonPath('replaced', $number)->assertJsonPath('saved', $number)
+            ->assertJsonPath('through', '2026-11-28');
+        $this->assertEquals(2000, $hit()->value('estimated_net_sales'));
     }
 
     public function test_weather_backfill_keeps_every_sale_with_or_without_weather(): void

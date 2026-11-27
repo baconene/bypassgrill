@@ -27,12 +27,16 @@ class ForecastSnapshots
         return ['saved' => $saved, 'evaluated' => $this->evaluate($now)];
     }
 
-    public function replay(CarbonImmutable $now): array
+    /**
+     * With $fresh, the saved replay is rebuilt from current sales, e.g. after late entries or a model change.
+     * The old rows are removed in the same transaction as the new ones are written, so a failed run keeps them.
+     */
+    public function replay(CarbonImmutable $now, bool $fresh = false): array
     {
         $start = CarbonImmutable::parse(self::REPLAY_START, StoreWeather::TIMEZONE);
         $through = min($now->toDateString(), self::REPLAY_END);
-        if (DB::table('production_forecast_snapshots')->where('run_type', 'replay')->where('forecast_as_of', $through)->exists()) {
-            return ['saved' => 0, 'through' => $through];
+        if (!$fresh && DB::table('production_forecast_snapshots')->where('run_type', 'replay')->where('forecast_as_of', $through)->exists()) {
+            return ['saved' => 0, 'replaced' => 0, 'through' => $through];
         }
 
         $data = $this->insights->replayData($start, $now);
@@ -72,7 +76,11 @@ class ForecastSnapshots
             }
         }
 
-        $saved = DB::transaction(function () use ($rows) {
+        $replaced = 0;
+        $saved = DB::transaction(function () use ($rows, $fresh, &$replaced) {
+            if ($fresh) {
+                $replaced = DB::table('production_forecast_snapshots')->where('run_type', 'replay')->delete();
+            }
             $saved = 0;
             foreach (array_chunk($rows, 40) as $batch) {
                 $saved += DB::table('production_forecast_snapshots')->insertOrIgnore($batch);
@@ -81,7 +89,7 @@ class ForecastSnapshots
             return $saved;
         });
 
-        return ['saved' => $saved, 'through' => $through];
+        return ['saved' => $saved, 'replaced' => $replaced, 'through' => $through];
     }
 
     private function snapshotRows(array $forecast, string $asOf, CarbonImmutable $now, string $type): array

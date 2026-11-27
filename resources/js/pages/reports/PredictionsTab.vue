@@ -45,14 +45,27 @@ watch([type, asOf, page, refresh], async ([mode, date, current], _old, onCleanup
     }
 }, { immediate: true });
 
+// The replay is complete once it reaches its last day; after that the button rebuilds it instead.
+const replayComplete = computed(() => report.value?.last_run === '2026-11-28');
+
 async function replay() {
+    const fresh = replayComplete.value;
+
+    if (fresh && !confirm('Re-run the June replay?\n\nThis rebuilds every saved replay forecast from the sales recorded now and replaces the current results.')) {
+        return;
+    }
+
     running.value = true;
     replayStatus.value = '';
     try {
-        const { data } = await api.post<{ saved: number; through: string }>('/api/v1/reports/predictions/replay', {}, { timeout: 45000 });
+        const { data } = await api.post<{ saved: number; replaced: number; through: string }>(
+            '/api/v1/reports/predictions/replay', { fresh }, { timeout: 90000 },
+        );
         replayStatus.value = data.saved
-            ? `Saved ${data.saved.toLocaleString('en-PH')} replay forecasts through ${data.through}.`
+            ? `${fresh ? 'Re-ran the replay: saved' : 'Saved'} ${data.saved.toLocaleString('en-PH')} replay forecasts through ${data.through}.`
             : `Replay already saved through ${data.through}.`;
+        asOf.value = '';
+        page.value = 1;
         refresh.value++;
     } catch {
         replayStatus.value = 'Replay could not be confirmed. Refresh the report to check whether it finished.';
@@ -106,9 +119,12 @@ function trace(name: 'estimate' | 'actual') {
             <p v-if="report" class="mt-1 text-xs text-muted-foreground">
                 {{ report.first_run ? `${report.first_run} to ${report.last_run} · ${report.run_days} forecast runs` : 'No forecast runs saved yet.' }}
             </p>
-            <button v-if="type === 'replay' && report?.can_run_replay && report.last_run !== '2026-11-28'" type="button"
+            <button v-if="type === 'replay' && report?.can_run_replay" type="button"
                 class="mt-2 min-h-11 rounded bg-[#ad3b19] px-3 text-sm font-bold text-white disabled:opacity-60"
-                :disabled="running" @click="replay">{{ running ? 'Running replay…' : 'Run June replay' }}</button>
+                :disabled="running" @click="replay">
+                {{ running ? 'Running replay…' : replayComplete ? 'Re-run replay' : 'Run June replay' }}</button>
+            <p v-if="type === 'replay' && report?.can_run_replay && replayComplete && !running" class="mt-1 text-xs text-muted-foreground">
+                Rebuilds the replay from the sales recorded now. Takes up to a minute.</p>
             <p v-if="replayStatus" role="status" class="mt-1 text-sm">{{ replayStatus }}</p>
         </div>
 
@@ -119,6 +135,11 @@ function trace(name: 'estimate' | 'actual') {
                 <div class="rounded border bg-card p-3"><dt class="text-sm">Average absolute error</dt><dd class="text-lg font-bold">{{ money(report.mean_error) }}</dd></div>
                 <div class="rounded border bg-card p-3"><dt class="text-sm">Weekday baseline error</dt><dd class="text-lg font-bold">{{ money(report.baseline_mean_error) }}</dd></div>
             </dl>
+            <p v-if="asOf && !report.hits && !report.misses && !report.no_estimate" role="note"
+                class="rounded border border-dashed p-3 text-sm text-muted-foreground">
+                Forecasts made on {{ dayLabel(asOf) }} are for that day and the days after it, which haven't been scored yet.
+                Pick an earlier date, or use <button type="button" class="text-[#ad3b19] underline" @click="asOf = ''; page = 1">latest per service date</button>
+                to see how each day's forecast turned out.</p>
             <p class="text-sm text-muted-foreground">A hit is within {{ report.tolerance_pct }}% of the estimate. {{ report.no_estimate }} completed dates had sales but too little history for an estimate.</p>
             <div v-if="chartAmounts.length" class="min-w-0 rounded-lg border bg-card p-4">
                 <h3 class="font-bold">Forecast vs. actual net sales</h3>

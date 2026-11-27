@@ -26,9 +26,10 @@ Artisan::command('forecast:capture', function (ForecastSnapshots $snapshots) {
 
 Schedule::command('forecast:capture')->dailyAt('10:00')->timezone(StoreWeather::TIMEZONE)->withoutOverlapping();
 
-Artisan::command('forecast:replay', function (ForecastSnapshots $snapshots) {
-    $result = $snapshots->replay(CarbonImmutable::now(StoreWeather::TIMEZONE));
-    $this->info("Saved {$result['saved']} replay snapshots through {$result['through']}.");
+Artisan::command('forecast:replay {--fresh : Rebuild the saved replay from current sales}', function (ForecastSnapshots $snapshots) {
+    $result = $snapshots->replay(CarbonImmutable::now(StoreWeather::TIMEZONE), (bool) $this->option('fresh'));
+    $this->info("Saved {$result['saved']} replay snapshots through {$result['through']}."
+        .($result['replaced'] ? " Replaced {$result['replaced']}." : ''));
 })->purpose('Replay production forecasts day by day from June 2026');
 
 Schedule::command('forecast:replay')->everyTenMinutes()->withoutOverlapping()

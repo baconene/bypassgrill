@@ -60,8 +60,9 @@ class ReportController extends Controller
     public function replayPredictions(Request $request, ForecastSnapshots $snapshots): JsonResponse
     {
         abort_unless($request->user()->hasRole('admin'), 403);
+        $fresh = $request->validate(['fresh' => ['sometimes', 'boolean']])['fresh'] ?? false;
 
-        return response()->json($snapshots->replay(CarbonImmutable::now(StoreWeather::TIMEZONE)));
+        return response()->json($snapshots->replay(CarbonImmutable::now(StoreWeather::TIMEZONE), (bool) $fresh));
     }
 
     public function operatingReview(Request $request, OperatingInsights $insights): JsonResponse
