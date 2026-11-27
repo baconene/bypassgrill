@@ -4,6 +4,7 @@ use App\Http\Controllers\Settings\AdvertisementController;
 use App\Http\Controllers\Settings\GcashQrController;
 use App\Http\Controllers\Settings\LogoController;
 use App\Http\Controllers\Settings\MediaController;
+use App\Http\Controllers\Settings\MobileAppController;
 use App\Http\Controllers\Settings\PageContentController;
 use App\Http\Controllers\Settings\PriceManagementController;
 use App\Http\Controllers\Settings\ProfileController;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
     Route::redirect('settings', '/settings/profile');
+    Route::get('settings/mobile-app', [MobileAppController::class, 'show'])->name('settings.mobile-app');
+    Route::get('settings/mobile-app/download', [MobileAppController::class, 'download'])->name('settings.mobile-app.download');
 
     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('settings/profile', [ProfileController::class, 'update'])->name('profile.update');
