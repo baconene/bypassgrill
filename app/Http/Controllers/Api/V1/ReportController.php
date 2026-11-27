@@ -5,8 +5,12 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Services\AnalyticsService;
 use App\Services\ReportService;
+use App\Services\SalesDayInsights;
+use App\Services\StoreWeather;
 use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class ReportController extends Controller
 {
@@ -26,6 +30,16 @@ class ReportController extends Controller
         return response()->json(
             $this->analyticsService->bundle($start, $end, $cat ? (int) $cat : null)
         );
+    }
+
+    public function salesInsights(Request $request, SalesDayInsights $insights): JsonResponse
+    {
+        $this->checkPermission();
+        $now = CarbonImmutable::now(StoreWeather::TIMEZONE);
+        $validated = $request->validate(['date' => ['sometimes', 'required', 'date_format:Y-m-d', 'before_or_equal:'.$now->toDateString()]]);
+        $day = CarbonImmutable::parse($validated['date'] ?? $now->toDateString(), StoreWeather::TIMEZONE)->startOfDay();
+
+        return response()->json($insights->report($day, $now));
     }
 
     public function dailySales(): JsonResponse
@@ -522,7 +536,7 @@ class ReportController extends Controller
 
     private function checkPermission(): void
     {
-        if (! auth()->user()?->hasAnyRole('admin') && ! auth()->user()?->hasPermissionTo('view reports')) {
+        if (! auth()->user()?->hasAnyRole('admin') && ! auth()->user()?->checkPermissionTo('view reports')) {
             abort(403, 'Unauthorized');
         }
     }

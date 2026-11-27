@@ -16,6 +16,7 @@ import {
 } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import DashboardWeather from '@/components/DashboardWeather.vue';
 import type { Auth } from '@/types/auth';
 import api from '@/utils/api';
 
@@ -481,6 +482,8 @@ function refresh() {
                 >
             </div>
         </section>
+
+        <DashboardWeather class="mb-5" />
 
         <section
             v-if="cards.length"

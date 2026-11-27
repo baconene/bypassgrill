@@ -8,10 +8,11 @@ import {
     DollarSign, Plus, X, Search, ChevronLeft, ChevronRight, ChevronDown,
     ShoppingBag, ClipboardList, Package, Trash2, Pencil, CalendarDays,
     ArrowUp, ArrowDown, ChevronsUpDown, CalendarRange, Flame, Printer,
-    Receipt, Scale, Timer, Maximize2,
+    Receipt, Scale, Timer, Maximize2, CloudSun,
 } from 'lucide-vue-next'
 import AnalyticsTab from '@/pages/reports/AnalyticsTab.vue'
 import ProductSalesDetail from '@/pages/reports/ProductSalesDetail.vue'
+import SalesInsightsTab from '@/pages/reports/SalesInsightsTab.vue'
 import ServingTimeTab from '@/pages/reports/ServingTimeTab.vue'
 
 defineOptions({
@@ -69,7 +70,7 @@ const props = defineProps<{
 }>()
 
 // ── Active tab ─────────────────────────────────────────────────────────────────
-type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'heatmap' | 'analytics' | 'serving'
+type Tab = 'orders' | 'inventory' | 'financial' | 'daily' | 'monthly' | 'products' | 'pl' | 'bills' | 'heatmap' | 'analytics' | 'serving' | 'sales-insights'
 const tab = ref<Tab>('orders')
 const loading = ref(false)
 
@@ -82,6 +83,7 @@ const tabGroups = [
         { key: 'monthly' as Tab,   label: 'Monthly sales', icon: CalendarRange, hint: 'A month at a glance, set against the rest of the year.' },
         { key: 'products' as Tab,  label: 'Products',      icon: ShoppingBag,   hint: 'Best sellers by revenue. Open a product to see its daily sales.' },
         { key: 'analytics' as Tab, label: 'Trends',        icon: TrendingUp,    hint: 'Sales trends over time.' },
+        { key: 'sales-insights' as Tab, label: 'Sales insights', icon: CloudSun, hint: 'See how paid sales varied by weather and scheduled payday.' },
     ] },
     { label: 'Money', tabs: [
         { key: 'pl' as Tab,    label: 'Profit & loss', icon: Scale,   hint: 'Revenue, costs and profit for any period, compared with the period before.' },
@@ -1016,7 +1018,7 @@ const loadMonthlyChartData = async () => {
 
 const generateReport = async () => {
     // Self-contained tabs handle their own loading
-    if (tab.value === 'analytics' || tab.value === 'serving') return
+    if (['analytics', 'serving', 'sales-insights'].includes(tab.value)) return
     loading.value = true
     try {
         if (tab.value === 'orders') {
@@ -1398,9 +1400,10 @@ onMounted(async () => {
         <!-- Self-contained tabs -->
         <AnalyticsTab v-if="tab === 'analytics'" />
         <ServingTimeTab v-if="tab === 'serving'" />
+        <SalesInsightsTab v-if="tab === 'sales-insights'" :initial-date="selectedDate" />
 
         <!-- Filters bar -->
-        <div v-if="tab !== 'analytics' && tab !== 'serving'" class="rpt-filters">
+        <div v-if="tab !== 'analytics' && tab !== 'serving' && tab !== 'sales-insights'" class="rpt-filters">
             <div v-if="tab === 'pl'" class="rpt-presets" role="group" aria-label="Quick periods">
                 <button v-for="p in plPresets" :key="p.key" :aria-pressed="plPreset === p.key" @click="setPlPreset(p.key)">{{ p.label }}</button>
             </div>

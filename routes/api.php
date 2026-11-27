@@ -1,5 +1,7 @@
 <?php
 
+use App\Services\StoreWeather;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\OrderController;
@@ -121,6 +123,10 @@ Route::prefix('v1')->group(function () {
         Route::get('/inventory/{ingredient}/transactions', [InventoryController::class, 'transactions'])->withTrashed();
         Route::get('/inventory-cost-report', \App\Http\Controllers\Api\V1\InventoryReportController::class)->middleware('role:admin|auditor');
 
+        Route::get('/weather', fn (StoreWeather $weather) => response()->json(
+            $weather->forecast(CarbonImmutable::now(StoreWeather::TIMEZONE)),
+        ));
+        Route::get('/reports/sales-insights', [ReportController::class, 'salesInsights']);
         Route::get('/reports/daily-sales', [ReportController::class, 'dailySales']);
         Route::get('/reports/monthly-sales', [ReportController::class, 'monthlySales']);
         Route::get('/reports/product-sales', [ReportController::class, 'productSales']);

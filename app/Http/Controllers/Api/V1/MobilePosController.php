@@ -203,21 +203,10 @@ class MobilePosController extends Controller
             'profit-loss'=>$controller->profitLoss(),
             'heatmap'=>$controller->heatmap(),
             'analytics'=>$controller->analytics(),
-            'sales-insights'=>$this->salesInsights($request),
+            'sales-insights'=>$controller->salesInsights($request, app(SalesDayInsights::class)),
             'serving-time'=>$controller->servingTime(),
             default=>abort(404,'Unknown report.')
         };
-    }
-
-    private function salesInsights(Request $request): JsonResponse
-    {
-        $user = $request->user();
-        abort_unless($user->hasAnyRole('admin') || $user->hasPermissionTo('view reports'), 403, 'Unauthorized');
-        $now = CarbonImmutable::now(StoreWeather::TIMEZONE);
-        $validated = $request->validate(['date' => ['sometimes', 'required', 'date_format:Y-m-d', 'before_or_equal:'.$now->toDateString()]]);
-        $day = CarbonImmutable::parse($validated['date'] ?? $now->toDateString(), StoreWeather::TIMEZONE)->startOfDay();
-
-        return response()->json(app(SalesDayInsights::class)->report($day, $now));
     }
 
     /** Public Pusher settings so the Android POS can listen for web print requests (the key is public; no secret is sent) */

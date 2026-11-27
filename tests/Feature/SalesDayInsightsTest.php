@@ -46,6 +46,8 @@ class SalesDayInsightsTest extends TestCase
             ->assertJsonPath('hours.0.timestamp', $now->startOfHour()->addHour()->timestamp)
             ->assertJsonPath('hours.11.timestamp', $now->startOfHour()->addHours(12)->timestamp);
         $this->getJson($url)->assertOk();
+        $this->actingAs(User::firstOrFail())->getJson('/api/v1/weather')->assertOk()
+            ->assertJsonPath('current.temp_c', 27.5)->assertJsonCount(12, 'hours');
         Http::assertSentCount(1);
     }
 
@@ -86,5 +88,9 @@ class SalesDayInsightsTest extends TestCase
             ->assertJsonCount(3, 'weather.hours')->assertJsonPath('weather.wet_avg', 100)
             ->assertJsonPath('weather.dry_avg', 150)->assertJsonPath('weather.hours.2.rain_mm', null);
         $this->getJson($url.'?date=2026-11-16')->assertUnprocessable();
+        $webUrl = '/api/v1/reports/sales-insights?date=2026-11-15';
+        $this->actingAs($user)->getJson($webUrl)->assertOk()
+            ->assertJsonPath('payday.change_pct', 200)->assertJsonPath('weather.wet_avg', 100);
+        $this->actingAs(User::factory()->create())->getJson($webUrl)->assertForbidden();
     }
 }
