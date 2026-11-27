@@ -126,6 +126,9 @@ Route::prefix('v1')->group(function () {
         Route::get('/weather', fn (StoreWeather $weather) => response()->json(
             $weather->forecast(CarbonImmutable::now(StoreWeather::TIMEZONE)),
         ));
+        Route::get('/reports/production-forecast', [ReportController::class, 'productionForecast']);
+        Route::get('/reports/operating-review', [ReportController::class, 'operatingReview']);
+        Route::put('/reports/operating-staffing', [ReportController::class, 'storeOperatingStaffing']);
         Route::get('/reports/sales-insights', [ReportController::class, 'salesInsights']);
         Route::get('/reports/daily-sales', [ReportController::class, 'dailySales']);
         Route::get('/reports/monthly-sales', [ReportController::class, 'monthlySales']);

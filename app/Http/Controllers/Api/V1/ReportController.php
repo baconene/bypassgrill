@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Services\AnalyticsService;
+use App\Services\OperatingInsights;
 use App\Services\ReportService;
 use App\Services\SalesDayInsights;
 use App\Services\StoreWeather;
@@ -11,6 +12,8 @@ use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ReportController extends Controller
 {
@@ -30,6 +33,54 @@ class ReportController extends Controller
         return response()->json(
             $this->analyticsService->bundle($start, $end, $cat ? (int) $cat : null)
         );
+    }
+
+    public function productionForecast(OperatingInsights $insights): JsonResponse
+    {
+        $this->checkPermission();
+
+        return response()->json($insights->forecast(CarbonImmutable::now(StoreWeather::TIMEZONE)));
+    }
+
+    public function operatingReview(Request $request, OperatingInsights $insights): JsonResponse
+    {
+        $this->checkPermission();
+        $now = CarbonImmutable::now(StoreWeather::TIMEZONE);
+        $data = $request->validate(['date' => $this->completedDateRules($now)]);
+        $date = CarbonImmutable::parse($data['date'], StoreWeather::TIMEZONE)->startOfDay();
+
+        return response()->json($insights->review($date, $now) + ['can_edit_staffing' => $request->user()->hasRole('admin')]);
+    }
+
+    public function storeOperatingStaffing(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->hasRole('admin'), 403);
+        $now = CarbonImmutable::now(StoreWeather::TIMEZONE);
+        $data = $request->validate([
+            'date' => $this->completedDateRules($now),
+            'headcount' => ['required', 'integer', 'min:1', 'max:100'],
+            'staff_hours' => ['required', 'numeric', 'decimal:0,2', 'min:0.01', 'max:2400'],
+        ]);
+        if ($data['staff_hours'] > $data['headcount'] * 24) {
+            throw ValidationException::withMessages([
+                'staff_hours' => 'Staff-hours cannot exceed 24 hours per person.',
+            ]);
+        }
+
+        DB::table('service_day_staffing')->upsert([[
+            'service_date' => $data['date'],
+            'headcount' => $data['headcount'],
+            'staff_hours' => $data['staff_hours'],
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]], ['service_date'], ['headcount', 'staff_hours', 'updated_at']);
+
+        return response()->json(null, 204);
+    }
+
+    private function completedDateRules(CarbonImmutable $now): array
+    {
+        return ['required', 'date_format:Y-m-d', 'before:'.$now->toDateString()];
     }
 
     public function salesInsights(Request $request, SalesDayInsights $insights): JsonResponse

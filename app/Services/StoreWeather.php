@@ -4,6 +4,8 @@ namespace App\Services;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -15,8 +17,7 @@ class StoreWeather
 
     public function forecast(CarbonImmutable $now): array
     {
-        $weather = Cache::remember('pos-weather:forecast:'.config('services.store_weather.coordinates'), 1200,
-            fn () => $this->fetch('', 'current,hours'));
+        $weather = $this->cachedForecast();
         $nextHour = $now->startOfHour()->addHour()->timestamp;
         $hours = collect($this->hours($weather))
             ->filter(fn ($hour) => $hour['timestamp'] >= $nextHour && $hour['timestamp'] < $nextHour + 12 * 3600)
@@ -33,23 +34,104 @@ class StoreWeather
 
     public function observedHours(CarbonImmutable $date, CarbonImmutable $now): array
     {
-        $key = 'pos-weather:observed:'.config('services.store_weather.coordinates').':'.$date->toDateString();
-        $hours = Cache::get($key);
+        $key = $date->toDateString();
+        $hours = Cache::get($this->observedKey($key));
         if ($hours !== null) {
             return $hours;
         }
 
-        $data = $this->fetch('/'.$date->toDateString(), 'hours');
-        $hours = collect($this->hours($data))
-            ->filter(fn ($hour) => $hour['source'] === 'obs' && $hour['rain_mm'] !== null)
-            ->keyBy('timestamp')->all();
-        $ttl = $hours === [] ? 900 : ($date->lt($now->subDays(2)->startOfDay()) ? 30 * 86400 : 1800);
-        Cache::put($key, $hours, $ttl);
+        $hours = $this->observations($this->fetch('/'.$key, 'hours'));
+        $this->cacheObservations($key, $hours, $now);
 
         return $hours;
     }
 
-    private function fetch(string $dates, string $include): array
+    private function cachedForecast(): array
+    {
+        return Cache::remember('pos-weather:forecast:'.config('services.store_weather.coordinates'), 1200,
+            fn () => $this->fetch('', 'current,hours'));
+    }
+
+    public function serviceWeather(array $dates, CarbonImmutable $now, bool $forecast = false): array
+    {
+        $hours = [];
+        $missing = [];
+        if ($forecast) {
+            $forecastHours = collect($this->hours($this->cachedForecast()))->keyBy('timestamp')->all();
+            $hours = array_fill_keys($dates, $forecastHours);
+        } else {
+            foreach ($dates as $date) {
+                $cached = Cache::get($this->observedKey($date));
+                if ($cached === null) {
+                    $missing[] = $date;
+                } else {
+                    $hours[$date] = $cached;
+                }
+            }
+        }
+
+        if ($missing !== []) {
+            $responses = Http::pool(fn (Pool $pool) => array_map(fn ($date) => $pool->as($date)
+                ->acceptJson()->withOptions(['decode_content' => 'gzip'])->connectTimeout(3)->timeout(6)
+                ->get($this->url('/'.$date), $this->parameters('hours')), $missing), 6);
+            foreach ($missing as $date) {
+                $response = $responses[$date] ?? null;
+                $json = $response instanceof Response && $response->successful() ? $response->json() : null;
+                $hours[$date] = $this->observations(is_array($json) ? $json : []);
+                $this->cacheObservations($date, $hours[$date], $now);
+            }
+        }
+
+        $result = [];
+        foreach ($dates as $date) {
+            $day = CarbonImmutable::parse($date, self::TIMEZONE)->startOfDay();
+            $open = (int) config('services.store_weather.opens_hour');
+            $close = (int) config('services.store_weather.closes_hour');
+            $values = [];
+            for ($h = $open; $h < $close; $h++) {
+                $hour = $hours[$date][$day->addHours($h)->timestamp] ?? [];
+                $value = $hour[$forecast ? 'rain_chance' : 'rain_mm'] ?? null;
+                if ($value !== null) {
+                    $values[] = $value;
+                }
+            }
+
+            // Enough coverage to label a whole shift, rather than one isolated hour.
+            $known = count($values) >= max(1, (int) ceil(($close - $open) / 2));
+            $result[$date] = [
+                'rainy' => $known ? max($values) >= ($forecast ? 60 : 0.1) : null,
+                'rain_chance' => $forecast && $values !== [] ? max($values) : null,
+                'rain_mm' => !$forecast && $values !== [] ? round(array_sum($values), 2) : null,
+            ];
+        }
+
+        return $result;
+    }
+
+    private function observedKey(string $date): string
+    {
+        return 'pos-weather:observed:'.config('services.store_weather.coordinates').':'.$date;
+    }
+
+    private function observations(array $data): array
+    {
+        return collect($this->hours($data))
+            ->filter(fn ($hour) => $hour['source'] === 'obs' && $hour['rain_mm'] !== null)
+            ->keyBy('timestamp')->all();
+    }
+
+    private function cacheObservations(string $date, array $hours, CarbonImmutable $now): void
+    {
+        $ttl = $hours === [] ? 900 : ($date < $now->subDays(2)->toDateString() ? 30 * 86400 : 1800);
+        Cache::put($this->observedKey($date), $hours, $ttl);
+    }
+
+    private function url(string $dates): string
+    {
+        return self::ENDPOINT.'/'.config('services.store_weather.coordinates').$dates;
+    }
+
+    private function parameters(string $include): array
     {
         $params = [
             'unitGroup' => 'metric',
@@ -62,9 +144,14 @@ class StoreWeather
             $params['key'] = $key;
         }
 
+        return $params;
+    }
+
+    private function fetch(string $dates, string $include): array
+    {
         try {
             $response = Http::acceptJson()->withOptions(['decode_content' => 'gzip'])->connectTimeout(3)->timeout(6)
-                ->get(self::ENDPOINT.'/'.config('services.store_weather.coordinates').$dates, $params);
+                ->get($this->url($dates), $this->parameters($include));
 
             return $response->successful() && is_array($response->json()) ? $response->json() : [];
         } catch (ConnectionException) {

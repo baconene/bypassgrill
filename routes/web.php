@@ -92,6 +92,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('bills.index')
         ->middleware('can:view reports');
 
+    Route::inertia('production-forecast', 'ProductionForecast')
+        ->name('production.forecast')->middleware('can:view reports');
+
     Route::get('reports', [ReportPageController::class, 'index'])
         ->name('reports.index')
         ->middleware('can:view reports');

@@ -9,6 +9,7 @@ import {
     ClipboardList,
     Flame,
     Package,
+    CalendarRange,
     RefreshCw,
     ShoppingCart,
     Wallet,
@@ -483,6 +484,14 @@ function refresh() {
             </div>
         </section>
 
+        <Link v-if="canReport || (page.props.auth.permissions ?? []).includes('view reports')" href="/production-forecast"
+            class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#ded7cb] bg-[#fffcf6] p-4 hover:border-[#ad3b19]">
+            <span class="flex items-center gap-3">
+                <CalendarRange :size="21" class="text-[#ad3b19]" aria-hidden="true" />
+                <span><strong class="block">Production forecast</strong><span class="text-sm text-[#68665f]">Stock targets for the next three service days</span></span>
+            </span>
+            <span class="flex items-center gap-1 text-sm font-semibold text-[#ad3b19]">View forecast <ArrowUpRight :size="15" aria-hidden="true" /></span>
+        </Link>
         <DashboardWeather class="mb-5" />
 
         <section

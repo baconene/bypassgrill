@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
+import OperatingReview from '@/pages/reports/OperatingReview.vue'
 import {
     RefreshCw, BarChart3, Flame, Clock, TrendingUp, Layers, Link2, Sparkles, Download, Printer, Eye, EyeOff,
 } from 'lucide-vue-next'
@@ -134,6 +135,7 @@ onMounted(async () => {
 
 <template>
     <div class="space-y-4">
+        <OperatingReview />
         <!-- Filters -->
         <div class="rounded-xl border bg-card shadow-sm p-4">
             <div class="flex flex-wrap items-end gap-3">
