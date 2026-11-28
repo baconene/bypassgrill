@@ -9,14 +9,15 @@ import {
     ClipboardList,
     Flame,
     Package,
+    CalendarDays,
     CalendarRange,
-    RefreshCw,
     ShoppingCart,
     Wallet,
     X,
 } from 'lucide-vue-next';
-import { computed, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
+import DashboardForecastCard from '@/components/DashboardForecastCard.vue';
 import DashboardWeather from '@/components/DashboardWeather.vue';
 import type { Auth } from '@/types/auth';
 import api from '@/utils/api';
@@ -213,9 +214,6 @@ const canViewOrders = computed(
         (page.props.auth.permissions ?? []).includes('view orders'),
 );
 const operational = computed(() => canSell.value || canCook.value);
-const refreshing = ref(false);
-const refreshError = ref('');
-const updatedAt = ref<Date | null>(null);
 const showAllOrders = ref(false);
 const showAllProducts = ref(false);
 const money = (amount: number) =>
@@ -332,15 +330,6 @@ const cards = computed(() => {
 
     return [];
 });
-const primary = computed(() =>
-    canSell.value
-        ? { href: '/pos', label: 'Open point of sale', icon: ShoppingCart }
-        : canCook.value
-          ? { href: '/kitchen', label: 'Open kitchen monitor', icon: ChefHat }
-          : canReport.value
-            ? { href: '/reports', label: 'Open reports', icon: BarChart3 }
-            : null,
-);
 const pendingTotal = computed(() =>
     props.pendingProductBreakdown.reduce((sum, row) => sum + row.qty, 0),
 );
@@ -371,35 +360,70 @@ const orderTypeLabels: Record<string, string> = {
     take_out: 'Takeout',
     delivery: 'Delivery',
 };
+// The figures refresh themselves quietly, so there is no refresh button to press
+let refreshTimer: ReturnType<typeof setInterval>;
 function refresh() {
-    if (refreshing.value) {
+    if (document.hidden) {
         return;
     }
 
-    refreshError.value = '';
     router.reload({
-        only: [
-            'stats',
-            'recentOrders',
-            'pl',
-            'servingTime',
-            'pendingProductBreakdown',
-        ],
-        onStart: () => {
-            refreshing.value = true;
-        },
-        onSuccess: () => {
-            updatedAt.value = new Date();
-        },
-        onError: () => {
-            refreshError.value =
-                'Could not refresh the dashboard. Please try again.';
-        },
-        onFinish: () => {
-            refreshing.value = false;
-        },
+        only: ['stats', 'recentOrders', 'pl', 'servingTime', 'pendingProductBreakdown', 'depositShift', 'shiftChecklist'],
     });
 }
+onMounted(() => {
+    refreshTimer = setInterval(refresh, 60_000);
+});
+onUnmounted(() => clearInterval(refreshTimer));
+
+const canForecast = computed(
+    () => canReport.value || (page.props.auth.permissions ?? []).includes('view reports'),
+);
+type QuickAction = {
+    label: string;
+    icon: unknown;
+    href?: string;
+    onClick?: () => void;
+    badge?: string;
+    primary?: boolean;
+};
+const quickActions = computed<QuickAction[]>(() => {
+    const list: QuickAction[] = [];
+
+    if (canSell.value) {
+list.push({ label: 'POS', icon: ShoppingCart, href: '/pos', primary: true });
+}
+
+    if (canCook.value) {
+list.push({ label: 'Kitchen', icon: ChefHat, href: '/kitchen', primary: !canSell.value });
+}
+
+    if (checklist.value) {
+list.push({ label: 'Checklist', icon: ClipboardCheck, onClick: openChecklist, badge: `${checklist.value.done}/${checklist.value.total}` });
+}
+
+    if (canDeposit.value) {
+list.push({ label: 'Deposit', icon: Wallet, href: '/deposit-control' });
+}
+
+    if (hasRole('admin')) {
+list.push({ label: 'Reservations', icon: CalendarDays, href: '/reservations' });
+}
+
+    if (canForecast.value) {
+list.push({ label: 'Forecast', icon: CalendarRange, href: '/production-forecast' });
+}
+
+    if (canReport.value) {
+list.push({ label: 'Reports', icon: BarChart3, href: '/reports' });
+}
+
+    if (canReport.value) {
+list.push({ label: 'Inventory', icon: Package, href: '/inventory' });
+}
+
+    return list;
+});
 </script>
 
 <template>
@@ -413,86 +437,37 @@ function refresh() {
                 </p>
                 <h1>Today at <em>the grill.</em></h1>
                 <p class="intro">
-                    Welcome back, {{ page.props.auth.user.name }}. Here's what
-                    needs your attention.
+                    Hi {{ page.props.auth.user.name.split(' ')[0] }} ·
+                    {{ dateLabel }}
                 </p>
             </div>
-            <div class="heading-meta">
-                <span>{{ dateLabel }} · Manila</span
-                ><button
-                    class="refresh-button"
-                    :disabled="refreshing"
-                    @click="refresh"
-                >
-                    <RefreshCw
-                        :size="14"
-                        :class="{ spinning: refreshing }"
-                        aria-hidden="true"
-                    />{{
-                        refreshing ? 'Refreshing…' : 'Refresh overview'
-                    }}</button
-                ><small v-if="updatedAt" role="status"
-                    >Updated {{ timeLabel(updatedAt) }}</small
-                >
-            </div>
         </header>
-        <p v-if="refreshError" class="refresh-error" role="alert">
-            {{ refreshError }}
-        </p>
 
-        <section v-if="primary" class="work-bar" aria-label="Quick actions">
-            <div class="work-bar-copy">
-                <strong>{{
-                    canSell
-                        ? 'Ready for the next order?'
-                        : canCook
-                          ? 'Keep the orders moving.'
-                          : 'Keep the numbers in check.'
-                }}</strong
-                ><span>{{
-                    canSell
-                        ? 'Take an order, collect payment, and keep the shift moving.'
-                        : canCook
-                          ? 'See the queue and update preparation status.'
-                          : 'Review balances, inventory, and financial reports.'
+        <div class="top-grid">
+            <DashboardWeather />
+            <DashboardForecastCard v-if="canForecast" />
+        </div>
+
+        <nav v-if="quickActions.length" class="quick-grid" aria-label="Quick access">
+            <component
+                :is="action.href ? Link : 'button'"
+                v-for="action in quickActions"
+                :key="action.label"
+                :href="action.href"
+                :type="action.href ? undefined : 'button'"
+                class="quick-tile"
+                :class="{ 'quick-primary': action.primary }"
+                @click="action.onClick?.()"
+            >
+                <span class="quick-icon"
+                    ><component :is="action.icon" :size="19" aria-hidden="true"
+                /></span>
+                <span class="quick-label">{{ action.label }}</span>
+                <span v-if="action.badge" class="quick-badge">{{
+                    action.badge
                 }}</span>
-            </div>
-            <div class="work-actions">
-                <Link :href="primary.href" class="primary-action"
-                    ><component
-                        :is="primary.icon"
-                        :size="17"
-                        aria-hidden="true" />{{ primary.label
-                    }}<ArrowUpRight :size="17" aria-hidden="true" /></Link
-                ><button
-                    v-if="checklist"
-                    type="button"
-                    class="secondary-action"
-                    @click="openChecklist"
-                >
-                    <ClipboardCheck :size="17" aria-hidden="true" />Shift
-                    checklist<span class="action-count"
-                        >{{ checklist.done }}/{{ checklist.total }}</span
-                    ></button
-                ><Link
-                    v-if="canDeposit"
-                    href="/deposit-control"
-                    class="secondary-action"
-                    ><Wallet :size="17" aria-hidden="true" />Deposit
-                    control</Link
-                >
-            </div>
-        </section>
-
-        <Link v-if="canReport || (page.props.auth.permissions ?? []).includes('view reports')" href="/production-forecast"
-            class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#ded7cb] bg-[#fffcf6] p-4 hover:border-[#ad3b19]">
-            <span class="flex items-center gap-3">
-                <CalendarRange :size="21" class="text-[#ad3b19]" aria-hidden="true" />
-                <span><strong class="block">Production forecast</strong><span class="text-sm text-[#68665f]">Stock targets for the next three service days</span></span>
-            </span>
-            <span class="flex items-center gap-1 text-sm font-semibold text-[#ad3b19]">View forecast <ArrowUpRight :size="15" aria-hidden="true" /></span>
-        </Link>
-        <DashboardWeather class="mb-5" />
+            </component>
+        </nav>
 
         <section
             v-if="cards.length"
@@ -954,6 +929,83 @@ function refresh() {
 </template>
 
 <style scoped>
+.top-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.top-grid > :only-child {
+    grid-column: 1 / -1;
+}
+.quick-grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 22px;
+}
+.quick-tile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 74px;
+    padding: 10px 4px;
+    border: 1px solid #ded7cb;
+    border-radius: 10px;
+    background: #fffcf6;
+    color: #24231e;
+    text-align: center;
+    transition: border-color 0.15s, transform 0.15s;
+}
+.quick-tile:hover {
+    border-color: #ad3b19;
+    transform: translateY(-1px);
+}
+.quick-icon {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #f2e5d8;
+    color: #ad3b19;
+}
+.quick-primary {
+    border-color: #24231e;
+    background: #24231e;
+    color: #f6f2e9;
+}
+.quick-primary .quick-icon {
+    background: #c3441c;
+    color: #fff;
+}
+.quick-label {
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.15;
+}
+.quick-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    padding: 1px 6px;
+    border-radius: 20px;
+    background: #24231e;
+    color: #f6f2e9;
+    font-size: 9px;
+    font-weight: 800;
+}
+@media (max-width: 900px) {
+    .top-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .quick-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
 .grill-dashboard {
     background: #f6f2e9;
     color: #24231e;
@@ -967,7 +1019,7 @@ function refresh() {
     justify-content: space-between;
     align-items: flex-start;
     gap: 24px;
-    margin-bottom: 26px;
+    margin-bottom: 16px;
 }
 .eyebrow {
     display: flex;
