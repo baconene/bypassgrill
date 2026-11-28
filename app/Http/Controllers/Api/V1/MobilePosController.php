@@ -143,7 +143,7 @@ class MobilePosController extends Controller
         $this->authenticate($request);$q=Reservation::orderBy('reserved_at');if($request->filled('from'))$q->where('reserved_at','>=',$request->input('from'));if($request->filled('to'))$q->where('reserved_at','<=',$request->input('to'));return response()->json($q->get());
     }
     public function reservationStore(Request $request): JsonResponse {
-        $user=$this->authenticate($request);$d=$request->validate(['client_id'=>'required|uuid','contact_name'=>'required|string|max:255','phone'=>'nullable|string|max:50','social_media'=>'nullable|string|max:255','reserved_at'=>'required|date','party_size'=>'nullable|integer|min:1|max:500','notes'=>'nullable|string|max:2000']);
+        $user=$this->authenticate($request);$d=$request->validate(['client_id'=>'required|uuid','contact_name'=>'required|string|max:255','phone'=>'nullable|string|max:50','social_media'=>'nullable|string|max:255','reserved_at'=>'required|date','party_size'=>'nullable|integer|min:1|max:500','notes'=>'nullable|string|max:2000','order_type'=>'nullable|in:dine_in,takeout,delivery','customer_address'=>'nullable|string|max:500']);
         if($x=Reservation::where('client_id',$d['client_id'])->first())return response()->json($x);$d['user_id']=$user->id;$d['status']='pending';return response()->json(Reservation::create($d),201);
     }
 

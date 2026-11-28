@@ -54,7 +54,11 @@ Route::prefix('v1')->group(function () {
         Route::post('/reservations', [\App\Http\Controllers\Api\V1\ReservationController::class, 'store']);
         Route::patch('/reservations/{reservation}', [\App\Http\Controllers\Api\V1\ReservationController::class, 'update']);
         Route::delete('/reservations/{reservation}', [\App\Http\Controllers\Api\V1\ReservationController::class, 'destroy']);
+        Route::post('/reservations/{reservation}/checkout', [\App\Http\Controllers\Api\V1\ReservationController::class, 'checkout']);
     });
+    // Homepage reservation requests (no login): pending until staff confirm
+    Route::post('/reservation-requests', [\App\Http\Controllers\Api\V1\PublicReservationController::class, 'store'])
+        ->middleware('throttle:5,60');
 
     Route::get('/categories', [CategoryController::class, 'index']);
     Route::get('/categories/{category}', [CategoryController::class, 'show']);

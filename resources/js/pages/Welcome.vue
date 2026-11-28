@@ -5,6 +5,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import {
     ArrowDown,
     ArrowUpRight,
+    CalendarDays,
     Check,
     Flame,
     Minus,
@@ -23,6 +24,7 @@ import {
 import DishModel from '@/components/welcome/DishModel.vue';
 import DishVisual from '@/components/welcome/DishVisual.vue';
 import type { DishImage } from '@/components/welcome/DishVisual.vue';
+import api from '@/utils/api';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -255,6 +257,122 @@ function closeBag() {
     availabilityDialog.value?.close();
     dialog?.close();
     bagOpen.value = false;
+
+    if (panel.value === 'sent') {
+        panel.value = 'order';
+    }
+}
+
+// ── Reservation request ──────────────────────────────────────────────────
+// Saved as a pending reservation with the planned order. No order is placed and
+// nothing is charged: our team confirms, and payment is collected then.
+type OrderType = 'dine_in' | 'takeout' | 'delivery';
+const orderTypes: { value: OrderType; label: string; hint: string }[] = [
+    { value: 'dine_in', label: 'Dine in', hint: 'We save your table' },
+    { value: 'takeout', label: 'Takeout', hint: 'Ready when you arrive' },
+    { value: 'delivery', label: 'Delivery', hint: 'We bring it to you' },
+];
+const panel = ref<'order' | 'reserve' | 'sent'>('order');
+const todayKey = () => {
+    const d = new Date();
+
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const blankReservation = () => ({
+    contact_name: '',
+    phone: '',
+    social_media: '',
+    date: '',
+    time: '18:00',
+    party_size: 2,
+    order_type: '' as OrderType | '',
+    customer_address: '',
+    notes: '',
+    website: '',
+});
+const reservation = ref(blankReservation());
+const reservationErrors = ref<Record<string, string>>({});
+const sending = ref(false);
+const sent = ref<{ reference: number; when: string; total: number; type: string } | null>(null);
+
+function openReserve() {
+    panel.value = 'reserve';
+    reservationErrors.value = {};
+
+    if (!bagOpen.value) {
+        openBag();
+    }
+}
+function browseMenu() {
+    closeBag();
+    document
+        .getElementById('menu')
+        ?.scrollIntoView({ behavior: still.value ? 'auto' : 'smooth' });
+}
+async function submitReservation() {
+    const r = reservation.value;
+    const errors: Record<string, string> = {};
+
+    if (!r.contact_name.trim()) {
+errors.contact_name = 'Add your name.';
+}
+
+    if (r.phone.replace(/\D/g, '').length < 7) {
+errors.phone = 'Add a mobile number we can call or text.';
+}
+
+    if (!r.date || !r.time) {
+errors.reserved_at = 'Choose a date and time.';
+} else if (new Date(`${r.date}T${r.time}`) <= new Date()) {
+errors.reserved_at = 'Choose a date and time in the future.';
+}
+
+    if (!r.order_type) {
+errors.order_type = 'Choose dine in, takeout or delivery.';
+}
+
+    if (r.order_type === 'delivery' && !r.customer_address.trim()) {
+errors.customer_address = 'Add the delivery address.';
+}
+
+    reservationErrors.value = errors;
+
+    if (Object.keys(errors).length) {
+        return;
+    }
+
+    sending.value = true;
+
+    try {
+        const { data } = await api.post('/api/v1/reservation-requests', {
+            contact_name: r.contact_name,
+            phone: r.phone,
+            social_media: r.social_media || null,
+            reserved_at: `${r.date} ${r.time}:00`,
+            party_size: r.party_size,
+            order_type: r.order_type,
+            customer_address: r.order_type === 'delivery' ? r.customer_address : null,
+            notes: r.notes || null,
+            website: r.website,
+            items: bag.value.map((p) => ({ product_id: p.id, quantity: p.quantity })),
+        });
+        sent.value = {
+            reference: data.reference,
+            when: new Date(`${r.date}T${r.time}`).toLocaleString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }),
+            total: data.planned_total,
+            type: orderTypes.find((t) => t.value === r.order_type)?.label ?? '',
+        };
+        panel.value = 'sent';
+        quantities.value = {};
+        reservation.value = blankReservation();
+    } catch (error: any) {
+        const fields = error?.response?.data?.errors as Record<string, string[]> | undefined;
+        reservationErrors.value = fields
+            ? Object.fromEntries(Object.entries(fields).map(([field, messages]) => [field.startsWith('items') ? 'items' : field, messages[0]]))
+            : { form: error?.response?.status === 429 ? 'Too many requests. Please try again later or message us on Facebook.' : 'Could not send your request. Please try again or message us on Facebook.' };
+    } finally {
+        sending.value = false;
+    }
 }
 // "Order now": straight to the order once there is one, otherwise to the full menu.
 function orderNow() {
@@ -671,6 +789,7 @@ onBeforeUnmount(() => {
             >
                 <a href="#showcase">Flavors</a><a href="#menu">Full menu</a
                 ><a href="#how">How to order</a
+                ><a href="#reserve" @click.prevent="openReserve">Reserve</a
                 ><a :href="facebook" target="_blank" rel="noopener noreferrer"
                     >Find us <ArrowUpRight :size="14"
                 /></a>
@@ -1113,6 +1232,8 @@ onBeforeUnmount(() => {
                     <div class="finale-actions">
                         <button class="button button-fire" @click="orderNow">
                             ORDER NOW <ArrowUpRight :size="19" /></button
+                        ><button class="button button-ghost" @click="openReserve">
+                            Reserve &amp; plan ahead <CalendarDays :size="18" /></button
                         ><a
                             :href="facebook"
                             target="_blank"
@@ -1122,7 +1243,7 @@ onBeforeUnmount(() => {
                         /></a>
                     </div>
                     <p>
-                        Orders are confirmed with our team on Facebook. Nothing
+                        Orders and reservations are confirmed by our team. Nothing
                         is charged on this site.
                     </p>
                 </div>
@@ -1170,8 +1291,12 @@ onBeforeUnmount(() => {
             <div class="order-panel">
                 <div class="order-heading">
                     <div>
-                        <p class="eyebrow">LET'S MAKE IT A MEAL</p>
-                        <h2 id="order-title">Your order.</h2>
+                        <p class="eyebrow">
+                            {{ panel === 'order' ? "LET'S MAKE IT A MEAL" : 'PLAN AHEAD' }}
+                        </p>
+                        <h2 id="order-title">
+                            {{ panel === 'order' ? 'Your order.' : panel === 'reserve' ? 'Reserve.' : 'Request sent.' }}
+                        </h2>
                     </div>
                     <button
                         aria-label="Close order"
@@ -1181,7 +1306,7 @@ onBeforeUnmount(() => {
                         <X :size="24" />
                     </button>
                 </div>
-                <template v-if="bag.length"
+                <template v-if="panel === 'order' && bag.length"
                     ><div class="order-lines">
                         <div
                             v-for="product in bag"
@@ -1234,6 +1359,14 @@ onBeforeUnmount(() => {
                     >
                         Finalize order request <ArrowUpRight :size="18" />
                     </button>
+                    <button
+                        v-if="!orderReady"
+                        class="button button-dark"
+                        @click="openReserve"
+                    >
+                        Reserve a time &amp; plan this order
+                        <CalendarDays :size="18" />
+                    </button>
                     <template v-else>
                         <p class="order-note" role="status">
                             Your request is ready to share. Copy it, then
@@ -1265,6 +1398,128 @@ onBeforeUnmount(() => {
                             rows="8"
                         /></details
                 ></template>
+                <form
+                    v-else-if="panel === 'reserve'"
+                    class="reserve-form"
+                    novalidate
+                    @submit.prevent="submitReservation"
+                >
+                    <p class="order-note">
+                        Book a time and plan your order. Our team confirms by
+                        call or message. Nothing is charged here; you pay when
+                        we confirm, and only then is your order placed.
+                    </p>
+                    <fieldset class="reserve-types">
+                        <legend>How will you get your food? <b>*</b></legend>
+                        <div>
+                            <button
+                                v-for="type in orderTypes"
+                                :key="type.value"
+                                type="button"
+                                :aria-pressed="reservation.order_type === type.value"
+                                @click="reservation.order_type = type.value"
+                            >
+                                <strong>{{ type.label }}</strong
+                                ><span>{{ type.hint }}</span>
+                            </button>
+                        </div>
+                        <p v-if="reservationErrors.order_type" class="field-error" role="alert">
+                            {{ reservationErrors.order_type }}
+                        </p>
+                    </fieldset>
+                    <label
+                        >Name
+                        <input v-model="reservation.contact_name" autocomplete="name" maxlength="120" />
+                        <small v-if="reservationErrors.contact_name" class="field-error">{{ reservationErrors.contact_name }}</small></label
+                    >
+                    <div class="reserve-pair">
+                        <label
+                            >Mobile number
+                            <input v-model="reservation.phone" type="tel" autocomplete="tel" placeholder="09xx xxx xxxx" maxlength="30" />
+                            <small v-if="reservationErrors.phone" class="field-error">{{ reservationErrors.phone }}</small></label
+                        ><label
+                            >{{ reservation.order_type === 'dine_in' ? 'Guests' : 'People eating' }}
+                            <input v-model.number="reservation.party_size" type="number" min="1" max="100"
+                        /></label>
+                    </div>
+                    <div class="reserve-pair">
+                        <label
+                            >Date
+                            <input v-model="reservation.date" type="date" :min="todayKey()" /></label
+                        ><label
+                            >{{ reservation.order_type === 'delivery' ? 'Delivery time' : reservation.order_type === 'takeout' ? 'Pickup time' : 'Time' }}
+                            <input v-model="reservation.time" type="time"
+                        /></label>
+                    </div>
+                    <small v-if="reservationErrors.reserved_at" class="field-error" role="alert">{{ reservationErrors.reserved_at }}</small>
+                    <label v-if="reservation.order_type === 'delivery'"
+                        >Delivery address
+                        <textarea v-model="reservation.customer_address" rows="2" maxlength="500" placeholder="Street, barangay, landmark" />
+                        <small v-if="reservationErrors.customer_address" class="field-error">{{ reservationErrors.customer_address }}</small></label
+                    >
+                    <label
+                        >Facebook name (optional)
+                        <input v-model="reservation.social_media" maxlength="255"
+                    /></label>
+                    <div class="reserve-plan">
+                        <p class="reserve-plan-title">
+                            Planned order <span>{{ bag.length ? peso(total) : 'optional' }}</span>
+                        </p>
+                        <div v-if="bag.length" class="order-lines">
+                            <div v-for="product in bag" :key="product.id" class="order-line">
+                                <div>
+                                    <h3>{{ product.name }}</h3>
+                                    <span>{{ peso(product.price * product.quantity) }}</span>
+                                </div>
+                                <div class="quantity-controls">
+                                    <button type="button" :aria-label="`Remove one ${product.name}`" @click="updateQuantity(product.id, -1)">
+                                        <Minus :size="15" /></button
+                                    ><span>{{ product.quantity }}</span
+                                    ><button type="button" :aria-label="`Add one ${product.name}`" :disabled="product.quantity >= 99" @click="updateQuantity(product.id, 1)">
+                                        <Plus :size="15" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <p v-else class="order-note">
+                            Planning a platter or a big order? Add it now so
+                            we can prepare it for you.
+                        </p>
+                        <button type="button" class="reserve-link" @click="browseMenu">
+                            {{ bag.length ? 'Add more from the menu' : 'Choose from the menu' }}
+                            <ArrowUpRight :size="15" />
+                        </button>
+                        <small v-if="reservationErrors.items" class="field-error">{{ reservationErrors.items }}</small>
+                    </div>
+                    <label
+                        >Notes (optional)
+                        <textarea v-model="reservation.notes" rows="2" maxlength="1000" placeholder="Occasion, seating, requests"
+                    /></label>
+                    <label class="reserve-trap" aria-hidden="true"
+                        >Website <input v-model="reservation.website" tabindex="-1" autocomplete="off"
+                    /></label>
+                    <p v-if="reservationErrors.form" class="field-error" role="alert">{{ reservationErrors.form }}</p>
+                    <button class="button button-orange" type="submit" :disabled="sending">
+                        {{ sending ? 'Sending…' : 'Send reservation request' }}
+                        <ArrowUpRight :size="18" />
+                    </button>
+                    <button v-if="bag.length" type="button" class="reserve-link" @click="panel = 'order'">
+                        Back to your order
+                    </button>
+                </form>
+                <div v-else-if="panel === 'sent' && sent" class="empty-order" role="status">
+                    <Check :size="54" />
+                    <h3>Request #{{ sent.reference }} sent.</h3>
+                    <p>
+                        {{ sent.type }} · {{ sent.when }}<template v-if="sent.total">
+                            · planned order {{ peso(sent.total) }}</template
+                        >. We'll call or message to confirm. Payment is
+                        collected then, and your order is placed once paid.
+                    </p>
+                    <a :href="facebook" target="_blank" rel="noopener noreferrer" class="button button-dark"
+                        >Message us on Facebook <ArrowUpRight :size="18"
+                    /></a>
+                </div>
                 <div v-else class="empty-order">
                     <Flame :size="54" />
                     <h3>Your next craving is waiting.</h3>
@@ -1275,6 +1530,9 @@ onBeforeUnmount(() => {
                         @click="closeBag"
                         >Find your grill fix <ArrowUpRight :size="18"
                     /></a>
+                    <button class="button button-dark" @click="openReserve">
+                        Reserve a time <CalendarDays :size="18" />
+                    </button>
                 </div>
             </div>
         </dialog>
@@ -2389,6 +2647,134 @@ h2 em {
     justify-content: space-between;
     margin-top: 10px;
     font-size: 17px;
+}
+.reserve-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.reserve-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #5f5b51;
+}
+.reserve-form input,
+.reserve-form textarea {
+    width: 100%;
+    border: 1px solid #24231e30;
+    border-radius: 6px;
+    background: #fff;
+    padding: 11px 12px;
+    font-size: 15px;
+    color: var(--ink);
+    text-transform: none;
+    letter-spacing: 0;
+}
+.reserve-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.reserve-types {
+    border: 0;
+    padding: 0;
+    margin: 0;
+}
+.reserve-types legend {
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 800;
+}
+.reserve-types legend b {
+    color: var(--rust);
+}
+.reserve-types > div {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+.reserve-types button {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-height: 64px;
+    border: 1px solid #24231e30;
+    border-radius: 8px;
+    background: #fff;
+    padding: 10px 8px;
+    text-align: left;
+    color: var(--ink);
+}
+.reserve-types button strong {
+    font-size: 14px;
+}
+.reserve-types button span {
+    font-size: 11px;
+    color: #77746b;
+}
+.reserve-types button[aria-pressed='true'] {
+    border-color: var(--orange);
+    background: #fff1e9;
+    box-shadow: inset 0 0 0 1px var(--orange);
+}
+.reserve-plan {
+    border: 1px solid #24231e20;
+    border-radius: 8px;
+    padding: 14px;
+    background: #fffdf8;
+}
+.reserve-plan-title {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 800;
+}
+.reserve-plan-title span {
+    color: var(--rust);
+}
+.reserve-plan .order-line {
+    padding: 12px 0;
+}
+.reserve-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    width: fit-content;
+    margin-top: 8px;
+    border: 0;
+    background: none;
+    padding: 6px 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--rust);
+    text-decoration: underline;
+}
+.field-error {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    color: #a73513;
+}
+.reserve-trap {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}
+@media (max-width: 420px) {
+    .reserve-types > div {
+        grid-template-columns: 1fr;
+    }
+    .reserve-types button {
+        min-height: 0;
+    }
 }
 .order-note {
     font-size: 12px;

@@ -41,6 +41,20 @@ are left out of training and scoring. `FORECAST_MODE=baseline` or `auto` switche
 Still open: tagging unusual days (catering, short hours) so they are left out; the February/previous
 working day payday rule (below); importing older sales history.
 
+## Noted for later (November 29, 2026, not built yet)
+
+From the miss analysis of the June–November replay:
+
+- **Day notes.** An end-of-shift tag for unusual days: closed early, short-staffed, ran out of stock, heavy rain
+  during service, event or group order, brownout, closed. Tagged days are left out of training, and repeating
+  causes can become factors. The 10 biggest misses were 38% of all error, and several crash days (Nov 20,
+  Oct 18, Sep 4) had almost no rain, so the cause is not in the data today.
+- **Rain during service hours** instead of the daily total (the weather data already has `rainy_hours`).
+- **Reservations as known demand.** Reservations now carry a planned order (built November 29). The Production
+  Forecast could add confirmed, unpaid planned items for a date on top of the walk-in estimate, and the
+  replay could leave large paid reservation orders out of the walk-in training so one big platter order does
+  not inflate the next forecast. Needs a few weeks of reservation data first.
+
 ## Why
 
 The replay report (June 1 – November 28, 2026) shows the sales forecast is weak:
