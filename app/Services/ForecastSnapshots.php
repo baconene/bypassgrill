@@ -102,7 +102,7 @@ class ForecastSnapshots
             'estimated_net_sales' => $day['net_sales'],
             'weekday_baseline' => $day['weekday_baseline'],
             'model_version' => match ($forecast['model']['mode'] ?? 'context') {
-                'factors' => 'weekday-factors-v2',
+                'factors' => 'weekday-tuned-v3',
                 'baseline' => 'weekday-baseline-v1',
                 default => 'weekday-context-v1',
             },

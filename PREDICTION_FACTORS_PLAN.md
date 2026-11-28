@@ -13,9 +13,16 @@ What shipped:
 - Stock suggestions scale with the uplift; the Production Forecast page and Predictions report show the
   special-day tag, the uplift, and the average bias.
 
+**Tuning (November 28, 2026, model `weekday-tuned-v3`).** On real data the fixed v2 settings did slightly worse
+than the weekday average (₱3,412.69 vs ₱3,369.56). Each forecast run now back-tests 144 settings on the
+store's own sales (recency half-life none/8/4 weeks; special days none/long weekends and holidays/all;
+cap on/off; bias correction on/off; 50% or 100% blend with the weekday average; rain matching on/off),
+predicting every past day from earlier days only. The best setting is used only if it beats the weekday
+average by at least 3%; among near-ties the simplest wins. The replay re-tunes as sales accumulate (about
+1 second for a full replay).
+
 Still open: tagging unusual days (catering, short hours) so they are left out; the February/previous
-working day payday rule (below); importing older sales history; tuning the half-life and shrink settings
-with the replay.
+working day payday rule (below); importing older sales history.
 
 ## Why
 

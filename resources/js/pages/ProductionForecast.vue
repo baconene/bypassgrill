@@ -23,13 +23,17 @@ type SpecialDay = 'payday_long_weekend' | 'long_weekend' | 'holiday' | 'near_pay
 type Model = {
     training_days: number; weather_days: number; test_days: number; weekday_mae: number | null; context_mae: number | null;
     factor_mae: number | null; use_context: boolean; mode: 'baseline' | 'context' | 'factors'; bias: number;
+    settings: string | null; tested_settings: number;
 };
 const specialLabel: Record<SpecialDay, string> = {
     payday_long_weekend: 'Payday + long weekend', long_weekend: 'Long weekend', holiday: 'Holiday', near_payday: 'Near payday',
 };
 const pct = (uplift: number) => `${uplift >= 1 ? '+' : '−'}${Math.round(Math.abs(uplift - 1) * 100)}%`;
-const modelLabel = { baseline: 'Using the weekday baseline.', context: 'Weather and payday matching are active.',
-    factors: 'Special-day factors are active: holidays, long weekends and paydays, with recent weeks counting more.' };
+const modelLabel = {
+    baseline: 'Using the weekday average: no tuned setting beat it clearly enough on your past sales.',
+    context: 'Weather and payday matching are active.',
+    factors: 'Tuned forecast is active.',
+};
 type Month = InstanceType<typeof MonthlyForecastChart>['$props']['days'];
 type Accuracy = InstanceType<typeof ForecastAccuracy>['$props']['accuracy'];
 const days = ref<Day[]>([]);
@@ -117,9 +121,11 @@ onUnmounted(() => scope.abort());
                 </p>
                 <div v-if="model" class="text-sm text-[#68665f]">
                     <p>{{ model.training_days }} service dates in training · {{ model.weather_days }} with observed weather · {{ day.sample_days }} matching this weekday.</p>
-                    <p>{{ modelLabel[model.mode ?? (model.use_context ? 'context' : 'baseline')] }}</p>
+                    <p>{{ modelLabel[model.mode ?? (model.use_context ? 'context' : 'baseline')] }}
+                        <template v-if="model.mode === 'factors' && model.settings"> {{ model.settings }}</template></p>
+                    <p v-if="model.tested_settings">Tuned on your sales: {{ model.tested_settings }} settings tested; a setting is used only if it beats the weekday average by at least 3%.</p>
                     <p v-if="model.test_days && model.weekday_mae !== null && model.context_mae !== null">
-                        Average backtest error over {{ model.test_days }} dates · Weekday {{ pesos.format(model.weekday_mae) }} · Weather + payday {{ pesos.format(model.context_mae) }}<template v-if="model.factor_mae !== null"> · Special-day factors {{ pesos.format(model.factor_mae) }}</template>
+                        Average backtest error over {{ model.test_days }} dates · Weekday {{ pesos.format(model.weekday_mae) }} · Weather + payday {{ pesos.format(model.context_mae) }}<template v-if="model.factor_mae !== null"> · Best tuned setting {{ pesos.format(model.factor_mae) }}</template>
                     </p>
                     <p v-if="model.weather_days < model.training_days">Historical weather is loaded in batches. Dates with missing weather still count toward the sales forecast.</p>
                 </div>

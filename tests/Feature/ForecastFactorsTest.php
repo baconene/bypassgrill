@@ -59,6 +59,8 @@ class ForecastFactorsTest extends TestCase
         return $history;
     }
 
+    private const PLAIN = ['half_life' => null, 'kinds' => 'all', 'cap' => false, 'bias' => false, 'blend' => 1.0, 'rain' => 1];
+
     public function test_model_learns_the_payday_long_weekend_uplift_and_is_chosen_when_it_wins(): void
     {
         $model = app(ProductionDemandModel::class);
@@ -69,15 +71,33 @@ class ForecastFactorsTest extends TestCase
         $this->assertGreaterThan(1.5, $uplifts['payday_long_weekend']['uplift']);
         $this->assertSame(1.0, $uplifts['holiday']['uplift'], 'No examples, no change');
 
-        $peak = $model->factorEstimate($history, '2026-09-25', 'payday_long_weekend', $uplifts, null);
-        $regular = $model->factorEstimate($history, '2026-09-25', null, $uplifts, null);
+        $peak = $model->factorEstimate($history, '2026-09-25', 'payday_long_weekend', $uplifts, null, self::PLAIN);
+        $regular = $model->factorEstimate($history, '2026-09-25', null, $uplifts, null, self::PLAIN);
         $this->assertGreaterThan(15000, $peak['estimate']);
         $this->assertEqualsWithDelta(10000, $regular['estimate'], 800);
 
         $validation = $model->validate($history);
         $this->assertSame('factors', $validation['mode']);
         $this->assertTrue($validation['use_context']);
-        $this->assertLessThan($validation['weekday_mae'], $validation['factor_mae']);
+        $this->assertNotSame('none', $validation['config']['kinds'], 'The tuner keeps the special-day adjustment');
+        $this->assertLessThan($validation['weekday_mae'] * 0.97, $validation['factor_mae']);
+        $this->assertSame(144, $validation['tested_settings']);
+    }
+
+    public function test_tuner_keeps_the_weekday_average_when_nothing_clearly_beats_it(): void
+    {
+        $model = app(ProductionDemandModel::class);
+        $history = [];
+        mt_srand(11);
+        for ($i = 0; $i < 20; $i++) {
+            $date = CarbonImmutable::parse('2026-06-06')->addWeeks($i)->toDateString();
+            $history[$date] = ['date' => $date, 'weekday' => 6, 'rainy' => (bool) mt_rand(0, 1), 'near_payday' => (bool) mt_rand(0, 1),
+                'special' => null, 'net_sales' => 15000 + mt_rand(-2500, 2500)];
+        }
+
+        $validation = $model->validate($history);
+        $this->assertSame('baseline', $validation['mode'], 'Random noise must not switch the model on');
+        $this->assertFalse($validation['use_context']);
     }
 
     public function test_recent_weeks_count_more_and_one_off_days_are_capped(): void
@@ -89,11 +109,12 @@ class ForecastFactorsTest extends TestCase
             $history[$date] = ['date' => $date, 'weekday' => 6, 'rainy' => null, 'special' => null, 'net_sales' => 6000 + $i * 500];
         }
         $plainAverage = array_sum(array_column($history, 'net_sales')) / 10;
-        $trend = $model->factorEstimate($history, '2026-08-15', null, $model->uplifts($history), null);
+        $recent = ['half_life' => 42, 'cap' => true] + self::PLAIN;
+        $trend = $model->factorEstimate($history, '2026-08-15', null, $model->uplifts($history), null, $recent);
         $this->assertGreaterThan($plainAverage + 400, $trend['estimate'], 'Growth shows through');
 
         $history['2026-07-04']['net_sales'] = 90000; // a one-off catering day
-        $capped = $model->factorEstimate($history, '2026-08-15', null, $model->uplifts($history), null);
+        $capped = $model->factorEstimate($history, '2026-08-15', null, $model->uplifts($history), null, $recent);
         $this->assertLessThan($trend['estimate'] * 1.15, $capped['estimate']);
     }
 

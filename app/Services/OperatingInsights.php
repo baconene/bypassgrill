@@ -7,6 +7,9 @@ use Illuminate\Support\Facades\DB;
 
 class OperatingInsights
 {
+    /** @var array<string, array> Tuning results keyed by the training data they were computed from */
+    private array $tuned = [];
+
     public function __construct(
         private StoreWeather $weather,
         private ProductionDemandModel $model,
@@ -33,8 +36,7 @@ class OperatingInsights
         $forecast = $this->weather->serviceWeather($serviceDates, $now, forecast: true);
         $weatherHistory = $this->weather->trainingWeather(array_reverse(array_keys($salesHistory)), $now);
         $training = $this->training($salesHistory, $weatherHistory);
-        $validation = $this->model->validate($training);
-        $fit = $validation + ['uplifts' => $this->model->uplifts($training)];
+        [$validation, $fit] = $this->tune($training);
         $unitHistory = $items->map(fn ($rows) => (int) $rows->sum('units'))->all();
 
         $result = $month = [];
@@ -106,6 +108,7 @@ class OperatingInsights
 
         return ['days' => $result, 'month' => $month, 'model' => $validation + [
             'uplifts' => $fit['uplifts'],
+            'settings' => $validation['mode'] === 'factors' ? ProductionDemandModel::describe($validation['config']) : null,
             'training_days' => count($training),
             'weather_days' => count(array_filter($training, fn ($day) => $day['rainy'] !== null)),
         ]];
@@ -132,8 +135,7 @@ class OperatingInsights
     public function replayForecast(CarbonImmutable $asOf, array $history): array
     {
         $training = array_filter($history, fn ($row) => $row['date'] < $asOf->toDateString());
-        $validation = $this->model->validate($training);
-        $fit = $validation + ['uplifts' => $this->model->uplifts($training)];
+        [$validation, $fit] = $this->tune($training);
         $month = [];
         foreach ($this->forecastDates($asOf) as $date) {
             $target = $this->date($date);
@@ -148,6 +150,21 @@ class OperatingInsights
         }
 
         return ['month' => $month, 'model' => $validation];
+    }
+
+    /** Tunes once per distinct training set: replay dates between weekends share the same sales. */
+    private function tune(array $training): array
+    {
+        $key = md5(json_encode(array_map(fn ($day) => [$day['net_sales'], $day['rainy'], $day['special'] ?? null], $training)));
+        if (!isset($this->tuned[$key])) {
+            $validation = $this->model->validate($training);
+            $kinds = $validation['config'] === null ? [] : ProductionDemandModel::kinds($validation['config']['kinds']);
+            $this->tuned[$key] = [$validation, $validation + [
+                'uplifts' => $kinds === [] ? [] : $this->model->uplifts($training, $kinds),
+            ]];
+        }
+
+        return $this->tuned[$key];
     }
 
     private function forecastDates(CarbonImmutable $now): array
@@ -196,13 +213,16 @@ class OperatingInsights
             ? $this->model->estimate($weekdaySales, $fit['mode'] === 'baseline' ? $baseline : $weights)
             : null;
         if ($salesEstimate !== null && $fit['mode'] === 'factors') {
-            $factor = fn (?bool $rainy) => $this->model->factorEstimate($weekday, $target->toDateString(), $special, $fit['uplifts'], $rainy);
+            $config = $fit['config'];
+            $factor = fn (?bool $rainy) => $this->model->factorEstimate($weekday, $target->toDateString(), $special, $fit['uplifts'], $rainy, $config);
             $chance = $historicalRain === null ? null : $historicalRain / 100;
             $point = $factor($hasLiveWeather ? $weather['rainy'] : null);
-            $salesEstimate = $chance === null ? $point['estimate']
+            $tuned = $chance === null ? $point['estimate']
                 : $chance * $factor(true)['estimate'] + (1 - $chance) * $factor(false)['estimate'];
-            $salesEstimate = round($salesEstimate * $fit['bias'], 2);
-            $uplift = $special === null ? null : $point['uplift'];
+            $weekdayAverage = $this->model->estimate($weekdaySales, $baseline);
+            $salesEstimate = round($config['blend'] * $tuned * $fit['bias'] + (1 - $config['blend']) * $weekdayAverage, 2);
+            // The uplift actually applied after blending with the weekday average
+            $uplift = $special === null || $point['uplift'] == 1.0 ? null : round(1 + $config['blend'] * ($point['uplift'] - 1), 3);
         } elseif ($salesEstimate !== null && $historicalRain !== null && $useContext) {
             $rainyWeights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => true], true);
             $dryWeights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => false], true);
