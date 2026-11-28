@@ -1776,6 +1776,10 @@ td small {
     }
     .side-column {
         display: flex;
+        align-items: stretch;
+    }
+    .side-column > .panel {
+        width: 100%;
     }
     .count-badge {
         display: block;
