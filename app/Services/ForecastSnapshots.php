@@ -136,18 +136,42 @@ class ForecastSnapshots
         ];
     }
 
-    public function predictions(string $type, ?string $asOf): array
+    /** The rows a predictions view shows: one forecast date's run, or the latest forecast per service date. */
+    private function predictionQuery(string $type, ?string $asOf)
     {
         $query = DB::table('production_forecast_snapshots as snapshots')->where('snapshots.run_type', $type);
         if ($asOf !== null) {
-            $query->where('snapshots.forecast_as_of', $asOf);
-        } else {
-            $query->where('snapshots.result', '!=', 'pending')
-                ->whereNotExists(fn ($newer) => $newer->selectRaw('1')->from('production_forecast_snapshots as newer')
-                    ->whereColumn('newer.run_type', 'snapshots.run_type')
-                    ->whereColumn('newer.service_date', 'snapshots.service_date')
-                    ->whereColumn('newer.forecast_as_of', '>', 'snapshots.forecast_as_of'));
+            return $query->where('snapshots.forecast_as_of', $asOf);
         }
+
+        return $query->where('snapshots.result', '!=', 'pending')
+            ->whereNotExists(fn ($newer) => $newer->selectRaw('1')->from('production_forecast_snapshots as newer')
+                ->whereColumn('newer.run_type', 'snapshots.run_type')
+                ->whereColumn('newer.service_date', 'snapshots.service_date')
+                ->whereColumn('newer.forecast_as_of', '>', 'snapshots.forecast_as_of'));
+    }
+
+    /** Every row of a predictions view, oldest first, for spreadsheet analysis. */
+    public function exportRows(string $type, ?string $asOf): \Generator
+    {
+        $calendar = app(HolidayCalendar::class);
+        yield ['service_date', 'weekday', 'special_day', 'holiday', 'forecast_as_of', 'forecast', 'actual',
+            'actual_minus_forecast', 'weekday_average', 'weekday_average_error', 'result', 'days_from_payday',
+            'rain_chance_pct', 'observed_rain_mm', 'observed_condition', 'training_days', 'model'];
+        foreach ($this->predictionQuery($type, $asOf)->orderBy('snapshots.service_date')->orderBy('snapshots.forecast_as_of')->cursor() as $row) {
+            $date = CarbonImmutable::parse($row->service_date, StoreWeather::TIMEZONE);
+            yield [
+                $row->service_date, $date->englishDayOfWeek, $row->special_day ?? '', $calendar->holiday($date) ?? '',
+                $row->forecast_as_of, $row->estimated_net_sales, $row->actual_net_sales, $row->sales_error,
+                $row->weekday_baseline, $row->baseline_error, $row->result, $row->payday_distance,
+                $row->rain_chance, $row->observed_rain_mm, $row->observed_condition, $row->sample_days, $row->model_version,
+            ];
+        }
+    }
+
+    public function predictions(string $type, ?string $asOf): array
+    {
+        $query = $this->predictionQuery($type, $asOf);
         $stats = (clone $query)->selectRaw("
             SUM(CASE WHEN result = 'hit' THEN 1 ELSE 0 END) as hits,
             SUM(CASE WHEN result = 'miss' THEN 1 ELSE 0 END) as misses,

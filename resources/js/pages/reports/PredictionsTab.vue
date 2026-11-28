@@ -24,6 +24,7 @@ const refresh = ref(0);
 const report = ref<Report>();
 const loadError = ref(false);
 const running = ref(false);
+const exporting = ref(false);
 const replayStatus = ref('');
 const pesos = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' });
 const money = (value: number | null) => value === null ? '—' : pesos.format(value);
@@ -50,6 +51,25 @@ watch([type, asOf, page, refresh], async ([mode, date, current], _old, onCleanup
         if (!request.signal.aborted) loadError.value = true;
     }
 }, { immediate: true });
+
+async function exportCsv() {
+    exporting.value = true;
+
+    try {
+        const { data } = await api.get<Blob>('/api/v1/reports/predictions/export', {
+            params: { type: type.value, as_of: asOf.value || undefined }, responseType: 'blob', timeout: 30000,
+        });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(data);
+        link.download = `predictions-${type.value}-${asOf.value || 'latest'}.csv`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    } catch {
+        replayStatus.value = 'Could not export the predictions. Try again.';
+    } finally {
+        exporting.value = false;
+    }
+}
 
 // The replay is complete once it reaches its last day; after that the button rebuilds it instead.
 const replayComplete = computed(() => report.value?.last_run === '2026-11-28');
@@ -116,6 +136,8 @@ function trace(name: 'estimate' | 'actual') {
                         class="min-h-11 rounded border bg-background px-2 text-sm" @change="page = 1" />
                 </label>
                 <button v-if="asOf" type="button" class="min-h-11 text-sm text-[#ad3b19] underline" @click="asOf = ''; page = 1">Latest per service date</button>
+                <button type="button" class="min-h-11 rounded border px-3 text-sm font-semibold disabled:opacity-60" :disabled="exporting" @click="exportCsv">
+                    {{ exporting ? 'Exporting…' : 'Export CSV' }}</button>
             </div>
             <p class="mt-2 text-sm text-muted-foreground">
                 {{ type === 'replay'

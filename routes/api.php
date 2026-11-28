@@ -127,6 +127,7 @@ Route::prefix('v1')->group(function () {
             $weather->forecast(CarbonImmutable::now(StoreWeather::TIMEZONE)),
         ));
         Route::get('/reports/predictions', [ReportController::class, 'predictions']);
+        Route::get('/reports/predictions/export', [ReportController::class, 'exportPredictions']);
         Route::post('/reports/predictions/replay', [ReportController::class, 'replayPredictions'])->middleware('throttle:2,10');
         Route::get('/reports/production-forecast', [ReportController::class, 'productionForecast']);
         Route::get('/reports/operating-review', [ReportController::class, 'operatingReview']);

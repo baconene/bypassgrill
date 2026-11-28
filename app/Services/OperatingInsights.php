@@ -158,6 +158,10 @@ class OperatingInsights
         $key = md5(json_encode(array_map(fn ($day) => [$day['net_sales'], $day['rainy'], $day['special'] ?? null], $training)));
         if (!isset($this->tuned[$key])) {
             $validation = $this->model->validate($training);
+            // The tuner still runs so its back-test stays visible, but the weekday average is used unless enabled
+            if (config('services.store_weather.forecast_mode') !== 'auto') {
+                $validation = ['mode' => 'baseline', 'use_context' => false, 'forced_baseline' => true] + $validation;
+            }
             $kinds = $validation['config'] === null ? [] : ProductionDemandModel::kinds($validation['config']['kinds']);
             $this->tuned[$key] = [$validation, $validation + [
                 'uplifts' => $kinds === [] ? [] : $this->model->uplifts($training, $kinds),

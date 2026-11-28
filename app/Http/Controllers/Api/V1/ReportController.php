@@ -57,6 +57,25 @@ class ReportController extends Controller
             + ['can_run_replay' => $request->user()->hasRole('admin')]);
     }
 
+    public function exportPredictions(Request $request, ForecastSnapshots $snapshots)
+    {
+        $this->checkPermission();
+        $data = $request->validate([
+            'type' => ['sometimes', 'in:replay,live'],
+            'as_of' => ['sometimes', 'date_format:Y-m-d'],
+        ]);
+        $type = $data['type'] ?? 'replay';
+        $name = 'predictions-'.$type.'-'.($data['as_of'] ?? 'latest').'.csv';
+
+        return response()->streamDownload(function () use ($snapshots, $type, $data) {
+            $out = fopen('php://output', 'w');
+            foreach ($snapshots->exportRows($type, $data['as_of'] ?? null) as $row) {
+                fputcsv($out, $row);
+            }
+            fclose($out);
+        }, $name, ['Content-Type' => 'text/csv']);
+    }
+
     public function replayPredictions(Request $request, ForecastSnapshots $snapshots): JsonResponse
     {
         abort_unless($request->user()->hasRole('admin'), 403);

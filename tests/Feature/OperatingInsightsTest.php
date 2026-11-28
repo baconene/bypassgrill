@@ -186,6 +186,44 @@ class OperatingInsightsTest extends TestCase
             ->assertJsonPath('replaced', $number)->assertJsonPath('saved', $number)
             ->assertJsonPath('through', '2026-11-28');
         $this->assertEquals(2000, $hit()->value('estimated_net_sales'));
+
+        // The predictions export lists every scored date with its forecast and actual
+        $csv = $this->actingAs($this->admin)->get('/api/v1/reports/predictions/export?type=replay')->assertOk()->streamedContent();
+        $lines = array_map('str_getcsv', array_filter(explode("\n", $csv)));
+        $this->assertSame(['service_date', 'weekday', 'special_day', 'holiday', 'forecast_as_of', 'forecast', 'actual'], array_slice($lines[0], 0, 7));
+        $june19 = collect($lines)->first(fn ($line) => $line[0] === '2026-06-19');
+        $this->assertSame(['2026-06-19', 'Friday'], array_slice($june19, 0, 2));
+        $this->assertEquals(2000, $june19[6]);
+        $this->assertSame('hit', $june19[10]);
+        $this->actingAs(User::factory()->create())->get('/api/v1/reports/predictions/export')->assertForbidden();
+    }
+
+    public function test_live_forecast_uses_the_weekday_average_unless_the_tuned_model_is_enabled(): void
+    {
+        $model = new \App\Services\OperatingInsights(
+            app(\App\Services\StoreWeather::class), app(\App\Services\ProductionDemandModel::class), app(\App\Services\HolidayCalendar::class),
+        );
+        $tune = new \ReflectionMethod($model, 'tune');
+        $history = [];
+        for ($i = 0; $i < 15; $i++) {
+            $date = CarbonImmutable::parse('2026-06-05')->addWeeks($i)->toDateString();
+            $peak = $i % 3 === 2;
+            $history[$date] = ['date' => $date, 'weekday' => 5, 'rainy' => null, 'near_payday' => $peak,
+                'special' => $peak ? 'payday_long_weekend' : null, 'net_sales' => $peak ? 20000 : 10000];
+        }
+
+        [$default] = $tune->invoke($model, $history);
+        $this->assertSame('baseline', $default['mode']);
+        $this->assertTrue($default['forced_baseline']);
+        $this->assertLessThan($default['weekday_mae'], $default['factor_mae'], 'The tuner still reports its back-test');
+
+        config(['services.store_weather.forecast_mode' => 'auto']);
+        $fresh = new \App\Services\OperatingInsights(
+            app(\App\Services\StoreWeather::class), app(\App\Services\ProductionDemandModel::class), app(\App\Services\HolidayCalendar::class),
+        );
+        [$auto] = $tune->invoke($fresh, $history);
+        $this->assertSame('factors', $auto['mode']);
+        $this->assertArrayNotHasKey('forced_baseline', $auto);
     }
 
     public function test_weather_backfill_keeps_every_sale_with_or_without_weather(): void

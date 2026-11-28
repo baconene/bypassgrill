@@ -23,7 +23,7 @@ type SpecialDay = 'payday_long_weekend' | 'long_weekend' | 'holiday' | 'near_pay
 type Model = {
     training_days: number; weather_days: number; test_days: number; weekday_mae: number | null; context_mae: number | null;
     factor_mae: number | null; use_context: boolean; mode: 'baseline' | 'context' | 'factors'; bias: number;
-    settings: string | null; tested_settings: number;
+    settings: string | null; tested_settings: number; forced_baseline?: boolean;
 };
 const specialLabel: Record<SpecialDay, string> = {
     payday_long_weekend: 'Payday + long weekend', long_weekend: 'Long weekend', holiday: 'Holiday', near_payday: 'Near payday',
@@ -121,9 +121,12 @@ onUnmounted(() => scope.abort());
                 </p>
                 <div v-if="model" class="text-sm text-[#68665f]">
                     <p>{{ model.training_days }} service dates in training · {{ model.weather_days }} with observed weather · {{ day.sample_days }} matching this weekday.</p>
-                    <p>{{ modelLabel[model.mode ?? (model.use_context ? 'context' : 'baseline')] }}
-                        <template v-if="model.mode === 'factors' && model.settings"> {{ model.settings }}</template></p>
-                    <p v-if="model.tested_settings">Tuned on your sales: {{ model.tested_settings }} settings tested; a setting is used only if it beats the weekday average by at least 3%.</p>
+                    <p v-if="model.forced_baseline">Using the weekday average: on your sales it has been the most accurate so far. The tuned model keeps running in the background for comparison.</p>
+                    <template v-else>
+                        <p>{{ modelLabel[model.mode ?? (model.use_context ? 'context' : 'baseline')] }}
+                            <template v-if="model.mode === 'factors' && model.settings"> {{ model.settings }}</template></p>
+                        <p v-if="model.tested_settings">Tuned on your sales: {{ model.tested_settings }} settings tested; a setting is used only if it beats the weekday average by at least 3%.</p>
+                    </template>
                     <p v-if="model.test_days && model.weekday_mae !== null && model.context_mae !== null">
                         Average backtest error over {{ model.test_days }} dates · Weekday {{ pesos.format(model.weekday_mae) }} · Weather + payday {{ pesos.format(model.context_mae) }}<template v-if="model.factor_mae !== null"> · Best tuned setting {{ pesos.format(model.factor_mae) }}</template>
                     </p>
