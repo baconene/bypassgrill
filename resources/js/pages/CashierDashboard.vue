@@ -4,7 +4,7 @@ import { Head, Link as InertiaLink, usePage, usePoll } from '@inertiajs/vue3'
 import { useCartStore } from '@/stores/cartStore'
 import { toast } from 'vue-sonner'
 import api from '@/utils/api'
-import { ShoppingCart, X, Plus, Minus, Search, CreditCard, Banknote, CheckCircle2, Printer, ClipboardList, ChevronDown, Copy, Check, Flame, Wallet, ArrowUpRight, TriangleAlert } from 'lucide-vue-next'
+import { ShoppingCart, X, Plus, Minus, Search, CreditCard, Banknote, CheckCircle2, Printer, ClipboardList, ChevronDown, Copy, Check, Flame, Wallet, ArrowUpRight, TriangleAlert, Loader2 } from 'lucide-vue-next'
 import { printReceipt as doPrint } from '@/utils/printReceipt'
 import { isRejectedCheckout, markCheckoutFailed, markOrderSynced, markPaymentSynced, queueOrder, queuePayment, type PendingOrder } from '@/utils/offlineQueue'
 import { refreshCount, requestCheckoutSync } from '@/utils/offlineSync'
@@ -414,6 +414,7 @@ const submitPayment = async () => {
 
         completedOrder.value = { ...captureOrder(true), pendingSync }
         paymentDone.value = true
+        buzz()
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Payment failed')
     } finally {
@@ -552,22 +553,44 @@ const closeAndClear = () => {
     loadUnpaidOrders()
 }
 
+// One tap, one receipt: the button is locked while sending, confirms "Sent", and a
+// second copy has to be asked for on purpose so a double tap never prints twice.
+const printState = ref<'idle' | 'sending' | 'sent'>('idle')
+const printCount = ref(0)
+let printTimer: ReturnType<typeof setTimeout> | undefined
+watch(() => completedOrder.value?.orderId, () => { printCount.value = 0; printState.value = 'idle'; clearTimeout(printTimer) })
+const buzz = () => { try { navigator.vibrate?.(15) } catch { /* not supported */ } }
 const printReceipt = async () => {
-    if (!completedOrder.value) return
+    if (!completedOrder.value || printState.value !== 'idle') return
+    if (printCount.value > 0 && !confirm('This receipt was already printed. Print another copy?')) return
+    printState.value = 'sending'
+    let sent = false
     // Primary: send to Android printing service via Pusher Channels
     try {
         await api.post('/api/v1/print-jobs', { order_id: completedOrder.value.orderId })
         toast.success('Receipt sent to printer')
-        return
+        sent = true
     } catch {
         // Fall through to browser print if Pusher service is not configured
     }
     // Fallback: browser print dialog
-    try {
-        await doPrint(completedOrder.value)
-    } catch (err: any) {
-        toast.error(err?.message ?? 'Print failed')
+    if (!sent) {
+        try {
+            await doPrint(completedOrder.value)
+            sent = true
+        } catch (err: any) {
+            toast.error(err?.message ?? 'Print failed')
+        }
     }
+    if (!sent) {
+        printState.value = 'idle'
+        return
+    }
+    printCount.value++
+    printState.value = 'sent'
+    buzz()
+    clearTimeout(printTimer)
+    printTimer = setTimeout(() => { printState.value = 'idle' }, 2500)
 }
 
 const loadUnpaidOrders = async () => {
@@ -585,9 +608,17 @@ const loadUnpaidOrders = async () => {
     }
 }
 
+// Locks the pending-list buttons while one of them is working
+const busyOrderId = ref<number | null>(null)
 const selectUnpaidOrder = async (order: UnpaidOrder) => {
+    if (busyOrderId.value !== null) return
+    busyOrderId.value = order.id
+    try {
+        await loadTenders()
+    } finally {
+        busyOrderId.value = null
+    }
     unpaidOrdersOpen.value = false
-    await loadTenders()
     pendingOrder.value = {
         id: order.id,
         total_amount: parseFloat(order.total_amount),
@@ -615,13 +646,17 @@ const selectUnpaidOrder = async (order: UnpaidOrder) => {
 }
 
 const cancelUnpaidOrder = async (order: UnpaidOrder) => {
+    if (busyOrderId.value !== null) return
     if (!confirm(`Cancel order #${order.id}? This cannot be undone.`)) return
+    busyOrderId.value = order.id
     try {
         await api.post(`/api/v1/orders/${order.id}/cancel`, { reason: 'Cancelled from pending list' })
         toast.success(`Order #${order.id} cancelled.`)
         await loadUnpaidOrders()
     } catch (err: any) {
         toast.error(err.response?.data?.message ?? 'Failed to cancel order')
+    } finally {
+        busyOrderId.value = null
     }
 }
 
@@ -913,9 +948,10 @@ onBeforeUnmount(() => {
                 <button
                     @click="submitOrder"
                     :disabled="cartStore.items.length === 0 || submitting"
+                    :aria-busy="submitting"
                     class="w-full rounded-lg bg-primary py-3 text-sm font-bold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    <template v-if="submitting">{{ cartStore.editingOrderId ? 'Updating Order…' : 'Placing Order…' }}</template>
+                    <template v-if="submitting"><Loader2 class="pos-spin inline h-4 w-4 align-[-3px]" aria-hidden="true" /> {{ cartStore.editingOrderId ? 'Updating Order…' : 'Placing Order…' }}</template>
                     <template v-else>{{ cartStore.editingOrderId ? 'Update Order' : 'Place Order' }} — {{ formatPrice(cartStore.total) }}</template>
                 </button>
                 <button
@@ -1108,8 +1144,10 @@ onBeforeUnmount(() => {
                     <button
                         @click="submitOrder"
                         :disabled="cartStore.items.length === 0 || submitting"
+                        :aria-busy="submitting"
                         class="w-full rounded-lg bg-primary py-3 text-sm font-bold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
+                        <Loader2 v-if="submitting" class="pos-spin inline h-4 w-4 align-[-3px]" aria-hidden="true" />
                         {{ submitting ? (cartStore.editingOrderId ? 'Updating order…' : 'Placing order…') : `${cartStore.editingOrderId ? 'Update order' : 'Place order'} — ${formatPrice(cartStore.total)}` }}
                     </button>
                     <button @click="clearCart" class="w-full rounded-lg border bg-background py-2 text-sm font-medium transition hover:bg-muted">
@@ -1132,7 +1170,7 @@ onBeforeUnmount(() => {
                     <!-- ── SUCCESS STATE ────────────────────────────────── -->
                     <template v-if="paymentDone && completedOrder">
                         <div class="p-6 text-center">
-                            <div class="flex h-14 w-14 items-center justify-center rounded-full bg-green-100 mx-auto mb-3">
+                            <div class="pos-pop flex h-14 w-14 items-center justify-center rounded-full bg-green-100 mx-auto mb-3">
                                 <CheckCircle2 class="h-8 w-8 text-green-600" />
                             </div>
                             <h3 class="text-lg font-black">{{ completedOrder.pendingSync ? 'Payment Queued' : completedOrder.paid ? 'Payment Complete' : 'Order Placed' }}</h3>
@@ -1167,10 +1205,17 @@ onBeforeUnmount(() => {
                         <div class="p-5 border-t space-y-2">
                             <button
                                 @click="printReceipt"
-                                class="w-full rounded-lg bg-primary py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition flex items-center justify-center gap-2"
+                                :disabled="printState !== 'idle'"
+                                :aria-busy="printState === 'sending'"
+                                class="w-full rounded-lg py-3 text-sm font-bold transition flex items-center justify-center gap-2 disabled:cursor-not-allowed"
+                                :class="printState === 'sent' ? 'pos-done bg-green-600 text-white' : 'bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-80'"
                             >
-                                <Printer class="h-4 w-4" /> Print Receipt
+                                <Loader2 v-if="printState === 'sending'" class="pos-spin h-4 w-4" aria-hidden="true" />
+                                <Check v-else-if="printState === 'sent'" class="h-4 w-4" aria-hidden="true" />
+                                <Printer v-else class="h-4 w-4" aria-hidden="true" />
+                                {{ printState === 'sending' ? 'Sending to printer…' : printState === 'sent' ? 'Sent to printer' : printCount ? 'Print another copy' : 'Print Receipt' }}
                             </button>
+                            <p v-if="printCount" class="text-center text-xs text-muted-foreground" role="status">Printed {{ printCount }}×</p>
                             <button
                                 v-if="completedOrder?.publicToken"
                                 @click="copyPublicLink"
@@ -1281,9 +1326,12 @@ onBeforeUnmount(() => {
                             <button
                                 @click="submitPayment"
                                 :disabled="!paymentReady"
-                                class="w-full rounded-lg bg-primary py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                                :aria-busy="paymentSubmitting"
+                                class="w-full rounded-lg bg-primary py-3 text-sm font-bold text-white hover:bg-primary/90 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
+                                :class="paymentSubmitting ? 'opacity-90' : 'disabled:opacity-50'"
                             >
-                                {{ paymentSubmitting ? 'Processing…' : 'Confirm Payment' }}
+                                <Loader2 v-if="paymentSubmitting" class="pos-spin h-4 w-4" aria-hidden="true" />
+                                {{ paymentSubmitting ? 'Recording payment…' : 'Confirm Payment' }}
                             </button>
                             <p v-if="!paymentReady && !paymentSubmitting" class="pos-order-hint" role="status">{{ !selectedTenderId ? 'Select a payment method to continue.' : 'Enter an amount covering the total, with up to two decimal places.' }}</p>
                             <div class="grid grid-cols-2 gap-2">
@@ -1305,6 +1353,7 @@ onBeforeUnmount(() => {
                                 :disabled="cancellingOrder || paymentSubmitting"
                                 class="w-full rounded-lg border border-red-200 text-red-600 py-2 text-sm font-medium hover:bg-red-50 disabled:opacity-50 transition"
                             >
+                                <Loader2 v-if="cancellingOrder" class="pos-spin inline h-4 w-4 align-[-3px]" aria-hidden="true" />
                                 {{ cancellingOrder ? 'Cancelling…' : 'Cancel Order' }}
                             </button>
                         </div>
@@ -1373,13 +1422,17 @@ onBeforeUnmount(() => {
                                         </button>
                                         <button
                                             @click="selectUnpaidOrder(order)"
-                                            class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90 transition"
+                                            :disabled="busyOrderId !== null"
+                                            :aria-busy="busyOrderId === order.id"
+                                            class="rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary/90 transition disabled:opacity-60"
                                         >
+                                            <Loader2 v-if="busyOrderId === order.id" class="pos-spin inline h-3.5 w-3.5 align-[-2px]" aria-hidden="true" />
                                             Pay Now
                                         </button>
                                         <button
                                             @click="cancelUnpaidOrder(order)"
-                                            class="rounded-lg border border-red-200 text-red-600 px-3 py-1.5 text-xs font-bold hover:bg-red-50 transition"
+                                            :disabled="busyOrderId !== null"
+                                            class="rounded-lg border border-red-200 text-red-600 px-3 py-1.5 text-xs font-bold hover:bg-red-50 transition disabled:opacity-60"
                                         >
                                             Cancel
                                         </button>
@@ -1462,6 +1515,54 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* Button feedback for every POS button: a visible press, a focus ring for keyboards,
+   and no response at all once disabled, so a cashier can tell a tap registered. */
+.pos-theme button {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.15s ease, opacity 0.15s ease, filter 0.12s ease;
+}
+.pos-theme button:not(:disabled):active {
+    transform: scale(0.96);
+    filter: brightness(0.92);
+}
+.pos-theme button:focus-visible {
+    outline: 3px solid #ad3b19;
+    outline-offset: 2px;
+}
+.pos-theme button:disabled {
+    pointer-events: none;
+}
+.pos-theme button[aria-busy='true'] {
+    cursor: progress;
+}
+.pos-spin {
+    animation: pos-spin 0.8s linear infinite;
+}
+.pos-pop {
+    animation: pos-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.pos-done {
+    animation: pos-done 0.4s ease;
+}
+@keyframes pos-spin {
+    to { transform: rotate(360deg); }
+}
+@keyframes pos-pop {
+    0% { transform: scale(0.4); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+@keyframes pos-done {
+    0% { transform: scale(0.96); }
+    60% { transform: scale(1.03); }
+    100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .pos-theme button,
+    .pos-theme button:not(:disabled):active { transform: none; transition: none; }
+    .pos-pop, .pos-done { animation: none; }
+    .pos-spin { animation-duration: 2s; }
+}
 /* Grill theme tokens: the Tailwind utilities on this page (and its teleported
    drawer and modals) resolve through these, matching the dashboard palette.
    Like the dashboard, the POS stays light regardless of the app appearance. */
