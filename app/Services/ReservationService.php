@@ -71,15 +71,14 @@ class ReservationService
             $items = $reservation->items()->get();
             abort_if($items->isEmpty(), 422, 'Add the planned order before collecting payment.');
 
-            $order = $this->orders->createOrder([
-                'order_type' => $reservation->order_type,
-                'customer_name' => $reservation->contact_name,
-                'customer_contact' => $reservation->phone ?: $reservation->social_media,
-                'customer_address' => $reservation->customer_address,
-                'notes' => trim("Reservation #{$reservation->id} for {$reservation->reserved_at->timezone('Asia/Manila')->format('M j, g:i A')}, "
-                    ."party of {$reservation->party_size}".($reservation->notes ? ". {$reservation->notes}" : '')),
-                'items' => $items->map(fn ($item) => ['product_id' => $item->product_id, 'quantity' => $item->quantity])->all(),
-            ]);
+            try {
+                $order = $this->createOrder($reservation, $items);
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+                // Reserved food is often produced for the date: say what to do instead of a bare stock error
+                abort_if($e->getStatusCode() === 422 && str_starts_with($e->getMessage(), 'Not enough'), 422,
+                    rtrim($e->getMessage(), '.').'. Record the production run in Inventory first, then collect payment.');
+                throw $e;
+            }
 
             $amount = $payment['amount'] ?? (float) $order->fresh()->total_amount;
             $recorded = $this->payments->processPayment($order, [
@@ -97,5 +96,18 @@ class ReservationService
 
             return ['order' => $order->fresh(), 'payment' => $recorded];
         });
+    }
+
+    private function createOrder(Reservation $reservation, $items): Order
+    {
+        return $this->orders->createOrder([
+            'order_type' => $reservation->order_type,
+            'customer_name' => $reservation->contact_name,
+            'customer_contact' => $reservation->phone ?: $reservation->social_media,
+            'customer_address' => $reservation->customer_address,
+            'notes' => trim("Reservation #{$reservation->id} for {$reservation->reserved_at->timezone('Asia/Manila')->format('M j, g:i A')}, "
+                    ."party of {$reservation->party_size}".($reservation->notes ? ". {$reservation->notes}" : '')),
+            'items' => $items->map(fn ($item) => ['product_id' => $item->product_id, 'quantity' => $item->quantity])->all(),
+        ]);
     }
 }

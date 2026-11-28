@@ -63,6 +63,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('deposit-control.history')->middleware('role:cashier|admin|auditor');
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::inertia('reservations', 'Reservations')->name('reservations.index')->middleware('role:admin');
+    Route::middleware('role:admin')->group(function () {
+        Route::get('reservations/new', fn () => \Inertia\Inertia::render('reservations/ReservationForm', ['id' => null]))->name('reservations.create');
+        Route::get('reservations/{reservation}', fn (int $reservation) => \Inertia\Inertia::render('reservations/ReservationDetail', ['id' => $reservation]))
+            ->whereNumber('reservation')->name('reservations.show');
+        Route::get('reservations/{reservation}/edit', fn (int $reservation) => \Inertia\Inertia::render('reservations/ReservationForm', ['id' => $reservation]))
+            ->whereNumber('reservation')->name('reservations.edit');
+    });
 
     Route::get('pos', [PosController::class, 'index'])
         ->name('pos.index')

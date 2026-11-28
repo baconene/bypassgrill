@@ -91,7 +91,8 @@ class ReservationOrderTest extends TestCase
     public function test_a_failed_checkout_leaves_no_order_behind(): void
     {
         $reservation = $this->reserve(['items' => [['product_id' => $this->platter->id, 'quantity' => 6]]]); // needs 12 kg, 10 in stock
-        $this->postJson("/api/v1/reservations/{$reservation['id']}/checkout", ['payment_tender_id' => $this->gcash->id])->assertStatus(422);
+        $this->postJson("/api/v1/reservations/{$reservation['id']}/checkout", ['payment_tender_id' => $this->gcash->id])->assertStatus(422)
+            ->assertJsonPath('message', fn ($message) => str_contains($message, 'Record the production run in Inventory first'));
         $this->assertDatabaseCount('orders', 0);
         $this->assertEquals(10, $this->pork->fresh()->current_quantity);
         $this->assertNull(Reservation::find($reservation['id'])->order_id);
@@ -99,6 +100,30 @@ class ReservationOrderTest extends TestCase
         $empty = $this->reserve(['items' => []]);
         $this->postJson("/api/v1/reservations/{$empty['id']}/checkout", ['payment_tender_id' => $this->gcash->id])->assertStatus(422);
         $this->assertDatabaseCount('orders', 0);
+    }
+
+    public function test_mini_pos_lists_every_active_product_even_when_out_of_stock_and_pages_open(): void
+    {
+        $this->pork->update(['current_quantity' => 0]);
+        $menu = $this->actingAs($this->admin)->getJson('/api/v1/reservations/menu')->assertOk()->json();
+        $this->assertSame('Barkada Platter', $menu[0]['products'][0]['name']);
+        $this->assertTrue($menu[0]['products'][0]['soldOut'], 'Shown, flagged for production');
+
+        // A sold-out product can still be planned
+        $reservation = $this->reserve(['items' => [['product_id' => $this->platter->id, 'quantity' => 2]]]);
+        $this->getJson("/api/v1/reservations/{$reservation['id']}")->assertOk()
+            ->assertJsonPath('items.0.quantity', 2)->assertJsonPath('reserved_local', substr(str_replace(' ', 'T', now()->addDays(2)->setTime(18, 0)->toDateTimeString()), 0, 16));
+
+        $this->get('/reservations')->assertOk()->assertInertia(fn ($page) => $page->component('Reservations'));
+        $this->get("/reservations/{$reservation['id']}")->assertOk()
+            ->assertInertia(fn ($page) => $page->component('reservations/ReservationDetail')->where('id', $reservation['id']));
+        $this->get("/reservations/{$reservation['id']}/edit")->assertOk()
+            ->assertInertia(fn ($page) => $page->component('reservations/ReservationForm')->where('id', $reservation['id']));
+        $this->get('/reservations/new')->assertOk()->assertInertia(fn ($page) => $page->component('reservations/ReservationForm')->where('id', null));
+
+        $cashier = User::factory()->create();
+        $this->actingAs($cashier)->get('/reservations/new')->assertForbidden();
+        $this->getJson('/api/v1/reservations/menu')->assertForbidden();
     }
 
     public function test_order_type_is_always_required_and_delivery_needs_an_address(): void

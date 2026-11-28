@@ -28,6 +28,35 @@ class ReservationController extends Controller
         return response()->json($query->get());
     }
 
+    public function show(Reservation $reservation): JsonResponse
+    {
+        return response()->json($reservation->load(self::RELATIONS));
+    }
+
+    /**
+     * Menu for the reservation mini POS: every active product, in stock or not, since reserved food is
+     * produced for the date. Stock flags only tell staff what needs a production run first.
+     */
+    public function menu(): JsonResponse
+    {
+        $categories = \App\Models\Category::with(['products' => fn ($query) => $query->where('is_active', true)
+            ->with('recipes.ingredient')->orderBy('display_order')->orderBy('name')])
+            ->whereHas('products', fn ($query) => $query->where('is_active', true))
+            ->orderBy('display_order')->orderBy('name')->get();
+
+        return response()->json($categories->map(fn ($category) => [
+            'id' => $category->id,
+            'name' => $category->name,
+            'products' => $category->products->map(fn ($product) => [
+                'id' => $product->id,
+                'name' => $product->name,
+                'price' => (float) $product->price,
+                'image' => $product->image ? '/storage/'.$product->image : null,
+                ...$product->stockStatus(),
+            ])->values(),
+        ])->values());
+    }
+
     public function store(Request $request): JsonResponse
     {
         $data = $this->data($request);

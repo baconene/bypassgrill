@@ -51,6 +51,8 @@ Route::prefix('v1')->group(function () {
     Route::get('/payment-tenders', [\App\Http\Controllers\Api\V1\PaymentTenderController::class, 'index']);
     Route::middleware(['auth','role:admin'])->group(function () {
         Route::get('/reservations', [\App\Http\Controllers\Api\V1\ReservationController::class, 'index']);
+        Route::get('/reservations/menu', [\App\Http\Controllers\Api\V1\ReservationController::class, 'menu']);
+        Route::get('/reservations/{reservation}', [\App\Http\Controllers\Api\V1\ReservationController::class, 'show'])->whereNumber('reservation');
         Route::post('/reservations', [\App\Http\Controllers\Api\V1\ReservationController::class, 'store']);
         Route::patch('/reservations/{reservation}', [\App\Http\Controllers\Api\V1\ReservationController::class, 'update']);
         Route::delete('/reservations/{reservation}', [\App\Http\Controllers\Api\V1\ReservationController::class, 'destroy']);
