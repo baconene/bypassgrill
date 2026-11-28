@@ -50,7 +50,7 @@ class OperatingInsights
             $rank = WeekdaySalesRank::summarize($weekdaySales, $date);
             $weights = $this->model->weights($weekday, ['near_payday' => $nearPayday, 'rainy' => $weather['rainy']], $validation['use_context']);
             $baseline = array_fill_keys(array_keys($weekday), 1);
-            $point = $this->estimateDay($target, $weekday, $weather, $fit, $weights, $baseline);
+            $point = $this->estimateDay($target, $weekday, $weather, $fit, $weights, $baseline, $training);
             $month[] = $point;
             $salesEstimate = $point['net_sales'];
 
@@ -58,8 +58,8 @@ class OperatingInsights
                 continue;
             }
 
-            // Busier kinds of day need more stock: scale prep by the same learned uplift as sales
-            $scale = $point['uplift'] ?? 1.0;
+            // Prep follows the sales forecast: a special-day uplift, or the recent trend against the weekday average
+            $scale = ($point['uplift'] ?? 1.0) * ($point['trend'] ?? 1.0);
             $stockWeights = array_intersect_key($weights, $unitHistory);
             $baselineUnits = $this->model->estimate($unitHistory, array_intersect_key($baseline, $unitHistory));
             $units = count($stockWeights) >= 2 ? round($this->model->estimate($unitHistory, $stockWeights) * $scale, 2) : null;
@@ -98,6 +98,8 @@ class OperatingInsights
                 'orders' => $projectedOrders,
                 'typical_orders' => $baselineOrders,
                 'net_sales' => $salesEstimate,
+                'range_low' => $point['range_low'],
+                'range_high' => $point['range_high'],
                 'special_day' => $point['special_day'],
                 'holiday' => $point['holiday'],
                 'uplift' => $point['uplift'],
@@ -146,7 +148,7 @@ class OperatingInsights
             $weights = $this->model->weights($weekday,
                 ['near_payday' => WeekdaySalesRank::nearPayday($target), 'rainy' => null], $validation['use_context']);
             $month[] = $this->estimateDay($target, $weekday, $weather, $fit,
-                $weights, array_fill_keys(array_keys($weekday), 1));
+                $weights, array_fill_keys(array_keys($weekday), 1), $training);
         }
 
         return ['month' => $month, 'model' => $validation];
@@ -158,8 +160,13 @@ class OperatingInsights
         $key = md5(json_encode(array_map(fn ($day) => [$day['net_sales'], $day['rainy'], $day['special'] ?? null], $training)));
         if (!isset($this->tuned[$key])) {
             $validation = $this->model->validate($training);
-            // The tuner still runs so its back-test stays visible, but the weekday average is used unless enabled
-            if (config('services.store_weather.forecast_mode') !== 'auto') {
+            // The tuner still runs so its back-test stays visible; it is used only when enabled
+            $mode = config('services.store_weather.forecast_mode', 'level');
+            if ($mode === 'level') {
+                // Kept unless its back-test is clearly worse, so the forecast does not flip method run to run
+                $levelWins = $validation['level_mae'] !== null && $validation['level_mae'] <= $validation['weekday_mae'] * 1.03;
+                $validation = ['mode' => $levelWins ? 'level' : 'baseline', 'use_context' => false] + $validation;
+            } elseif ($mode !== 'auto') {
                 $validation = ['mode' => 'baseline', 'use_context' => false, 'forced_baseline' => true] + $validation;
             }
             $kinds = $validation['config'] === null ? [] : ProductionDemandModel::kinds($validation['config']['kinds']);
@@ -204,7 +211,7 @@ class OperatingInsights
         return $training;
     }
 
-    private function estimateDay(CarbonImmutable $target, array $weekday, array $weather, array $fit, array $weights, array $baseline): array
+    private function estimateDay(CarbonImmutable $target, array $weekday, array $weather, array $fit, array $weights, array $baseline, array $training): array
     {
         $useContext = $fit['mode'] === 'context';
         $weekdaySales = array_column($weekday, 'net_sales', 'date');
@@ -214,7 +221,7 @@ class OperatingInsights
         $special = $this->calendar->specialDay($target);
         $uplift = null;
         $salesEstimate = count($weekday) >= 2
-            ? $this->model->estimate($weekdaySales, $fit['mode'] === 'baseline' ? $baseline : $weights)
+            ? $this->model->estimate($weekdaySales, in_array($fit['mode'], ['baseline', 'level'], true) ? $baseline : $weights)
             : null;
         if ($salesEstimate !== null && $fit['mode'] === 'factors') {
             $config = $fit['config'];
@@ -235,6 +242,17 @@ class OperatingInsights
                 + (1 - $chance) * $this->model->estimate($weekdaySales, $dryWeights), 2);
         }
 
+        $trend = null;
+        if ($salesEstimate !== null && $fit['mode'] === 'level') {
+            $weekdayAverage = $this->model->estimate($weekdaySales, $baseline);
+            $level = $this->model->levelEstimate($training, $target->dayOfWeekIso);
+            if ($level !== null) {
+                $salesEstimate = $level;
+                $trend = $weekdayAverage > 0 ? round($level / $weekdayAverage, 3) : null;
+            }
+        }
+        $range = $fit['ranges'][$target->dayOfWeekIso] ?? $fit['ranges']['all'] ?? null;
+
         return [
             'date' => $target->toDateString(),
             'net_sales' => $salesEstimate,
@@ -244,6 +262,9 @@ class OperatingInsights
             'condition' => $hasLiveWeather ? $weather['condition'] : null,
             'payday_distance' => WeekdaySalesRank::paydayDistance($target),
             'sample_days' => count($weekday),
+            'trend' => $trend,
+            'range_low' => $range && $salesEstimate !== null ? round($salesEstimate * $range['low'], 2) : null,
+            'range_high' => $range && $salesEstimate !== null ? round($salesEstimate * $range['high'], 2) : null,
             'special_day' => $special,
             'holiday' => $this->calendar->holiday($target),
             'uplift' => $uplift,

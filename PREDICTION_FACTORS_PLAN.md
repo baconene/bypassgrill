@@ -1,6 +1,6 @@
 # Prediction factors plan
 
-Status: **built November 29, 2026** (forecast model `weekday-factors-v2`). Requested November 27, 2026.
+Status: **built November 29, 2026** (current forecast model `weekday-level-v4`). Requested November 27, 2026.
 
 What shipped:
 
@@ -20,6 +20,23 @@ cap on/off; bias correction on/off; 50% or 100% blend with the weekday average; 
 predicting every past day from earlier days only. The best setting is used only if it beats the weekday
 average by at least 3%; among near-ties the simplest wins. The replay re-tunes as sales accumulate (about
 1 second for a full replay).
+
+**Recent trend (November 29, 2026, model `weekday-level-v4`, now the default).** Analysis of the replay export
+showed sales falling from about ₱18,400 a day in July to ₱14,300 in November, so an all-history weekday average
+kept forecasting too high. The forecast now takes the average of the last 12 service dates as the current level,
+keeps each weekday's usual share, and blends that 70/30 with the weekday average. It is used unless its back-test
+is more than 3% worse than the weekday average. Each forecast also shows a likely range (where the middle 60% of
+past days landed around a similar forecast), the Production Forecast page shows a weekend total, and the
+Predictions report scores "in likely range". Prep scales with the trend. On the June–November replay:
+
+| Model | Hits (±10%) | Avg error | Bias | In likely range |
+| --- | --- | --- | --- | --- |
+| Weekday average | 24 / 61 | ₱3,369.56 | −₱634 | |
+| Recent trend (v4) | 24 / 61 | ₱3,269.22 | −₱255 | 32 / 52 |
+
+Single-day swings (coefficient of variation 21–31% by weekday) limit hits to about 1 in 3 for any model built on
+these inputs; the range and weekend total are the more useful planning numbers. Closed days have no receipts and
+are left out of training and scoring. `FORECAST_MODE=baseline` or `auto` switches back to the earlier models.
 
 Still open: tagging unusual days (catering, short hours) so they are left out; the February/previous
 working day payday rule (below); importing older sales history.

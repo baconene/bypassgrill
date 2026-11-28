@@ -34,9 +34,10 @@ return [
         'location' => env('STORE_WEATHER_LOCATION', 'Luisiana, Laguna'),
         'opens_hour' => env('STORE_WEATHER_OPENS_HOUR', 15),
         'closes_hour' => env('STORE_WEATHER_CLOSES_HOUR', 22),
-        // baseline: forecast with the plain weekday average (most accurate on this store's sales so far).
-        // auto: use the tuned model whenever its back-test clearly beats the average.
-        'forecast_mode' => env('FORECAST_MODE', 'baseline'),
+        // level: recent sales level x weekday pattern, used when its back-test is at least as accurate as the
+        // weekday average (it follows a rising or falling trend, so it over-forecasts less).
+        // baseline: always the plain weekday average. auto: the tuned model when it clearly beats the average.
+        'forecast_mode' => env('FORECAST_MODE', 'level'),
     ],
 
     'slack' => [

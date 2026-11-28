@@ -16,6 +16,12 @@ class ProductionDemandModel
     // Among settings within this margin of the best, the simplest wins
     private const TIE_MARGIN = 0.01;
 
+    // Recent sales days (all weekdays) that set the current level for the trend-aware forecast
+    public const RECENT_DAYS = 12;
+
+    /** Share of the trend in the level forecast; the rest is the plain weekday average, which keeps it steady. */
+    public const LEVEL_WEIGHT = 0.7;
+
     private const KINDS = [
         'none' => [],
         'peaks' => ['payday_long_weekend', 'long_weekend', 'holiday'],
@@ -59,7 +65,8 @@ class ProductionDemandModel
     {
         $candidates = self::candidates();
         $history = $all = [];
-        $baseErrors = $contextErrors = [];
+        $baseErrors = $contextErrors = $levelErrors = [];
+        $levelRatios = [];
         $errors = $residuals = array_fill(0, count($candidates), []);
 
         foreach ($days as $day) {
@@ -69,6 +76,11 @@ class ProductionDemandModel
                 $sales = array_column($past, 'net_sales', 'date');
                 $baseline = $this->estimate($sales, array_fill_keys(array_keys($past), 1));
                 $baseErrors[] = abs($day['net_sales'] - $baseline);
+                $level = $this->levelEstimate($all, $weekday) ?? $baseline;
+                $levelErrors[] = abs($day['net_sales'] - $level);
+                if ($level > 0) {
+                    $levelRatios[$weekday][] = $day['net_sales'] / $level;
+                }
                 $contextErrors[] = abs($day['net_sales'] - $this->estimate($sales, $this->weights($past, $day, true)));
                 $uplifts = array_map(fn ($kinds) => $kinds === [] ? [] : $this->uplifts($all, $kinds), self::KINDS);
 
@@ -95,6 +107,7 @@ class ProductionDemandModel
         $mae = fn (array $list) => $list === [] ? null : array_sum($recent = array_slice($list, -28)) / count($recent);
         $weekdayMae = $mae($baseErrors);
         $contextMae = $mae($contextErrors);
+        $levelMae = $mae($levelErrors);
         $tested = count(array_slice($baseErrors, -28));
 
         $best = null;
@@ -128,10 +141,64 @@ class ProductionDemandModel
             'weekday_mae' => $weekdayMae === null ? null : round($weekdayMae, 2),
             'context_mae' => $contextMae === null ? null : round($contextMae, 2),
             'factor_mae' => $best === null ? null : round($bestMae, 2),
+            'level_mae' => $levelMae === null ? null : round($levelMae, 2),
+            'ranges' => $this->ranges($levelRatios),
             'config' => $best === null ? null : $candidates[$best],
             'bias' => $best === null || !$candidates[$best]['bias'] ? 1.0 : round($this->bias($residuals[$best]), 3),
             'tested_settings' => count($candidates),
         ];
+    }
+
+    /**
+     * Trend-aware estimate: the average of the most recent sales days (any weekday) sets the current level, and
+     * the weekday's long-run share of sales sets the shape. Follows a store that is speeding up or slowing down,
+     * where an all-history weekday average lags behind. Blended with the weekday average (LEVEL_WEIGHT) so one
+     * slow or busy fortnight does not swing it too far. $past must be in date order.
+     */
+    public function levelEstimate(array $past, int $weekday): ?float
+    {
+        $sales = array_column(array_values($past), 'net_sales');
+        $same = array_column(array_filter($past, fn ($day) => $day['weekday'] === $weekday), 'net_sales');
+        if (count($same) < 2 || count($sales) < 6) {
+            return null;
+        }
+
+        $overall = array_sum($sales) / count($sales);
+        $recent = array_slice($sales, -self::RECENT_DAYS);
+        $level = array_sum($recent) / count($recent);
+
+        $weekdayAverage = array_sum($same) / count($same);
+        if ($overall <= 0) {
+            return null;
+        }
+
+        return round(self::LEVEL_WEIGHT * $level * $weekdayAverage / $overall + (1 - self::LEVEL_WEIGHT) * $weekdayAverage, 2);
+    }
+
+    /**
+     * The likely range around a forecast, from how far past days landed from it (actual ÷ forecast): the 20th to
+     * 80th percentile, so about 6 in 10 days fall inside. Per weekday once it has 6 examples, else all days.
+     *
+     * @return array<int|string, array{low: float, high: float, days: int}>
+     */
+    private function ranges(array $ratiosByWeekday): array
+    {
+        $all = array_merge(...array_values($ratiosByWeekday ?: [[]]));
+        $band = function (array $ratios) {
+            sort($ratios);
+            $at = fn (float $p) => $ratios[(int) floor($p * (count($ratios) - 1))];
+
+            return ['low' => round($at(0.2), 3), 'high' => round($at(0.8), 3), 'days' => count($ratios)];
+        };
+
+        $ranges = count($all) >= 6 ? ['all' => $band($all)] : [];
+        foreach ($ratiosByWeekday as $weekday => $ratios) {
+            if (count($ratios) >= 6) {
+                $ranges[$weekday] = $band($ratios);
+            }
+        }
+
+        return $ranges;
     }
 
     public function weights(array $history, array $target, bool $useContext): array

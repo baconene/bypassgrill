@@ -190,11 +190,11 @@ class OperatingInsightsTest extends TestCase
         // The predictions export lists every scored date with its forecast and actual
         $csv = $this->actingAs($this->admin)->get('/api/v1/reports/predictions/export?type=replay')->assertOk()->streamedContent();
         $lines = array_map('str_getcsv', array_filter(explode("\n", $csv)));
-        $this->assertSame(['service_date', 'weekday', 'special_day', 'holiday', 'forecast_as_of', 'forecast', 'actual'], array_slice($lines[0], 0, 7));
+        $this->assertSame(['service_date', 'weekday', 'special_day', 'holiday', 'forecast_as_of', 'forecast', 'range_low', 'range_high', 'actual'], array_slice($lines[0], 0, 9));
         $june19 = collect($lines)->first(fn ($line) => $line[0] === '2026-06-19');
         $this->assertSame(['2026-06-19', 'Friday'], array_slice($june19, 0, 2));
-        $this->assertEquals(2000, $june19[6]);
-        $this->assertSame('hit', $june19[10]);
+        $this->assertEquals(2000, $june19[8]);
+        $this->assertSame('hit', $june19[12]);
         $this->actingAs(User::factory()->create())->get('/api/v1/reports/predictions/export')->assertForbidden();
     }
 
@@ -212,10 +212,19 @@ class OperatingInsightsTest extends TestCase
                 'special' => $peak ? 'payday_long_weekend' : null, 'net_sales' => $peak ? 20000 : 10000];
         }
 
+        // Default: the trend-aware level forecast, only when it back-tests at least as well as the weekday average
         [$default] = $tune->invoke($model, $history);
-        $this->assertSame('baseline', $default['mode']);
-        $this->assertTrue($default['forced_baseline']);
-        $this->assertLessThan($default['weekday_mae'], $default['factor_mae'], 'The tuner still reports its back-test');
+        $this->assertSame($default['level_mae'] <= $default['weekday_mae'] ? 'level' : 'baseline', $default['mode']);
+        $this->assertArrayHasKey('all', $default['ranges']);
+
+        config(['services.store_weather.forecast_mode' => 'baseline']);
+        $plain = new \App\Services\OperatingInsights(
+            app(\App\Services\StoreWeather::class), app(\App\Services\ProductionDemandModel::class), app(\App\Services\HolidayCalendar::class),
+        );
+        [$baseline] = $tune->invoke($plain, $history);
+        $this->assertSame('baseline', $baseline['mode']);
+        $this->assertTrue($baseline['forced_baseline']);
+        $this->assertLessThan($baseline['weekday_mae'], $baseline['factor_mae'], 'The tuner still reports its back-test');
 
         config(['services.store_weather.forecast_mode' => 'auto']);
         $fresh = new \App\Services\OperatingInsights(

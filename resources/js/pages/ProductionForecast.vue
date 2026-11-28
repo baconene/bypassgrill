@@ -15,6 +15,7 @@ type Day = {
     orders: number | null; typical_orders: number | null;
     weekday_rank: { days: number; lowest: number | null; typical_low: number | null; typical_high: number | null };
     units: number | null; weekday_units: number | null; net_sales: number | null;
+    range_low: number | null; range_high: number | null;
     net_sales_samples: { date: string; net_sales: number; condition: 'clear' | 'cloud' | 'rain' | null; rain_mm: number | null; rainy_hours: number | null; near_payday: boolean }[];
     products: { id: number; name: string; suggested: number; busy: number }[];
 };
@@ -22,7 +23,7 @@ type Day = {
 type SpecialDay = 'payday_long_weekend' | 'long_weekend' | 'holiday' | 'near_payday';
 type Model = {
     training_days: number; weather_days: number; test_days: number; weekday_mae: number | null; context_mae: number | null;
-    factor_mae: number | null; use_context: boolean; mode: 'baseline' | 'context' | 'factors'; bias: number;
+    factor_mae: number | null; level_mae: number | null; use_context: boolean; mode: 'baseline' | 'context' | 'factors' | 'level'; bias: number;
     settings: string | null; tested_settings: number; forced_baseline?: boolean;
 };
 const specialLabel: Record<SpecialDay, string> = {
@@ -33,6 +34,7 @@ const modelLabel = {
     baseline: 'Using the weekday average: no tuned setting beat it clearly enough on your past sales.',
     context: 'Weather and payday matching are active.',
     factors: 'Tuned forecast is active.',
+    level: 'Following the recent trend: your last 12 service dates set the level and each weekday keeps its usual share, blended with the weekday average.',
 };
 type Month = InstanceType<typeof MonthlyForecastChart>['$props']['days'];
 type Accuracy = InstanceType<typeof ForecastAccuracy>['$props']['accuracy'];
@@ -42,6 +44,12 @@ const accuracy = ref<Accuracy>();
 const model = ref<Model>();
 const selected = ref(0);
 const day = computed(() => days.value[selected.value]);
+const sum = (values: (number | null)[]) => values.every((value) => value !== null) ? (values as number[]).reduce((a, b) => a + b, 0) : null;
+const weekend = computed(() => ({
+    net: sum(days.value.map((entry) => entry.net_sales)),
+    low: sum(days.value.map((entry) => entry.range_low)),
+    high: sum(days.value.map((entry) => entry.range_high)),
+}));
 const state = ref<'loading' | 'error' | 'ready'>('loading');
 const scope = new AbortController();
 const pesos = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' });
@@ -97,6 +105,11 @@ onUnmounted(() => scope.abort());
                         {{ specialLabel[entry.special_day] }}<template v-if="entry.uplift !== null">{{ ' ' + pct(entry.uplift) }}</template></span>
                 </button>
             </nav>
+            <p v-if="weekend.net !== null && days.length > 1" class="rounded-lg border border-[#ded7cb] bg-[#fffcf6] p-3 text-sm">
+                <strong>Weekend total: {{ pesos.format(weekend.net) }}</strong>
+                <span v-if="weekend.low !== null && weekend.high !== null" class="text-[#68665f]"> · likely {{ pesos.format(weekend.low) }} – {{ pesos.format(weekend.high) }} across these {{ days.length }} days.
+                    A slow day and a busy day often even out, so the total is steadier than any single day.</span>
+            </p>
 
             <section :key="day.date" class="grid gap-3 rounded-lg border border-[#ded7cb] bg-[#fffcf6] p-4">
                 <div class="flex flex-wrap items-baseline justify-between gap-2">
@@ -112,9 +125,13 @@ onUnmounted(() => scope.abort());
                 <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Estimated units</dt><dd class="text-lg font-bold">{{ day.units === null ? '—' : Math.ceil(day.units) }}</dd></div>
                     <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Estimated paid orders</dt><dd class="text-lg font-bold">{{ day.orders === null ? '—' : Math.round(day.orders) }} <span v-if="day.typical_orders !== null" class="block text-xs font-normal">Typical: {{ Math.round(day.typical_orders) }}</span></dd></div>
-                    <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Estimated net sales</dt><dd class="text-lg font-bold">{{ day.net_sales === null ? '—' : pesos.format(day.net_sales) }}</dd></div>
+                    <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Estimated net sales</dt><dd class="text-lg font-bold">{{ day.net_sales === null ? '—' : pesos.format(day.net_sales) }}</dd>
+                        <dd v-if="day.range_low !== null && day.range_high !== null" class="text-xs">Likely {{ pesos.format(day.range_low) }} – {{ pesos.format(day.range_high) }}</dd></div>
                     <div class="rounded-md bg-[#f6f2e9] p-3"><dt class="text-sm">Peak hourly rain chance</dt><dd class="text-lg font-bold">{{ day.rain_chance === null ? 'Unavailable' : `${Math.round(day.rain_chance)}%` }}</dd></div>
                 </dl>
+                <p v-if="day.range_low !== null" class="text-sm text-[#68665f]">
+                    About 6 in 10 past days landed inside the likely range around their forecast; the rest swung further, mostly lower. Prep for the estimate and keep a buffer toward the top of the range.
+                </p>
                 <p v-if="day.weekday_rank.days" class="text-sm text-[#68665f]">
                     Typical net sales (80th–100th percentile): {{ pesos.format(day.weekday_rank.typical_low!) }} – {{ pesos.format(day.weekday_rank.typical_high!) }}.
                     Recorded low: {{ pesos.format(day.weekday_rank.lowest!) }} across {{ day.weekday_rank.days }} same-weekday dates.
@@ -128,7 +145,7 @@ onUnmounted(() => scope.abort());
                         <p v-if="model.tested_settings">Tuned on your sales: {{ model.tested_settings }} settings tested; a setting is used only if it beats the weekday average by at least 3%.</p>
                     </template>
                     <p v-if="model.test_days && model.weekday_mae !== null && model.context_mae !== null">
-                        Average backtest error over {{ model.test_days }} dates · Weekday {{ pesos.format(model.weekday_mae) }} · Weather + payday {{ pesos.format(model.context_mae) }}<template v-if="model.factor_mae !== null"> · Best tuned setting {{ pesos.format(model.factor_mae) }}</template>
+                        Average backtest error over {{ model.test_days }} dates · Weekday {{ pesos.format(model.weekday_mae) }}<template v-if="model.level_mae !== null"> · Recent trend {{ pesos.format(model.level_mae) }}</template> · Weather + payday {{ pesos.format(model.context_mae) }}<template v-if="model.factor_mae !== null"> · Best tuned setting {{ pesos.format(model.factor_mae) }}</template>
                     </p>
                     <p v-if="model.weather_days < model.training_days">Historical weather is loaded in batches. Dates with missing weather still count toward the sales forecast.</p>
                 </div>

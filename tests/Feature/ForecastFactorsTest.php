@@ -118,6 +118,30 @@ class ForecastFactorsTest extends TestCase
         $this->assertLessThan($trend['estimate'] * 1.15, $capped['estimate']);
     }
 
+    public function test_level_forecast_follows_a_falling_trend_and_gives_a_likely_range(): void
+    {
+        $model = app(ProductionDemandModel::class);
+        $history = [];
+        // Fri/Sat/Sun for 14 weeks; Saturdays run 20% above the rest, and every day drifts down
+        for ($i = 0; $i < 14; $i++) {
+            foreach ([5 => 0, 6 => 1, 7 => 2] as $weekday => $offset) {
+                $date = CarbonImmutable::parse('2026-06-05')->addWeeks($i)->addDays($offset)->toDateString();
+                $history[$date] = ['date' => $date, 'weekday' => $weekday, 'rainy' => null, 'near_payday' => false, 'special' => null,
+                    'net_sales' => (18000 - $i * 400) * ($weekday === 6 ? 1.2 : 1.0) + ($i % 2 ? 500 : -500)];
+            }
+        }
+        $saturdays = array_column(array_filter($history, fn ($day) => $day['weekday'] === 6), 'net_sales');
+        $level = $model->levelEstimate($history, 6);
+        $this->assertLessThan(array_sum($saturdays) / count($saturdays), $level, 'Follows the downtrend');
+        $this->assertNull($model->levelEstimate(array_slice($history, 0, 3), 6), 'Too little history');
+
+        $validation = $model->validate($history);
+        $this->assertLessThan($validation['weekday_mae'], $validation['level_mae']);
+        [$low, $high] = [$validation['ranges']['all']['low'], $validation['ranges']['all']['high']];
+        $this->assertLessThan($high, $low);
+        $this->assertEqualsWithDelta(1.0, ($low + $high) / 2, 0.1, 'The range sits around the forecast');
+    }
+
     public function test_bias_corrects_a_forecast_that_keeps_running_low(): void
     {
         $model = app(ProductionDemandModel::class);

@@ -103,12 +103,15 @@ class ForecastSnapshots
             'weekday_baseline' => $day['weekday_baseline'],
             'model_version' => match ($forecast['model']['mode'] ?? 'context') {
                 'factors' => 'weekday-tuned-v3',
+                'level' => 'weekday-level-v4',
                 'baseline' => 'weekday-baseline-v1',
                 default => 'weekday-context-v1',
             },
             'used_context' => $forecast['model']['use_context'],
             'special_day' => $day['special_day'] ?? null,
             'uplift' => $day['uplift'] ?? null,
+            'range_low' => $day['range_low'] ?? null,
+            'range_high' => $day['range_high'] ?? null,
             'sample_days' => $day['sample_days'],
             'payday_distance' => $day['payday_distance'],
             'weather_source' => $day['weather_source'],
@@ -155,14 +158,14 @@ class ForecastSnapshots
     public function exportRows(string $type, ?string $asOf): \Generator
     {
         $calendar = app(HolidayCalendar::class);
-        yield ['service_date', 'weekday', 'special_day', 'holiday', 'forecast_as_of', 'forecast', 'actual',
+        yield ['service_date', 'weekday', 'special_day', 'holiday', 'forecast_as_of', 'forecast', 'range_low', 'range_high', 'actual',
             'actual_minus_forecast', 'weekday_average', 'weekday_average_error', 'result', 'days_from_payday',
             'rain_chance_pct', 'observed_rain_mm', 'observed_condition', 'training_days', 'model'];
         foreach ($this->predictionQuery($type, $asOf)->orderBy('snapshots.service_date')->orderBy('snapshots.forecast_as_of')->cursor() as $row) {
             $date = CarbonImmutable::parse($row->service_date, StoreWeather::TIMEZONE);
             yield [
                 $row->service_date, $date->englishDayOfWeek, $row->special_day ?? '', $calendar->holiday($date) ?? '',
-                $row->forecast_as_of, $row->estimated_net_sales, $row->actual_net_sales, $row->sales_error,
+                $row->forecast_as_of, $row->estimated_net_sales, $row->range_low, $row->range_high, $row->actual_net_sales, $row->sales_error,
                 $row->weekday_baseline, $row->baseline_error, $row->result, $row->payday_distance,
                 $row->rain_chance, $row->observed_rain_mm, $row->observed_condition, $row->sample_days, $row->model_version,
             ];
@@ -176,6 +179,8 @@ class ForecastSnapshots
             SUM(CASE WHEN result = 'hit' THEN 1 ELSE 0 END) as hits,
             SUM(CASE WHEN result = 'miss' THEN 1 ELSE 0 END) as misses,
             SUM(CASE WHEN result = 'no_estimate' THEN 1 ELSE 0 END) as no_estimate,
+            SUM(CASE WHEN result IN ('hit', 'miss') AND range_low IS NOT NULL THEN 1 ELSE 0 END) as ranged,
+            SUM(CASE WHEN result IN ('hit', 'miss') AND actual_net_sales BETWEEN range_low AND range_high THEN 1 ELSE 0 END) as in_range,
             AVG(ABS(sales_error)) as mean_error,
             AVG(sales_error) as mean_bias,
             AVG(CASE WHEN sales_error IS NOT NULL THEN ABS(baseline_error) END) as baseline_mean_error
@@ -188,6 +193,9 @@ class ForecastSnapshots
             'hits' => (int) $stats->hits,
             'misses' => (int) $stats->misses,
             'no_estimate' => (int) $stats->no_estimate,
+            // Days whose actual sales landed inside the likely range shown with the forecast
+            'in_range' => (int) $stats->in_range,
+            'ranged' => (int) $stats->ranged,
             'mean_error' => $stats->mean_error === null ? null : round((float) $stats->mean_error, 2),
             // Positive: sales usually came in above the forecast (it runs low)
             'mean_bias' => $stats->mean_bias === null ? null : round((float) $stats->mean_bias, 2),
@@ -214,6 +222,8 @@ class ForecastSnapshots
             'payday_distance' => (int) $row->payday_distance,
             'special_day' => $row->special_day ?? null,
             'uplift' => isset($row->uplift) ? (float) $row->uplift : null,
+            'range_low' => isset($row->range_low) ? (float) $row->range_low : null,
+            'range_high' => isset($row->range_high) ? (float) $row->range_high : null,
             'model_version' => $row->model_version,
             'weather_source' => $row->weather_source,
             'rain_chance' => $row->rain_chance === null ? null : (float) $row->rain_chance,

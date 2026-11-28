@@ -8,11 +8,12 @@ type Prediction = {
     result: 'hit' | 'miss' | 'no_sales_record' | 'no_estimate' | 'pending';
     payday_distance: number; rain_chance: number | null;
     special_day: SpecialDay | null; uplift: number | null; model_version: string;
+    range_low: number | null; range_high: number | null;
     observed_rain_mm: number | null; weather_source: 'forecast' | 'history' | 'unavailable';
 };
 type SpecialDay = 'payday_long_weekend' | 'long_weekend' | 'holiday' | 'near_payday';
 type Report = {
-    hits: number; misses: number; no_estimate: number; mean_error: number | null; mean_bias: number | null; baseline_mean_error: number | null;
+    hits: number; misses: number; no_estimate: number; in_range: number; ranged: number; mean_error: number | null; mean_bias: number | null; baseline_mean_error: number | null;
     first_run: string | null; last_run: string | null; run_days: number; tolerance_pct: number; can_run_replay: boolean;
     predictions: { data: Prediction[]; current_page: number; last_page: number };
 };
@@ -34,7 +35,7 @@ const specialLabel: Record<SpecialDay, string> = {
     payday_long_weekend: 'Payday + long weekend', long_weekend: 'Long weekend', holiday: 'Holiday', near_payday: 'Near payday',
 };
 const pct = (uplift: number) => `${uplift >= 1 ? '+' : '−'}${Math.round(Math.abs(uplift - 1) * 100)}%`;
-const status = { hit: 'Hit', miss: 'Miss', no_sales_record: 'No sales record', no_estimate: 'No estimate', pending: 'Pending' };
+const status = { hit: 'Hit', miss: 'Miss', no_sales_record: 'Closed / no sales', no_estimate: 'No estimate', pending: 'Pending' };
 
 watch([type, asOf, page, refresh], async ([mode, date, current], _old, onCleanup) => {
     report.value = undefined;
@@ -157,12 +158,16 @@ function trace(name: 'estimate' | 'actual') {
         </div>
 
         <template v-if="report">
-            <dl class="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <dl class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
                 <div class="rounded border bg-card p-3"><dt class="text-sm">Hits</dt><dd class="text-lg font-bold">{{ report.hits }} / {{ report.hits + report.misses }}</dd></div>
                 <div class="rounded border bg-card p-3"><dt class="text-sm">Misses</dt><dd class="text-lg font-bold">{{ report.misses }}</dd></div>
                 <div class="rounded border bg-card p-3"><dt class="text-sm">Average absolute error</dt><dd class="text-lg font-bold">{{ money(report.mean_error) }}</dd></div>
                 <div class="rounded border bg-card p-3"><dt class="text-sm">Weekday baseline error</dt><dd class="text-lg font-bold">{{ money(report.baseline_mean_error) }}</dd></div>
-                <div class="col-span-2 rounded border bg-card p-3 sm:col-span-1"><dt class="text-sm">Average bias</dt>
+                <div class="rounded border bg-card p-3"><dt class="text-sm">In likely range</dt>
+                    <dd class="text-lg font-bold">{{ report.ranged ? `${report.in_range} / ${report.ranged}` : '—' }}</dd>
+                    <dd class="text-xs text-muted-foreground">Aims for about 6 in 10</dd>
+                </div>
+                <div class="rounded border bg-card p-3"><dt class="text-sm">Average bias</dt>
                     <dd class="text-lg font-bold">{{ money(report.mean_bias) }}</dd>
                     <dd v-if="report.mean_bias" class="text-xs text-muted-foreground">
                         {{ report.mean_bias > 0 ? 'Forecasts usually run low' : 'Forecasts usually run high' }}</dd>
@@ -173,7 +178,8 @@ function trace(name: 'estimate' | 'actual') {
                 Forecasts made on {{ dayLabel(asOf) }} are for that day and the days after it, which haven't been scored yet.
                 Pick an earlier date, or use <button type="button" class="text-[#ad3b19] underline" @click="asOf = ''; page = 1">latest per service date</button>
                 to see how each day's forecast turned out.</p>
-            <p class="text-sm text-muted-foreground">A hit is within {{ report.tolerance_pct }}% of the estimate. {{ report.no_estimate }} completed dates had sales but too little history for an estimate.</p>
+            <p class="text-sm text-muted-foreground">A hit is within {{ report.tolerance_pct }}% of the estimate. The likely range is where most past days landed around a similar forecast, so it shows how far a normal day can swing.
+                {{ report.no_estimate }} completed dates had sales but too little history for an estimate. Days the store was closed are left out of training and scoring.</p>
             <div v-if="chartAmounts.length" class="min-w-0 rounded-lg border bg-card p-4">
                 <h3 class="font-bold">Forecast vs. actual net sales</h3>
                 <p class="mt-1 text-xs text-muted-foreground">Orange forecast · blue actual · {{ money(chartBottom) }}–{{ money(chartTop) }}</p>
@@ -204,7 +210,8 @@ function trace(name: 'estimate' | 'actual') {
                     </div>
                     <p class="text-xs text-muted-foreground">As of {{ row.as_of }} · {{ row.sample_days }} training dates for this weekday</p>
                     <dl class="mt-2 grid grid-cols-2 gap-2">
-                        <div><dt>Forecast</dt><dd class="font-bold">{{ money(row.estimate) }}</dd></div>
+                        <div><dt>Forecast</dt><dd class="font-bold">{{ money(row.estimate) }}</dd>
+                            <dd v-if="row.range_low !== null && row.range_high !== null" class="text-xs text-muted-foreground">Likely {{ money(row.range_low) }}–{{ money(row.range_high) }}</dd></div>
                         <div><dt>Actual</dt><dd class="font-bold">{{ money(row.actual) }}</dd></div>
                         <div><dt>Actual minus forecast</dt><dd>{{ money(row.error) }}</dd></div>
                         <div><dt>Weekday baseline error</dt><dd>{{ money(row.baseline_error === null ? null : Math.abs(row.baseline_error)) }}</dd></div>
