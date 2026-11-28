@@ -1,0 +1,44 @@
+/* Dashboard theme for the reservation screens: always light, like Dashboard and Bills,
+   so the app's dark mode never puts dark text on a dark background. */
+.grill-page {
+    min-height: 100%;
+    width: 100%;
+    min-width: 0;
+    background: #f6f2e9;
+    color: #24231e;
+    font-family: Arial, Helvetica, sans-serif;
+    color-scheme: light;
+}
+.grill-page input,
+.grill-page select,
+.grill-page textarea {
+    color: #24231e;
+    -webkit-text-fill-color: #24231e;
+    background-color: #fff;
+}
+.grill-page input::placeholder,
+.grill-page textarea::placeholder {
+    color: #a8a192;
+    -webkit-text-fill-color: #a8a192;
+}
+.grill-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    color: #ad3b19;
+}
+.grill-title {
+    font-size: clamp(28px, 7vw, 40px);
+    font-weight: 850;
+    letter-spacing: -1.4px;
+    line-height: 1.05;
+    color: #24231e;
+}
+.grill-title em {
+    font-family: Georgia, serif;
+    font-weight: 400;
+    color: #ad3b19;
+}

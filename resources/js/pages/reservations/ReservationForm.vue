@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import type { MenuCategory, MenuProduct, OrderType, Reservation } from '@/components/reservations/reservations';
 import { errorText, orderTypes, peso, statusLabel, statuses } from '@/components/reservations/reservations';
+import '@/components/reservations/grill-page.css';
 import api from '@/utils/api';
 
 const props = defineProps<{ id: number | null }>();
@@ -132,15 +133,17 @@ onMounted(load);
 
 <template>
     <Head :title="id ? 'Edit reservation' : 'New reservation'" />
-    <div class="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-3 p-3 pb-0 text-[#24231e] sm:p-6 sm:pb-0">
-        <div class="flex items-center justify-between gap-2">
-            <Link :href="back" class="flex items-center gap-1.5 py-2 pr-3 text-sm font-bold text-[#ad3b19]"><ArrowLeft class="size-4" /> Back</Link>
-            <h1 class="text-lg font-extrabold">{{ id ? 'Edit reservation' : 'New reservation' }}</h1>
-        </div>
+    <div class="grill-page flex flex-col">
+    <div class="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-3 p-3 pb-0 sm:p-6 sm:pb-0">
+        <header>
+            <Link :href="back" class="flex w-fit items-center gap-1.5 py-1 pr-3 text-sm font-bold text-[#ad3b19]"><ArrowLeft class="size-4" /> Back</Link>
+            <p class="grill-eyebrow mt-2">BYPASS GRILL / {{ id ? 'EDIT' : 'NEW' }} RESERVATION</p>
+            <h1 class="grill-title mt-1.5">{{ id ? 'Update the' : 'Plan the' }} <em>order.</em></h1>
+        </header>
 
-        <div class="grid gap-3 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-start">
+        <div class="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-start">
             <!-- Details -->
-            <section class="rounded-xl border border-[#ded7cb] bg-[#fffcf6] p-3 lg:sticky lg:top-3" aria-label="Reservation details">
+            <section class="min-w-0 rounded-xl border border-[#ded7cb] bg-[#fffcf6] p-3 lg:sticky lg:top-3" aria-label="Reservation details">
                 <fieldset>
                     <legend class="mb-1.5 text-xs font-extrabold">Order type <span class="text-[#ad3b19]">*</span></legend>
                     <div class="grid grid-cols-3 gap-1.5">
@@ -192,7 +195,7 @@ onMounted(load);
             </section>
 
             <!-- Mini POS -->
-            <section class="rounded-xl border border-[#ded7cb] bg-[#fffcf6] p-3" aria-label="Order">
+            <section class="min-w-0 rounded-xl border border-[#ded7cb] bg-[#fffcf6] p-3" aria-label="Order">
                 <div class="flex items-center justify-between gap-2">
                     <h2 class="font-extrabold">Order</h2>
                     <span class="text-xs text-[#68665f]">Optional · nothing is charged until paid</span>
@@ -272,6 +275,7 @@ onMounted(load);
                     </button>
                 </div>
             </div>
+        </div>
         </div>
     </div>
 </template>

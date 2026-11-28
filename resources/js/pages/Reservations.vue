@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { ChevronLeft, ChevronRight, ChevronRight as Go, Plus, RefreshCw, Users } from 'lucide-vue-next';
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronRight as Go, Plus, RefreshCw, Users } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import type { Reservation } from '@/components/reservations/reservations';
 import { dateKey, dayLabel, isActive, peso, statusClass, statusLabel, timeLabel, totalOf, typeLabel } from '@/components/reservations/reservations';
+import '@/components/reservations/grill-page.css';
 import api from '@/utils/api';
 
 defineOptions({ layout: { breadcrumbs: [{ title: 'Reservations', href: '/reservations' }] } });
@@ -18,7 +19,6 @@ const rows = ref<Reservation[]>([]);
 const busy = ref(false);
 const todayKey = dateKey(new Date());
 
-const monthLabel = computed(() => month.value.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' }));
 const activeRows = computed(() => rows.value.filter(isActive));
 const toConfirm = computed(() => rows.value.filter((r) => r.status === 'pending').length);
 const unpaid = computed(() => activeRows.value.filter((r) => !r.order_id).reduce((n, r) => n + Number(r.planned_total || 0), 0));
@@ -82,11 +82,12 @@ onMounted(load);
 
 <template>
     <Head title="Reservations" />
-    <div class="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-3 p-3 text-[#24231e] sm:p-6">
+    <div class="grill-page flex flex-col">
+    <div class="mx-auto flex w-full min-w-0 max-w-3xl flex-1 flex-col gap-3 p-3 sm:p-6">
         <header class="flex items-center justify-between gap-2">
             <div>
-                <p class="text-[10px] font-extrabold tracking-[0.16em] text-[#ad3b19]">RESERVATIONS</p>
-                <h1 class="text-2xl font-extrabold tracking-tight">{{ monthLabel }}</h1>
+                <p class="grill-eyebrow"><CalendarDays class="size-3.5" /> BYPASS GRILL / RESERVATIONS</p>
+                <h1 class="grill-title mt-1.5">{{ month.toLocaleDateString('en-PH', { month: 'long' }) }} <em>{{ month.getFullYear() }}.</em></h1>
             </div>
             <div class="flex items-center gap-2">
                 <button type="button" class="grid size-10 place-items-center rounded-lg border border-[#ded7cb] bg-[#fffcf6]" :disabled="busy" aria-label="Refresh" @click="load">
@@ -178,5 +179,6 @@ onMounted(load);
                 <Link :href="`/reservations/new?date=${selected}`" class="font-bold text-[#ad3b19] underline">Add one</Link>
             </div>
         </section>
+        </div>
     </div>
 </template>

@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import type { Reservation } from '@/components/reservations/reservations';
 import { dayLabel, errorText, isActive, peso, statusClass, statusLabel, statuses, timeLabel, totalOf, typeLabel } from '@/components/reservations/reservations';
+import '@/components/reservations/grill-page.css';
 import api from '@/utils/api';
 
 const props = defineProps<{ id: number }>();
@@ -110,7 +111,8 @@ onMounted(() => {
 
 <template>
     <Head :title="r ? `Reservation · ${r.contact_name}` : 'Reservation'" />
-    <div class="mx-auto flex w-full min-w-0 max-w-2xl flex-col gap-3 p-3 pb-0 text-[#24231e] sm:p-6 sm:pb-0">
+    <div class="grill-page flex flex-col">
+    <div class="mx-auto flex w-full min-w-0 max-w-2xl flex-1 flex-col gap-3 p-3 pb-0 sm:p-6 sm:pb-0">
         <Link :href="back" class="flex w-fit items-center gap-1.5 rounded-lg py-2 pr-3 text-sm font-bold text-[#ad3b19]">
             <ArrowLeft class="size-4" /> Back to {{ day ? dayLabel(day, { month: 'short', day: 'numeric' }) : 'reservations' }}
         </Link>
@@ -124,10 +126,8 @@ onMounted(() => {
             <section class="rounded-xl border border-[#ded7cb] bg-[#fffcf6] p-4">
                 <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
-                        <h1 class="truncate text-2xl font-extrabold tracking-tight">{{ r.contact_name }}</h1>
-                        <p class="mt-0.5 text-xs text-[#68665f]">
-                            Reservation #{{ r.id }}<template v-if="r.source === 'online'"> · sent from the homepage</template>
-                        </p>
+                        <p class="grill-eyebrow">RESERVATION #{{ r.id }}<template v-if="r.source === 'online'"> · HOMEPAGE</template></p>
+                        <h1 class="grill-title mt-1 truncate">{{ r.contact_name }}</h1>
                     </div>
                     <span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-extrabold" :class="statusClass[r.status]">{{ statusLabel(r.status) }}</span>
                 </div>
@@ -207,6 +207,7 @@ onMounted(() => {
                     {{ collecting ? 'Recording…' : 'Record payment & create order' }}
                 </button>
             </section>
+        </div>
         </div>
     </div>
 </template>
